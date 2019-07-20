@@ -8,10 +8,10 @@ edition = "2018"
 
 [dependencies]
 libc = "0.2.59"
-runtime = "0.3.0-alpha.6"
-futures-preview = "0.3.0-alpha.17"
-romio = "0.3.0-alpha.9"
-mio = "0.6.19"
+#runtime = "0.3.0-alpha.6"
+#futures-preview = "0.3.0-alpha.17"
+#romio = "0.3.0-alpha.9"
+#mio = "0.6.19"
 log = "0.4.7"
 managed = "0.7.1"
 

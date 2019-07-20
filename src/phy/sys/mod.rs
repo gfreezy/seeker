@@ -1,11 +1,8 @@
 use crate::phy::error;
-use mio::unix::EventedFd;
-use mio::{Evented, Poll, PollOpt, Ready, Token};
+use libc;
 use std::io;
 use std::io::{Read, Write};
-use std::os::unix::io::AsRawFd;
-use libc;
-
+use std::os::unix::io::{AsRawFd, RawFd};
 
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 #[path = "tun_darwin.rs"]
@@ -50,37 +47,11 @@ impl TunSocket {
     }
 }
 
-impl Evented for TunSocket {
-    fn register(
-        &self,
-        poll: &Poll,
-        token: Token,
-        interest: Ready,
-        opts: PollOpt,
-    ) -> io::Result<()> {
-        EventedFd(&self.tun.as_raw_fd()).register(poll, token, interest, opts)
-    }
-
-    fn reregister(
-        &self,
-        poll: &Poll,
-        token: Token,
-        interest: Ready,
-        opts: PollOpt,
-    ) -> io::Result<()> {
-        EventedFd(&self.tun.as_raw_fd()).reregister(poll, token, interest, opts)
-    }
-
-    fn deregister(&self, poll: &Poll) -> io::Result<()> {
-        EventedFd(&self.tun.as_raw_fd()).deregister(poll)
-    }
-}
-
 impl Read for TunSocket {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, io::Error> {
         match self.tun.read(buf) {
             Ok(filled_buf) => Ok(filled_buf.len()),
-            Err(error::Error::IfaceRead(errno)) => Err(io::Error::from_raw_os_error(errno)),
+            Err(error::Error::IfaceRead(errno)) => Err(io::Error::last_os_error()),
             Err(err) => panic!("unexpected error: {}", err),
         }
     }
@@ -93,5 +64,11 @@ impl Write for TunSocket {
 
     fn flush(&mut self) -> Result<(), io::Error> {
         Ok(())
+    }
+}
+
+impl AsRawFd for TunSocket {
+    fn as_raw_fd(&self) -> RawFd {
+        self.tun.as_raw_fd()
     }
 }

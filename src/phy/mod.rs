@@ -1,8 +1,8 @@
-mod tun_socket;
-mod sys;
 pub(crate) mod drop_privileges;
 mod error;
+mod sys;
+mod tun_socket;
 
-pub use tun_socket::TunSocket;
 pub(crate) use self::sys::errno_str;
 pub use error::Error;
+pub use tun_socket::TunSocket;
