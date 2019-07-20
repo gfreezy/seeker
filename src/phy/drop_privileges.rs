@@ -1,8 +1,8 @@
 // Copyright (c) 2019 Cloudflare, Inc. All rights reserved.
 // SPDX-License-Identifier: BSD-3-Clause
 
-use crate::device::errno_str;
-use crate::device::Error;
+use crate::phy::errno_str;
+use crate::phy::Error;
 
 use libc::*;
 

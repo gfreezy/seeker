@@ -12,3 +12,13 @@ runtime = "0.3.0-alpha.6"
 futures-preview = "0.3.0-alpha.17"
 romio = "0.3.0-alpha.9"
 mio = "0.6.19"
+log = "0.4.7"
+managed = "0.7.1"
+
+[dependencies.smoltcp]
+path = "../smoltcp"
+#default-features = false
+#features = [
+#	"std", "log", # needed for `cargo test --no-default-features --features default` :/
+#	"proto-ipv4", "proto-igmp"
+#]

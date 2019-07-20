@@ -1,7 +1,7 @@
 // Copyright (c) 2019 Cloudflare, Inc. All rights reserved.
 // SPDX-License-Identifier: BSD-3-Clause
 
-use crate::device::Error;
+use crate::phy::{Error, errno_str};
 use libc::*;
 use std::mem::size_of;
 use std::mem::size_of_val;
@@ -10,12 +10,6 @@ use std::ptr::null_mut;
 
 pub fn errno() -> i32 {
     unsafe { *__error() }
-}
-
-pub fn errno_str() -> String {
-    let strerr = unsafe { strerror(*__error()) };
-    let c_str = unsafe { std::ffi::CStr::from_ptr(strerr) };
-    c_str.to_string_lossy().into_owned()
 }
 
 const CTRL_NAME: &[u8] = b"com.apple.net.utun_control";

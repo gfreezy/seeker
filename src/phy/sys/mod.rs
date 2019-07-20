@@ -1,9 +1,11 @@
-use crate::device::error;
+use crate::phy::error;
 use mio::unix::EventedFd;
 use mio::{Evented, Poll, PollOpt, Ready, Token};
 use std::io;
 use std::io::{Read, Write};
 use std::os::unix::io::AsRawFd;
+use libc;
+
 
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 #[path = "tun_darwin.rs"]
@@ -12,6 +14,12 @@ pub mod tun;
 //#[cfg(target_os = "linux")]
 //#[path = "tun_linux.rs"]
 //pub mod tun;
+
+pub fn errno_str() -> String {
+    let strerr = unsafe { libc::strerror(*libc::__error()) };
+    let c_str = unsafe { std::ffi::CStr::from_ptr(strerr) };
+    c_str.to_string_lossy().into_owned()
+}
 
 pub(crate) struct TunSocket {
     tun: tun::TunSocket,

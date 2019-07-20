@@ -1,5 +1,5 @@
-use crate::device::error;
-use crate::device::sys;
+use crate::phy::error;
+use crate::phy::sys;
 use futures::{AsyncRead, AsyncWrite};
 use romio::raw::PollEvented;
 use romio::raw::{AsyncReadReady, AsyncWriteReady};
