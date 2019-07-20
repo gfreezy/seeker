@@ -19,9 +19,10 @@ use std::os::unix::io::AsRawFd;
 use std::process::Command;
 
 fn main() {
+    env_logger::init();
     let mut device = TunSocket::new("utun4").expect("open tun");
     let tun_name = device.name();
-    setup_ip(&tun_name, "10.0.0.1", "10.0.0.1");
+    setup_ip(&tun_name, "10.0.0.1", "10.0.0.100");
 
     let fd = device.as_raw_fd();
 
@@ -102,6 +103,12 @@ fn setup_ip(tun_name: &str, ip: &str, dest_ip: &str) {
         .args(&[tun_name, ip, dest_ip])
         .output()
         .expect("run ifconfig");
+    let output = Command::new("route")
+        .arg("add")
+        .arg("10.0.0.0/24")
+        .arg(ip)
+        .output()
+        .expect("add route");
     if !output.status.success() {
         panic!(
             "stdout: {}\nstderr: {}",

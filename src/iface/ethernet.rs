@@ -2,13 +2,13 @@ use log::debug;
 use managed::{Managed, ManagedSlice};
 use smoltcp::phy::RxToken;
 use smoltcp::phy::{Device, DeviceCapabilities, TxToken};
-use smoltcp::socket::AnySocket;
 use smoltcp::socket::TcpSocket;
+use smoltcp::socket::{AnySocket, UdpPacketMetadata, UdpSocketBuffer};
 use smoltcp::socket::{PollAt, Socket, SocketSet, UdpSocket};
 use smoltcp::time::{Duration, Instant};
 use smoltcp::wire::{
-    EthernetFrame, IpCidr, IpProtocol, IpRepr, Ipv4Packet, Ipv4Repr, PrettyPrinter, TcpControl,
-    TcpPacket, TcpRepr, UdpPacket, UdpRepr,
+    EthernetFrame, IpAddress, IpCidr, IpProtocol, IpRepr, Ipv4Address, Ipv4Packet, Ipv4Repr,
+    PrettyPrinter, TcpControl, TcpPacket, TcpRepr, UdpPacket, UdpRepr,
 };
 use smoltcp::{Error, Result};
 
@@ -32,11 +32,13 @@ pub struct Interface<'a, DeviceT: for<'d> Device<'d>> {
 struct InterfaceInner<'a> {
     device_capabilities: DeviceCapabilities,
     ip_addrs: ManagedSlice<'a, IpCidr>,
+    any_ip: bool,
 }
 
 pub struct InterfaceBuilder<'a, DeviceT: for<'d> Device<'d>> {
     device: DeviceT,
     ip_addrs: ManagedSlice<'a, IpCidr>,
+    any_ip: bool,
 }
 
 impl<'a, DeviceT> InterfaceBuilder<'a, DeviceT>
@@ -47,6 +49,7 @@ where
         InterfaceBuilder {
             device,
             ip_addrs: ManagedSlice::Borrowed(&mut []),
+            any_ip: false,
         }
     }
 
@@ -59,6 +62,11 @@ where
         self
     }
 
+    pub fn any_ip(mut self, any_ip: bool) -> Self {
+        self.any_ip = any_ip;
+        self
+    }
+
     pub fn finalize(self) -> Interface<'a, DeviceT> {
         let cap = self.device.capabilities();
         Interface {
@@ -66,6 +74,7 @@ where
             inner: InterfaceInner {
                 ip_addrs: self.ip_addrs,
                 device_capabilities: cap,
+                any_ip: self.any_ip,
             },
         }
     }
@@ -243,6 +252,24 @@ where
 }
 
 impl<'a> InterfaceInner<'a> {
+    /// Check whether the interface has the given IP address assigned.
+    fn has_ip_addr<T: Into<IpAddress>>(&self, addr: T) -> bool {
+        let addr = addr.into();
+        self.ip_addrs.iter().any(|probe| probe.address() == addr)
+    }
+
+    /// Get the first IPv4 address of the interface.
+    #[cfg(feature = "proto-ipv4")]
+    pub fn ipv4_address(&self) -> Option<Ipv4Address> {
+        self.ip_addrs
+            .iter()
+            .filter_map(|addr| match addr {
+                &IpCidr::Ipv4(cidr) => Some(cidr.address()),
+                _ => None,
+            })
+            .next()
+    }
+
     fn process_ipv4<'frame, T: AsRef<[u8]>>(
         &mut self,
         sockets: &mut SocketSet,
@@ -262,12 +289,23 @@ impl<'a> InterfaceInner<'a> {
         let ip_repr = IpRepr::Ipv4(ipv4_repr);
         let ip_payload = ipv4_packet.payload();
 
+        debug!("recv ip packet: {:?}", &ip_repr);
+
+        if !self.has_ip_addr(ipv4_repr.dst_addr)
+            && !ipv4_repr.dst_addr.is_broadcast()
+            && !self.any_ip
+        {
+            // Ignore IP packets not directed at us, or broadcast.
+            // If AnyIP is enabled, also check if the packet is routed locally.
+            return Ok(Packet::None);
+        }
+
         match ipv4_repr.protocol {
             IpProtocol::Udp => self.process_udp(sockets, ip_repr, ip_payload),
 
             IpProtocol::Tcp => self.process_tcp(sockets, timestamp, ip_repr, ip_payload),
 
-            _ => unreachable!(),
+            _ => Ok(Packet::None),
         }
     }
 
@@ -296,6 +334,14 @@ impl<'a> InterfaceInner<'a> {
         }
 
         unreachable!()
+    }
+
+    fn new_udp_socket(&self, sockets: &mut SocketSet, ip_repr: &IpRepr, udp_repr: &UdpRepr) {
+        let udp_rx_buffer = UdpSocketBuffer::new(vec![UdpPacketMetadata::EMPTY], vec![0; 64]);
+        let udp_tx_buffer = UdpSocketBuffer::new(vec![UdpPacketMetadata::EMPTY], vec![0; 128]);
+        let udp_socket = UdpSocket::new(udp_rx_buffer, udp_tx_buffer);
+
+        sockets.add(udp_socket);
     }
 
     fn process_tcp<'frame>(
