@@ -7,9 +7,7 @@ use std::cell::RefCell;
 use std::io;
 use std::io::{Read, Write};
 use std::os::unix::io::{AsRawFd, RawFd};
-use std::pin::Pin;
 use std::rc::Rc;
-use std::task::{Context, Poll};
 
 pub struct TunSocket {
     lower: Rc<RefCell<sys::TunSocket>>,

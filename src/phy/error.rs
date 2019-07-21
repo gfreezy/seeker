@@ -1,6 +1,6 @@
 use std::fmt;
 
-#[allow()]
+#[allow(unused)]
 #[derive(Debug)]
 pub enum Error {
     Socket(String),

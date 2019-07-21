@@ -1,13 +1,13 @@
 use log::debug;
-use managed::{Managed, ManagedSlice};
+use managed::ManagedSlice;
 use smoltcp::phy::RxToken;
 use smoltcp::phy::{Device, DeviceCapabilities, TxToken};
-use smoltcp::socket::TcpSocket;
-use smoltcp::socket::{AnySocket, UdpPacketMetadata, UdpSocketBuffer};
+use smoltcp::socket::{AnySocket, TcpSocketBuffer, UdpPacketMetadata, UdpSocketBuffer};
 use smoltcp::socket::{PollAt, Socket, SocketSet, UdpSocket};
+use smoltcp::socket::{SocketHandle, TcpSocket};
 use smoltcp::time::{Duration, Instant};
 use smoltcp::wire::{
-    EthernetFrame, IpAddress, IpCidr, IpProtocol, IpRepr, Ipv4Address, Ipv4Packet, Ipv4Repr,
+    EthernetFrame, IpAddress, IpCidr, IpEndpoint, IpProtocol, IpRepr, Ipv4Packet, Ipv4Repr,
     PrettyPrinter, TcpControl, TcpPacket, TcpRepr, UdpPacket, UdpRepr,
 };
 use smoltcp::{Error, Result};
@@ -117,7 +117,11 @@ where
     /// packets containing any unsupported protocol, option, or form, which is
     /// a very common occurrence and on a production system it should not even
     /// be logged.
-    pub fn poll(&mut self, sockets: &mut SocketSet, timestamp: Instant) -> Result<bool> {
+    pub fn poll(
+        &mut self,
+        sockets: &mut SocketSet<'_, '_, 'static>,
+        timestamp: Instant,
+    ) -> Result<bool> {
         let mut readiness_may_have_changed = false;
         loop {
             let processed_any = self.socket_ingress(sockets, timestamp)?;
@@ -140,7 +144,7 @@ where
     ///
     /// [poll]: #method.poll
     /// [Instant]: struct.Instant.html
-    pub fn poll_at(&self, sockets: &SocketSet, timestamp: Instant) -> Option<Instant> {
+    pub fn poll_at(&self, sockets: &SocketSet, _timestamp: Instant) -> Option<Instant> {
         sockets
             .iter()
             .filter_map(|socket| match socket.poll_at() {
@@ -167,7 +171,11 @@ where
         }
     }
 
-    fn socket_ingress(&mut self, sockets: &mut SocketSet, timestamp: Instant) -> Result<bool> {
+    fn socket_ingress(
+        &mut self,
+        sockets: &mut SocketSet<'_, '_, 'static>,
+        timestamp: Instant,
+    ) -> Result<bool> {
         let mut processed_any = false;
         loop {
             let &mut Self {
@@ -272,7 +280,7 @@ impl<'a> InterfaceInner<'a> {
 
     fn process_ipv4<'frame, T: AsRef<[u8]>>(
         &mut self,
-        sockets: &mut SocketSet,
+        sockets: &mut SocketSet<'_, '_, 'static>,
         timestamp: Instant,
         frame: &'frame T,
     ) -> Result<Packet<'frame>> {
@@ -309,6 +317,26 @@ impl<'a> InterfaceInner<'a> {
         }
     }
 
+    fn new_udp_socket(
+        &self,
+        sockets: &mut SocketSet,
+        ip_repr: &IpRepr,
+        udp_repr: &UdpRepr,
+    ) -> SocketHandle {
+        let dst_addr = ip_repr.dst_addr();
+        let dst_port = udp_repr.dst_port;
+
+        let udp_rx_buffer = UdpSocketBuffer::new(vec![UdpPacketMetadata::EMPTY], vec![0; 64]);
+        let udp_tx_buffer = UdpSocketBuffer::new(vec![UdpPacketMetadata::EMPTY], vec![0; 128]);
+        let mut udp_socket = UdpSocket::new(udp_rx_buffer, udp_tx_buffer);
+        udp_socket
+            .bind(IpEndpoint::new(dst_addr, dst_port))
+            .unwrap();
+
+        let handle = sockets.add(udp_socket);
+        handle
+    }
+
     fn process_udp<'frame>(
         &self,
         sockets: &mut SocketSet,
@@ -333,20 +361,40 @@ impl<'a> InterfaceInner<'a> {
             }
         }
 
-        unreachable!()
+        // Auto create a new  udp socket.
+        let handle = self.new_udp_socket(sockets, &ip_repr, &udp_repr);
+        let mut udp_socket = sockets.get::<UdpSocket>(handle);
+        match udp_socket.process(&ip_repr, &udp_repr) {
+            // The packet is valid and handled by socket.
+            Ok(()) => return Ok(Packet::None),
+            // The packet is malformed, or the socket buffer is full.
+            Err(e) => return Err(e),
+        }
     }
 
-    fn new_udp_socket(&self, sockets: &mut SocketSet, ip_repr: &IpRepr, udp_repr: &UdpRepr) {
-        let udp_rx_buffer = UdpSocketBuffer::new(vec![UdpPacketMetadata::EMPTY], vec![0; 64]);
-        let udp_tx_buffer = UdpSocketBuffer::new(vec![UdpPacketMetadata::EMPTY], vec![0; 128]);
-        let udp_socket = UdpSocket::new(udp_rx_buffer, udp_tx_buffer);
+    fn new_tcp_socket(
+        &self,
+        sockets: &mut SocketSet<'_, '_, 'static>,
+        ip_repr: &IpRepr,
+        tcp_repr: &TcpRepr,
+    ) -> SocketHandle {
+        let dst_addr = ip_repr.dst_addr();
+        let dst_port = tcp_repr.dst_port;
 
-        sockets.add(udp_socket);
+        let tcp_rx_buffer = TcpSocketBuffer::new(vec![0; 64]);
+        let tcp_tx_buffer = TcpSocketBuffer::new(vec![0; 128]);
+        let mut tcp_socket = TcpSocket::new(tcp_rx_buffer, tcp_tx_buffer);
+        tcp_socket
+            .listen(IpEndpoint::new(dst_addr, dst_port))
+            .unwrap();
+
+        let handle = sockets.add(tcp_socket);
+        handle
     }
 
     fn process_tcp<'frame>(
         &self,
-        sockets: &mut SocketSet,
+        sockets: &mut SocketSet<'_, '_, 'static>,
         timestamp: Instant,
         ip_repr: IpRepr,
         ip_payload: &'frame [u8],
@@ -372,10 +420,18 @@ impl<'a> InterfaceInner<'a> {
 
         if tcp_repr.control == TcpControl::Rst {
             // Never reply to a TCP RST packet with another TCP RST packet.
-            Ok(Packet::None)
-        } else {
-            // The packet wasn't handled by a socket, send a TCP RST packet.
-            Ok(Packet::Tcp(TcpSocket::rst_reply(&ip_repr, &tcp_repr)))
+            return Ok(Packet::None);
+        }
+
+        // Auto create a new  udp socket.
+        let handle = self.new_tcp_socket(sockets, &ip_repr, &tcp_repr);
+        let mut tcp_socket = sockets.get::<TcpSocket>(handle);
+        match tcp_socket.process(timestamp, &ip_repr, &tcp_repr) {
+            // The packet is valid and handled by socket.
+            Ok(reply) => return Ok(reply.map_or(Packet::None, Packet::Tcp)),
+            // The packet is malformed, or doesn't match the socket state,
+            // or the socket buffer is full.
+            Err(e) => return Err(e),
         }
     }
 

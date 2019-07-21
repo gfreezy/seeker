@@ -51,7 +51,7 @@ impl Read for TunSocket {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, io::Error> {
         match self.tun.read(buf) {
             Ok(filled_buf) => Ok(filled_buf.len()),
-            Err(error::Error::IfaceRead(errno)) => Err(io::Error::last_os_error()),
+            Err(error::Error::IfaceRead(_errno)) => Err(io::Error::last_os_error()),
             Err(err) => panic!("unexpected error: {}", err),
         }
     }
