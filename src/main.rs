@@ -40,40 +40,38 @@ fn main() {
             }
         }
 
-        {
-            for mut socket in sockets.iter_mut() {
-                match &mut *socket {
-                    Socket::Udp(ref mut socket) => {
-                        let client = match socket.recv() {
-                            Ok((data, endpoint)) => {
-                                debug!(
-                                    "udp:6969 recv data: {:?} from {}",
-                                    std::str::from_utf8(data.as_ref()).unwrap(),
-                                    endpoint
-                                );
-                                Some(endpoint)
-                            }
-                            Err(_) => None,
-                        };
-                        if let Some(endpoint) = client {
-                            let data = b"hello\n";
+        for mut socket in sockets.iter_mut() {
+            match &mut *socket {
+                Socket::Udp(ref mut socket) => {
+                    let client = match socket.recv() {
+                        Ok((data, endpoint)) => {
                             debug!(
-                                "udp:6969 send data: {:?}",
-                                std::str::from_utf8(data.as_ref()).unwrap()
+                                "udp:6969 recv data: {:?} from {}",
+                                std::str::from_utf8(data.as_ref()).unwrap(),
+                                endpoint
                             );
-                            socket.send_slice(data, endpoint).unwrap();
+                            Some(endpoint)
                         }
+                        Err(_) => None,
+                    };
+                    if let Some(endpoint) = client {
+                        let data = b"hello\n";
+                        debug!(
+                            "udp:6969 send data: {:?}",
+                            std::str::from_utf8(data.as_ref()).unwrap()
+                        );
+                        socket.send_slice(data, endpoint).unwrap();
                     }
-                    Socket::Tcp(ref mut socket) => {
-                        if socket.can_send() {
-                            debug!("tcp:6969 send greeting");
-                            write!(socket, "hello2\n").unwrap();
-                            debug!("tcp:6969 close");
-                            socket.close();
-                        }
-                    }
-                    _ => unreachable!(),
                 }
+                Socket::Tcp(ref mut socket) => {
+                    if socket.can_send() {
+                        debug!("tcp:6969 send greeting");
+                        write!(socket, "hello2\n").unwrap();
+                        debug!("tcp:6969 close");
+                        socket.close();
+                    }
+                }
+                _ => unreachable!(),
             }
         }
 

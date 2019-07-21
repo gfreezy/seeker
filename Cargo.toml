@@ -17,9 +17,13 @@ managed = "0.7.1"
 env_logger = "0.6.2"
 
 [dependencies.smoltcp]
-path = "../smoltcp"
-#default-features = false
-#features = [
-#	"std", "log", # needed for `cargo test --no-default-features --features default` :/
-#	"proto-ipv4", "proto-igmp"
-#]
+git = "https://github.com/gfreezy/smoltcp"
+branch = "pub-fun"
+default-features = false
+features = [
+	"std", "log",
+	"proto-ipv4",
+	"socket-udp",
+	"socket-tcp",
+	"phy-raw_socket",
+]
