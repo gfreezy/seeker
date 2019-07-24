@@ -1,3 +1,6 @@
+// Copyright (C) 2016 whitequark@whitequark.org
+// SPDX-License-Identifier: 0BSD
+use crate::phy::TunSocket;
 use log::debug;
 use managed::ManagedSlice;
 use smoltcp::phy::RxToken;
