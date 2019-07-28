@@ -1,81 +1,54 @@
+#![feature(async_await)]
+
 mod iface;
 mod phy;
 mod ssclient;
 
-use crate::iface::ethernet::InterfaceBuilder;
+use crate::ssclient::ssclient::{Addr, SSClient, SocketBuf};
+use futures::executor;
 use log::debug;
-use phy::drop_privileges::drop_privileges;
-use phy::TunSocket;
-use smoltcp::phy::wait;
-use smoltcp::socket::Socket;
-use smoltcp::socket::SocketSet;
-use smoltcp::time::Instant;
-use smoltcp::wire::{IpAddress, IpCidr};
-use std::fmt::Write;
-use std::os::unix::io::AsRawFd;
-use std::process::Command;
+use std::env;
+use std::io;
 
-fn main() {
-    //    env_logger::init();
-    //    let device = TunSocket::new("utun4").expect("open tun");
-    //    let tun_name = device.name();
-    //    setup_ip(&tun_name, "10.0.0.1", "10.0.0.100");
-    //
-    //    let fd = device.as_raw_fd();
-    //
-    //    let ip_addrs = [IpCidr::new(IpAddress::v4(10, 0, 0, 1), 24)];
-    //
-    //    let mut iface = InterfaceBuilder::new(device)
-    //        .ip_addrs(ip_addrs)
-    //        .any_ip(true)
-    //        .finalize();
-    //
-    //    let mut sockets = SocketSet::new(vec![]);
-    //
-    //    loop {
-    //        let timestamp = Instant::now();
-    //        match iface.poll(&mut sockets, timestamp) {
-    //            Ok(_) => {}
-    //            Err(e) => {
-    //                debug!("poll error: {}", e);
-    //            }
-    //        }
-    //
-    //        for mut socket in sockets.iter_mut() {
-    //            match &mut *socket {
-    //                Socket::Udp(ref mut socket) => {
-    //                    let client = match socket.recv() {
-    //                        Ok((data, endpoint)) => {
-    //                            debug!(
-    //                                "udp:6969 recv data: {:?} from {}",
-    //                                std::str::from_utf8(data.as_ref()).unwrap(),
-    //                                endpoint
-    //                            );
-    //                            Some(endpoint)
-    //                        }
-    //                        Err(_) => None,
-    //                    };
-    //                    if let Some(endpoint) = client {
-    //                        let data = b"hello\n";
-    //                        debug!(
-    //                            "udp:6969 send data: {:?}",
-    //                            std::str::from_utf8(data.as_ref()).unwrap()
-    //                        );
-    //                        socket.send_slice(data, endpoint).unwrap();
-    //                    }
-    //                }
-    //                Socket::Tcp(ref mut socket) => {
-    //                    if socket.can_send() {
-    //                        debug!("tcp:6969 send greeting");
-    //                        write!(socket, "hello2\n").unwrap();
-    //                        debug!("tcp:6969 close");
-    //                        socket.close();
-    //                    }
-    //                }
-    //                _ => unreachable!(),
-    //            }
-    //        }
-    //
-    //        wait(fd, iface.poll_delay(&sockets, timestamp)).expect("wait error");
-    //    }
+fn main() -> io::Result<()> {
+    env_logger::init();
+    better_panic::install();
+
+    let args = env::args().collect::<Vec<String>>();
+    let name = &args[1];
+    let mut client = SSClient::new(dbg!(&args[1]));
+
+    executor::block_on(async {
+        debug!("begin start");
+        loop {
+            debug!("loop start");
+            let mut tx_data = Vec::new();
+            let rx_data: Vec<SocketBuf> = client.recv().await?;
+            for socket_buf in rx_data {
+                match socket_buf {
+                    SocketBuf::Tcp(Addr { src, dst }, buf) => {
+                        debug!(
+                            "src: {}, dst: {}, buf: {}",
+                            src,
+                            dst,
+                            String::from_utf8_lossy(&buf)
+                        );
+                        tx_data.push(SocketBuf::Tcp(Addr { src: dst, dst: src }, buf))
+                    }
+                    SocketBuf::Udp(Addr { src, dst }, buf) => {
+                        debug!(
+                            "src: {}, dst: {}, buf: {}",
+                            src,
+                            dst,
+                            String::from_utf8_lossy(&buf)
+                        );
+                        tx_data.push(SocketBuf::Udp(Addr { src: dst, dst: src }, buf))
+                    }
+                }
+            }
+            debug!("client.send");
+            client.send(tx_data).await?;
+        }
+        Ok(())
+    })
 }

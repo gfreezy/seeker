@@ -1,5 +1,7 @@
 use crate::phy::error;
 use crate::phy::sys;
+use futures::{AsyncRead, AsyncWrite};
+use romio::raw::PollEvented;
 use smoltcp::phy;
 use smoltcp::phy::{Device, DeviceCapabilities};
 use smoltcp::time::Instant;
@@ -7,10 +9,13 @@ use std::cell::RefCell;
 use std::io;
 use std::io::{Read, Write};
 use std::os::unix::io::{AsRawFd, RawFd};
+use std::pin::Pin;
+use std::process::Command;
 use std::rc::Rc;
+use std::task::{Context, Poll};
 
 pub struct TunSocket {
-    lower: Rc<RefCell<sys::TunSocket>>,
+    io: PollEvented<sys::TunSocket>,
     mtu: usize,
     name: String,
 }
@@ -20,7 +25,7 @@ impl TunSocket {
         let lower = sys::TunSocket::new(name)?;
         let mtu = lower.mtu()?;
         Ok(TunSocket {
-            lower: Rc::new(RefCell::new(lower)),
+            io: PollEvented::new(lower),
             name: name.to_string(),
             mtu,
         })
@@ -36,74 +41,30 @@ impl TunSocket {
     }
 }
 
-impl AsRawFd for TunSocket {
-    fn as_raw_fd(&self) -> RawFd {
-        self.lower.borrow().as_raw_fd()
+impl AsyncRead for TunSocket {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut [u8],
+    ) -> Poll<io::Result<usize>> {
+        Pin::new(&mut self.get_mut().io).poll_read(cx, buf)
     }
 }
 
-impl<'a> Device<'a> for TunSocket {
-    type RxToken = RxToken;
-    type TxToken = TxToken;
-
-    fn receive(&'a mut self) -> Option<(Self::RxToken, Self::TxToken)> {
-        let mut lower = self.lower.borrow_mut();
-        let mut buffer = vec![0; self.mtu];
-        match lower.read(&mut buffer[..]) {
-            Ok(size) => {
-                buffer.resize(size, 0);
-                let rx = RxToken { buffer };
-                let tx = TxToken {
-                    lower: self.lower.clone(),
-                };
-                Some((rx, tx))
-            }
-            Err(ref err) if err.kind() == io::ErrorKind::WouldBlock => None,
-            Err(err) => panic!("{}", err),
-        }
+impl AsyncWrite for TunSocket {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        Pin::new(&mut self.io).poll_write(cx, buf)
     }
 
-    fn transmit(&'a mut self) -> Option<Self::TxToken> {
-        Some(TxToken {
-            lower: self.lower.clone(),
-        })
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.io).poll_flush(cx)
     }
 
-    fn capabilities(&self) -> DeviceCapabilities {
-        let mut cap = DeviceCapabilities::default();
-        cap.max_transmission_unit = self.mtu;
-        cap
-    }
-}
-
-#[doc(hidden)]
-pub struct RxToken {
-    buffer: Vec<u8>,
-}
-
-impl phy::RxToken for RxToken {
-    fn consume<R, F>(mut self, _timestamp: Instant, f: F) -> smoltcp::Result<R>
-    where
-        F: FnOnce(&mut [u8]) -> smoltcp::Result<R>,
-    {
-        f(&mut self.buffer[..])
-    }
-}
-
-#[doc(hidden)]
-pub struct TxToken {
-    lower: Rc<RefCell<sys::TunSocket>>,
-}
-
-impl phy::TxToken for TxToken {
-    fn consume<R, F>(self, _timestamp: Instant, len: usize, f: F) -> smoltcp::Result<R>
-    where
-        F: FnOnce(&mut [u8]) -> smoltcp::Result<R>,
-    {
-        let mut lower = self.lower.borrow_mut();
-        let mut buffer = vec![0; len];
-        let result = f(&mut buffer);
-        lower.write(&buffer[..]).unwrap();
-        result
+    fn poll_close(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.io).poll_close(cx)
     }
 }

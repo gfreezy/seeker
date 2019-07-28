@@ -1,5 +1,7 @@
 use crate::phy::error;
 use libc;
+use mio::unix::EventedFd;
+use mio::{Evented, Poll, PollOpt, Ready, Token};
 use std::io;
 use std::io::{Read, Write};
 use std::os::unix::io::{AsRawFd, RawFd};
@@ -29,21 +31,9 @@ impl TunSocket {
         })
     }
 
-    pub fn name(&self) -> Result<String, error::Error> {
-        self.tun.name()
-    }
-
     /// Get the current MTU value
     pub fn mtu(&self) -> Result<usize, error::Error> {
         self.tun.mtu()
-    }
-
-    pub fn write4(&self, src: &[u8]) -> usize {
-        self.tun.write4(src)
-    }
-
-    pub fn write6(&self, src: &[u8]) -> usize {
-        self.tun.write6(src)
     }
 }
 
@@ -59,7 +49,7 @@ impl Read for TunSocket {
 
 impl Write for TunSocket {
     fn write(&mut self, buf: &[u8]) -> Result<usize, io::Error> {
-        Ok(self.write4(buf))
+        Ok(self.tun.write4(buf))
     }
 
     fn flush(&mut self) -> Result<(), io::Error> {
@@ -70,5 +60,31 @@ impl Write for TunSocket {
 impl AsRawFd for TunSocket {
     fn as_raw_fd(&self) -> RawFd {
         self.tun.as_raw_fd()
+    }
+}
+
+impl Evented for TunSocket {
+    fn register(
+        &self,
+        poll: &Poll,
+        token: Token,
+        interest: Ready,
+        opts: PollOpt,
+    ) -> io::Result<()> {
+        EventedFd(&self.tun.as_raw_fd()).register(poll, token, interest, opts)
+    }
+
+    fn reregister(
+        &self,
+        poll: &Poll,
+        token: Token,
+        interest: Ready,
+        opts: PollOpt,
+    ) -> io::Result<()> {
+        EventedFd(&self.tun.as_raw_fd()).reregister(poll, token, interest, opts)
+    }
+
+    fn deregister(&self, poll: &Poll) -> io::Result<()> {
+        EventedFd(&self.tun.as_raw_fd()).deregister(poll)
     }
 }

@@ -215,7 +215,7 @@ impl TunSocket {
 
         match unsafe { sendmsg(self.fd, &msg_hdr, 0) } {
             -1 => 0,
-            n => n as usize,
+            n => (n - 4) as usize,
         }
     }
 

@@ -16,7 +16,8 @@ mio = "0.6.19"
 log = "0.4.7"
 managed = "0.7.1"
 env_logger = "0.6.2"
-shadowsocks-rust = {version = "1.7.0", features = ["sodium"], default-features = false}
+better-panic = "0.1.2"
+#shadowsocks-rust = {version = "1.7.0", features = ["sodium"], default-features = false}
 
 [dependencies.smoltcp]
 git = "https://github.com/gfreezy/smoltcp"

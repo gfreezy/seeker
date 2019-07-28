@@ -139,6 +139,42 @@ where
         Ok(readiness_may_have_changed)
     }
 
+    pub fn poll_read(
+        &mut self,
+        sockets: &mut SocketSet<'_, '_, 'static>,
+        timestamp: Instant,
+    ) -> Result<bool> {
+        let mut readiness_may_have_changed = false;
+        loop {
+            let processed_any = self.socket_ingress(sockets, timestamp)?;
+
+            if processed_any {
+                readiness_may_have_changed = true;
+            } else {
+                break;
+            }
+        }
+        Ok(readiness_may_have_changed)
+    }
+
+    pub fn poll_write(
+        &mut self,
+        sockets: &mut SocketSet<'_, '_, 'static>,
+        timestamp: Instant,
+    ) -> Result<bool> {
+        let mut readiness_may_have_changed = false;
+        loop {
+            let emitted_any = self.socket_egress(sockets, timestamp)?;
+
+            if emitted_any {
+                readiness_may_have_changed = true;
+            } else {
+                break;
+            }
+        }
+        Ok(readiness_may_have_changed)
+    }
+
     /// Return a _soft deadline_ for calling [poll] the next time.
     /// The [Instant] returned is the time at which you should call [poll] next.
     /// It is harmless (but wastes energy) to call it before the [Instant], and
@@ -196,7 +232,7 @@ where
                         debug!("cannot process ingress packet: {}", err);
                         debug!(
                             "packet dump follows:\n{}",
-                            PrettyPrinter::<EthernetFrame<&[u8]>>::new("", &frame)
+                            PrettyPrinter::<Ipv4Packet<&[u8]>>::new("", &frame)
                         );
                         err
                     })
