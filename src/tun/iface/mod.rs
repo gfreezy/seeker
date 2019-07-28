@@ -1,7 +1,7 @@
-use crate::iface::phony_socket::PhonySocket;
-use crate::phy::TunSocket;
+use super::phy::TunSocket;
 use mio::unix::EventedFd;
 use mio::{Evented, Poll, PollOpt, Ready, Token};
+use phony_socket::PhonySocket;
 use smoltcp::socket::SocketSet;
 use std::io;
 use std::io::{Read, Write};

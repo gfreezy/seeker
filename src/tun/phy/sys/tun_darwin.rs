@@ -1,7 +1,7 @@
 // Copyright (c) 2019 Cloudflare, Inc. All rights reserved.
 // SPDX-License-Identifier: BSD-3-Clause
 
-use crate::phy::{errno_str, Error};
+use crate::tun::phy::{errno_str, Error};
 use libc::*;
 use std::mem::size_of;
 use std::mem::size_of_val;

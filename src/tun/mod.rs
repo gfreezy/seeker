@@ -1,12 +1,11 @@
-use crate::iface;
-use crate::iface::ethernet::{Interface, InterfaceBuilder};
-use crate::iface::phony_socket::PhonySocket;
-use crate::phy::TunSocket;
 use futures::{io, AsyncRead, AsyncReadExt, AsyncWrite};
 use futures::{ready, Future};
+use iface::ethernet::{Interface, InterfaceBuilder};
+use iface::phony_socket::PhonySocket;
 use log::debug;
 use mio::unix::EventedFd;
 use mio::{Evented, PollOpt, Ready, Token};
+use phy::TunSocket;
 use romio::raw::PollEvented;
 use romio::raw::{AsyncReadReady, AsyncWriteReady};
 use smoltcp::socket::{
@@ -21,6 +20,9 @@ use std::os::unix::io::AsRawFd;
 use std::pin::Pin;
 use std::process::Command;
 use std::task::{Context, Poll};
+
+pub mod iface;
+pub mod phy;
 
 fn setup_ip(tun_name: &str, ip: &str, dest_ip: &str) {
     let output = Command::new("ifconfig")
@@ -71,13 +73,13 @@ impl SocketBuf {
     }
 }
 
-pub struct SSClient {
+pub struct Tun {
     iface: Interface<'static, PhonySocket>,
     tun: TunSocket,
     sockets: SocketSet<'static, 'static, 'static>,
 }
 
-impl SSClient {
+impl Tun {
     pub fn new(tun_name: &str) -> Self {
         let tun = TunSocket::new(tun_name).expect("open tun");
         let tun_name = tun.name();
@@ -91,7 +93,7 @@ impl SSClient {
             .finalize();
 
         let sockets = SocketSet::new(Vec::with_capacity(100));
-        SSClient {
+        Tun {
             iface,
             tun,
             sockets,
@@ -140,7 +142,7 @@ impl<'a> Future for SSClientRead<'a> {
 
         match s.iface.poll_read(s.sockets, Instant::now()) {
             Ok(_) => {
-                debug!("iface.poll_read success");
+                debug!("tun.iface.poll_read success");
             }
             Err(e) => {
                 debug!("poll_read error: {}", e);
@@ -253,7 +255,7 @@ impl<'a> Future for SSClientWrite<'a> {
         }
 
         match s.iface.poll_write(s.sockets, Instant::now()) {
-            Ok(_) => debug!("iface.poll_write successfully"),
+            Ok(_) => debug!("tun.iface.poll_write successfully"),
             Err(e) => {
                 debug!("poll_read error: {}", e);
             }

@@ -1,10 +1,8 @@
 #![feature(async_await)]
 
-mod iface;
-mod phy;
-mod ssclient;
+mod tun;
 
-use crate::ssclient::ssclient::{Addr, SSClient, SocketBuf};
+use tun::{Addr, Tun, SocketBuf};
 use futures::executor;
 use log::debug;
 use std::env;
@@ -16,7 +14,7 @@ fn main() -> io::Result<()> {
 
     let args = env::args().collect::<Vec<String>>();
     let name = &args[1];
-    let mut client = SSClient::new(dbg!(&args[1]));
+    let mut client = Tun::new(dbg!(&args[1]));
 
     executor::block_on(async {
         debug!("begin start");

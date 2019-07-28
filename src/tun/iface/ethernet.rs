@@ -1,6 +1,6 @@
 // Copyright (C) 2016 whitequark@whitequark.org
 // SPDX-License-Identifier: 0BSD
-use crate::phy::TunSocket;
+use crate::tun::phy::TunSocket;
 use log::debug;
 use managed::ManagedSlice;
 use smoltcp::phy::RxToken;
@@ -97,7 +97,7 @@ where
     /// There are no invariants imposed on the device by the interface itself. Furthermore the
     /// trait implementations, required for references of all lifetimes, guarantees that the
     /// mutable reference can not invalidate the device as such. For some devices, such access may
-    /// still allow modifications with adverse effects on the usability as a `phy` device. You
+    /// still allow modifications with adverse effects on the usability as a `tun.phy` device. You
     /// should not use them this way.
     pub fn device_mut(&mut self) -> &mut DeviceT {
         &mut self.device

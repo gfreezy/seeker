@@ -1,5 +1,5 @@
-use crate::phy::error;
-use crate::phy::sys;
+use super::error;
+use super::sys;
 use futures::{AsyncRead, AsyncWrite};
 use romio::raw::PollEvented;
 use smoltcp::phy;
