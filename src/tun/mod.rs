@@ -51,7 +51,7 @@ fn setup_ip(tun_name: &str, ip: &str, dest_ip: &str) {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Addr {
     pub src: IpEndpoint,
     pub dst: IpEndpoint,
@@ -218,7 +218,7 @@ impl<'a> Future for SSClientWrite<'a> {
             Tcp(IpEndpoint, IpEndpoint),
         }
 
-        let mut s = self.get_mut();
+        let s = self.get_mut();
 
         let mut map = HashMap::with_capacity(10);
         for mut socket in s.sockets.iter_mut() {

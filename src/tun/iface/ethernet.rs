@@ -538,8 +538,8 @@ impl<'a> InterfaceInner<'a> {
         let ip_repr = ip_repr.lower(&self.ip_addrs)?;
         let checksum_caps = self.device_capabilities.checksum.clone();;
 
-        tx_token.consume(timestamp, ip_repr.total_len(), |tx_buffer| {
-            ip_repr.emit(tx_buffer.as_mut(), &checksum_caps);
+        tx_token.consume(timestamp, ip_repr.total_len(), |mut tx_buffer| {
+            ip_repr.emit(&mut tx_buffer, &checksum_caps);
 
             let payload = &mut tx_buffer[ip_repr.buffer_len()..];
             f(ip_repr, payload);
