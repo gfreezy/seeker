@@ -1,27 +1,24 @@
 #![feature(async_await)]
+#![feature(impl_trait_in_bindings)]
 
 mod tun;
 mod ssclient;
 
 use tun::{Addr, Tun, SocketBuf};
-use futures::{executor, TryFutureExt, AsyncWriteExt, AsyncReadExt, AsyncRead, AsyncWrite};
-use futures::future::FutureExt;
+use futures::{FutureExt, TryFutureExt, Future};
 use log::debug;
 use std::env;
 use std::io;
 use shadowsocks::{ServerConfig, ServerAddr};
 use shadowsocks::crypto::CipherType;
 use std::time::Duration;
-use futures::executor::LocalPool;
-use std::collections::HashMap;
-use smoltcp::wire::{IpAddress, Ipv4Address};
-use std::net::{SocketAddr, SocketAddrV4, IpAddr, Ipv4Addr};
+use smoltcp::wire::{IpAddress};
+use std::net::{SocketAddr, Ipv4Addr};
 use smoltcp::wire::IpEndpoint;
-use futures::compat::{AsyncRead01CompatExt, AsyncWrite01CompatExt, Future01CompatExt};
+use futures::compat::{Future01CompatExt};
 use shadowsocks::relay::tcprelay::{DecryptedRead, EncryptedWrite};
 use std::io::Read;
-use futures::task::{SpawnExt, Spawn, LocalSpawnExt};
-use tokio::prelude::Future;
+use tokio::runtime::current_thread::block_on_all;
 
 
 fn main() -> io::Result<()> {
@@ -29,25 +26,25 @@ fn main() -> io::Result<()> {
     better_panic::install();
 
     let args = env::args().collect::<Vec<String>>();
-    let name = &args[1];
+    let _name = &args[1];
     let mut tun = Tun::new(dbg!(&args[1]));
 
-    let mut local_pool = LocalPool::new();
-    let mut local_spawner = local_pool.spawner();
     let srv_cfg = ServerConfig::new(
         ServerAddr::DomainName("jp1.edge.mithril.to".to_string(), 14187),
         "rixCloud".to_string(),
         CipherType::ChaCha20Ietf,
         Some(Duration::from_secs(30)),
         None);
-    let mut client = ssclient::SSClient::new(srv_cfg, &mut local_spawner);
 
-    let fut = async move {
+
+    let fut: impl Future<Output = io::Result<()>> = async move {
+        let mut client = ssclient::SSClient::new(srv_cfg);
+        let exit = false;
         debug!("begin start");
-        loop {
+        while !exit {
             debug!("loop start");
             let mut tx_data = Vec::new();
-            let rx_data: Vec<SocketBuf> = tun.recv().await?;
+            let rx_data: Vec<SocketBuf> = tun.recv().compat().await?;
             for socket_buf in rx_data {
                 match socket_buf {
                     SocketBuf::Tcp(Addr { src, dst }, mut buf) => {
@@ -60,9 +57,9 @@ fn main() -> io::Result<()> {
                         if buf.is_empty() {
                             continue;
                         }
-                        let (mut r, mut w) = client.connect_to_remote(to_socket_addr(dst)).await.unwrap();
-                        w.await?.write_all(&buf).compat().await.unwrap();
-                        let size = r.await?.read(&mut buf).unwrap();
+                        let (r, w) = client.connect_to_remote(to_socket_addr(dst)).compat().await?;
+                        w.compat().await?.write_all(&buf).compat().await.unwrap();
+                        let size = r.compat().await?.read(&mut buf).unwrap();
                         buf.truncate(size);
                         tx_data.push(SocketBuf::Tcp(Addr { src: dst, dst: src }, buf))
                     }
@@ -78,12 +75,14 @@ fn main() -> io::Result<()> {
                 }
             }
             debug!("tun.send");
-            tun.send(tx_data).await?;
+            tun.send(tx_data).compat().await?;
         }
+
         Ok(())
     };
-    local_spawner.spawn_local(fut.map(|_: io::Result<()>| ()));
-    local_pool.run();
+    block_on_all(fut.unit_error()
+        .boxed_local()
+        .compat()).unwrap();
     Ok(())
 }
 

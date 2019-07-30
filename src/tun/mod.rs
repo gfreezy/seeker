@@ -1,28 +1,28 @@
-use futures::{io, AsyncRead, AsyncReadExt, AsyncWrite};
-use futures::{ready, Future};
 use iface::ethernet::{Interface, InterfaceBuilder};
 use iface::phony_socket::PhonySocket;
 use log::debug;
-use mio::unix::EventedFd;
-use mio::{Evented, PollOpt, Ready, Token};
 use phy::TunSocket;
-use romio::raw::PollEvented;
-use romio::raw::{AsyncReadReady, AsyncWriteReady};
-use smoltcp::socket::{
-    AnySocket, Socket, SocketHandle, SocketRef, SocketSet, TcpSocket, UdpSocket,
-};
+use smoltcp::socket::{Socket, SocketSet, TcpSocket, UdpSocket};
 use smoltcp::time::Instant;
 use smoltcp::wire::IpEndpoint;
-use smoltcp::wire::{IpAddress, IpCidr, Ipv4Address};
-use std::borrow::BorrowMut;
+use smoltcp::wire::{IpAddress, IpCidr};
 use std::collections::HashMap;
-use std::os::unix::io::AsRawFd;
-use std::pin::Pin;
+use std::io;
 use std::process::Command;
-use std::task::{Context, Poll};
+use tokio::prelude::{Async, AsyncRead, AsyncWrite, Future, Poll};
 
 pub mod iface;
 pub mod phy;
+
+macro_rules! try_ready {
+    ($e:expr) => {
+        match $e {
+            Ok(Async::Ready(t)) => t,
+            Ok(Async::NotReady) => return Ok(Async::NotReady),
+            Err(e) => return Err(From::from(e)),
+        }
+    };
+}
 
 fn setup_ip(tun_name: &str, ip: &str, dest_ip: &str) {
     let output = Command::new("ifconfig")
@@ -125,33 +125,32 @@ pub struct SSClientRead<'a> {
 }
 
 impl<'a> Future for SSClientRead<'a> {
-    type Output = io::Result<Vec<SocketBuf>>;
+    type Item = Vec<SocketBuf>;
+    type Error = io::Error;
 
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let s = self.get_mut();
-
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         {
-            let mut lower = s.iface.device_mut().lower();
+            let mut lower = self.iface.device_mut().lower();
             lower.rx.len();
             let mut buf = vec![0; 1024];
-            let size = ready!(Pin::new(&mut s.tun).poll_read(cx, &mut buf)).unwrap();
+            let size = try_ready!(self.tun.poll_read(&mut buf));
             debug!("ssclientread size {}", size);
             lower.rx.enqueue_slice(&buf[..size]);
             debug!("lower.rx size: {}", lower.rx.len());
         }
 
-        match s.iface.poll_read(s.sockets, Instant::now()) {
+        match self.iface.poll_read(self.sockets, Instant::now()) {
             Ok(_) => {
                 debug!("tun.iface.poll_read success");
             }
             Err(e) => {
                 debug!("poll_read error: {}", e);
-                return Poll::Pending;
+                return Ok(Async::NotReady);
             }
         };
 
         let mut data = vec![];
-        for mut socket in s.sockets.iter_mut() {
+        for mut socket in self.sockets.iter_mut() {
             let mut buf = vec![0; 1024];
             match &mut *socket {
                 Socket::Udp(ref mut socket) => {
@@ -197,7 +196,7 @@ impl<'a> Future for SSClientRead<'a> {
             }
         }
 
-        Poll::Ready(Ok(data))
+        Ok(Async::Ready(data))
     }
 }
 
@@ -209,19 +208,18 @@ pub struct SSClientWrite<'a> {
 }
 
 impl<'a> Future for SSClientWrite<'a> {
-    type Output = io::Result<()>;
+    type Item = ();
+    type Error = io::Error;
 
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         #[derive(Copy, Clone, Hash, PartialEq, Eq, Debug)]
         enum MapKey {
             Udp(IpEndpoint),
             Tcp(IpEndpoint, IpEndpoint),
         }
 
-        let s = self.get_mut();
-
         let mut map = HashMap::with_capacity(10);
-        for mut socket in s.sockets.iter_mut() {
+        for mut socket in self.sockets.iter_mut() {
             let (key, handle) = match &mut *socket {
                 Socket::Udp(socket) => (MapKey::Udp(socket.endpoint()), socket.handle()),
                 Socket::Tcp(socket) => (
@@ -236,11 +234,11 @@ impl<'a> Future for SSClientWrite<'a> {
         macro_rules! get_socket {
             ($key:expr, $ty:ty) => {{
                 let handle = map[$key];
-                s.sockets.get::<$ty>(handle)
+                self.sockets.get::<$ty>(handle)
             }};
         }
 
-        for socket_buf in &s.data {
+        for socket_buf in &self.data {
             match socket_buf {
                 SocketBuf::Tcp(Addr { src, dst }, buf) => {
                     let mut socket = get_socket!(&MapKey::Tcp(*src, *dst), TcpSocket);
@@ -254,24 +252,24 @@ impl<'a> Future for SSClientWrite<'a> {
             }
         }
 
-        match s.iface.poll_write(s.sockets, Instant::now()) {
+        match self.iface.poll_write(self.sockets, Instant::now()) {
             Ok(_) => debug!("tun.iface.poll_write successfully"),
             Err(e) => {
                 debug!("poll_read error: {}", e);
             }
         };
 
-        let mut lower = s.iface.device_mut().lower();
+        let mut lower = self.iface.device_mut().lower();
         loop {
             debug!("lower.tx.dequeue_many");
             let ip_buf = lower.tx.dequeue_many(1024);
             if ip_buf.is_empty() {
                 break;
             }
-            let size = ready!(Pin::new(&mut s.tun).poll_write(cx, ip_buf)).unwrap();
+            let size = try_ready!(self.tun.poll_write(ip_buf));
             assert_eq!(size, ip_buf.len())
         }
 
-        Poll::Ready(Ok(()))
+        Ok(Async::Ready(()))
     }
 }

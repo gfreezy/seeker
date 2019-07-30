@@ -1,11 +1,8 @@
-use log::debug;
 use smoltcp::phy;
 use smoltcp::phy::{Device, DeviceCapabilities};
 use smoltcp::storage::RingBuffer;
 use smoltcp::time::Instant;
 use std::cell::{RefCell, RefMut};
-use std::io;
-use std::io::{Read, Write};
 use std::rc::Rc;
 
 #[derive(Debug)]

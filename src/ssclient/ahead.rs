@@ -44,7 +44,6 @@ use log::error;
 use tokio::prelude::{AsyncRead, AsyncWrite};
 
 use super::BUFFER_SIZE;
-use futures::AsyncWriteExt;
 use shadowsocks::crypto::{self, BoxAeadDecryptor, BoxAeadEncryptor, CipherType};
 use shadowsocks::relay::tcprelay::{DecryptedRead, EncryptedWrite};
 

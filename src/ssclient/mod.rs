@@ -7,25 +7,15 @@ const BUFFER_SIZE: usize = 8 * 1024; // 8K buffer
 use crate::ssclient::tcp::{
     connect_proxy_server, proxy_server_handshake, DecryptedHalf, EncryptedHalf,
 };
-use crate::tun::Addr;
-use futures::{
-    compat::Future01CompatExt,
-    executor::LocalSpawner,
-    future::{lazy, TryFutureExt},
-    task::{LocalSpawn, SpawnExt},
-    FutureExt, TryStreamExt,
-};
-use log::trace;
-use shadowsocks::relay::boxed_future;
-use shadowsocks::{Config, ConfigType, ServerAddr, ServerConfig};
-use std::collections::HashMap;
-use std::future::Future;
+use log::debug;
+use shadowsocks::ServerConfig;
 use std::io;
-use std::net::{IpAddr, SocketAddr};
+use std::net::SocketAddr;
 use std::sync::Arc;
-use std::time::Duration;
 use tokio::net::TcpStream;
-use tokio::prelude::Future as Future01;
+use tokio::prelude::future::lazy;
+use tokio::prelude::Future;
+use tokio::runtime::current_thread::spawn;
 use trust_dns_resolver::AsyncResolver;
 
 pub struct SSClient {
@@ -34,14 +24,9 @@ pub struct SSClient {
 }
 
 impl SSClient {
-    pub fn new(server_config: ServerConfig, local_spawner: &mut LocalSpawner) -> Self {
+    pub fn new(server_config: ServerConfig) -> Self {
         let (resolver, background) = AsyncResolver::from_system_conf().unwrap();
-        local_spawner
-            .spawn(background.compat().map(|e| {
-                dbg!(e);
-                ()
-            }))
-            .unwrap();
+        spawn(background.map(|_| ()));
         SSClient {
             srv_cfg: Arc::new(server_config),
             async_resolver: resolver,
@@ -52,19 +37,16 @@ impl SSClient {
         &mut self,
         addr: SocketAddr,
     ) -> impl Future<
-        Output = io::Result<(
-            impl Future<Output = io::Result<DecryptedHalf<TcpStream>>> + Send,
-            impl Future<Output = io::Result<EncryptedHalf<TcpStream>>> + Send,
-        )>,
+        Item = (
+            impl Future<Item = DecryptedHalf<TcpStream>, Error = io::Error> + Send,
+            impl Future<Item = EncryptedHalf<TcpStream>, Error = io::Error> + Send,
+        ),
+        Error = io::Error,
     > + Send {
         let cfg = self.srv_cfg.clone();
-        connect_proxy_server(self.srv_cfg.clone(), &self.async_resolver)
-            .compat()
-            .and_then(move |stream| {
-                lazy(move |_| {
-                    let (r, w) = proxy_server_handshake(stream, cfg, addr.into())?;
-                    Ok((r.compat(), w.compat()))
-                })
-            })
+        connect_proxy_server(self.srv_cfg.clone(), &self.async_resolver).and_then(move |stream| {
+            debug!("connect remote stream");
+            lazy(move || proxy_server_handshake(stream, cfg, addr.into()))
+        })
     }
 }

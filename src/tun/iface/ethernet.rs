@@ -1,6 +1,5 @@
 // Copyright (C) 2016 whitequark@whitequark.org
 // SPDX-License-Identifier: 0BSD
-use crate::tun::phy::TunSocket;
 use log::debug;
 use managed::ManagedSlice;
 use smoltcp::phy::RxToken;
@@ -10,8 +9,8 @@ use smoltcp::socket::{PollAt, Socket, SocketSet, UdpSocket};
 use smoltcp::socket::{SocketHandle, TcpSocket};
 use smoltcp::time::{Duration, Instant};
 use smoltcp::wire::{
-    EthernetFrame, IpAddress, IpCidr, IpEndpoint, IpProtocol, IpRepr, Ipv4Address, Ipv4Packet,
-    Ipv4Repr, PrettyPrinter, TcpControl, TcpPacket, TcpRepr, UdpPacket, UdpRepr,
+    EthernetFrame, IpAddress, IpCidr, IpEndpoint, IpProtocol, IpRepr, Ipv4Packet, Ipv4Repr,
+    PrettyPrinter, TcpControl, TcpPacket, TcpRepr, UdpPacket, UdpRepr,
 };
 use smoltcp::{Error, Result};
 
@@ -276,7 +275,6 @@ where
                 Socket::Tcp(ref mut socket) => {
                     socket.dispatch(timestamp, &caps, |response| respond!(Packet::Tcp(response)))
                 }
-                Socket::__Nonexhaustive(_) => unreachable!(),
                 _ => unreachable!(),
             };
 

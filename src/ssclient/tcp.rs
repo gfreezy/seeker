@@ -4,17 +4,16 @@ use super::stream::DecryptedReader as StreamDecryptedReader;
 use super::stream::EncryptedWriter as StreamEncryptedWriter;
 use byte_string::ByteStr;
 use bytes::{BufMut, BytesMut};
-use futures::TryStreamExt;
 use log::debug;
 use log::trace;
 use shadowsocks::crypto::CipherCategory;
 use shadowsocks::relay::boxed_future;
 use shadowsocks::relay::socks5::Address;
 use shadowsocks::relay::tcprelay::{DecryptedRead, EncryptedWrite, TimeoutFuture};
-use shadowsocks::{Config, ConfigType, ServerAddr, ServerConfig};
+use shadowsocks::{ServerAddr, ServerConfig};
 use std::io;
 use std::io::{BufRead, Read, Write};
-use std::net::{IpAddr, SocketAddr};
+use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::write_all;
@@ -163,7 +162,7 @@ where
     use tokio::prelude::*;
 
     match dur {
-        //        Some(dur) => TimeoutFuture::Wait(fut.timeout(dur)),
+        Some(dur) => TimeoutFuture::Wait(fut.timeout(dur)),
         _ => TimeoutFuture::Direct(fut),
     }
 }

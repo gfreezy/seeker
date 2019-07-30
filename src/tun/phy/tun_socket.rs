@@ -1,21 +1,14 @@
 use super::error;
 use super::sys;
-use futures::{AsyncRead, AsyncWrite};
-use romio::raw::PollEvented;
-use smoltcp::phy;
-use smoltcp::phy::{Device, DeviceCapabilities};
-use smoltcp::time::Instant;
-use std::cell::RefCell;
+
 use std::io;
 use std::io::{Read, Write};
-use std::os::unix::io::{AsRawFd, RawFd};
-use std::pin::Pin;
-use std::process::Command;
-use std::rc::Rc;
-use std::task::{Context, Poll};
+use tokio::io::AsyncRead;
+use tokio::prelude::{Async, AsyncWrite};
+use tokio::reactor::PollEvented2;
 
 pub struct TunSocket {
-    io: PollEvented<sys::TunSocket>,
+    io: PollEvented2<sys::TunSocket>,
     mtu: usize,
     name: String,
 }
@@ -25,7 +18,7 @@ impl TunSocket {
         let lower = sys::TunSocket::new(name)?;
         let mtu = lower.mtu()?;
         Ok(TunSocket {
-            io: PollEvented::new(lower),
+            io: PollEvented2::new(lower),
             name: name.to_string(),
             mtu,
         })
@@ -41,30 +34,38 @@ impl TunSocket {
     }
 }
 
+impl Read for TunSocket {
+    fn read(&mut self, buf: &mut [u8]) -> Result<usize, io::Error> {
+        self.io.read(buf)
+    }
+}
+
+impl Write for TunSocket {
+    fn write(&mut self, buf: &[u8]) -> Result<usize, io::Error> {
+        self.io.write(buf)
+    }
+
+    fn flush(&mut self) -> Result<(), io::Error> {
+        self.io.flush()
+    }
+}
+
 impl AsyncRead for TunSocket {
-    fn poll_read(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &mut [u8],
-    ) -> Poll<io::Result<usize>> {
-        Pin::new(&mut self.get_mut().io).poll_read(cx, buf)
+    fn poll_read(&mut self, buf: &mut [u8]) -> Result<Async<usize>, io::Error> {
+        self.io.poll_read(buf)
     }
 }
 
 impl AsyncWrite for TunSocket {
-    fn poll_write(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &[u8],
-    ) -> Poll<io::Result<usize>> {
-        Pin::new(&mut self.io).poll_write(cx, buf)
+    fn poll_write(&mut self, buf: &[u8]) -> Result<Async<usize>, io::Error> {
+        self.io.poll_write(buf)
     }
 
-    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        Pin::new(&mut self.io).poll_flush(cx)
+    fn poll_flush(&mut self) -> Result<Async<()>, io::Error> {
+        self.io.poll_flush()
     }
 
-    fn poll_close(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        Pin::new(&mut self.io).poll_close(cx)
+    fn shutdown(&mut self) -> Result<Async<()>, io::Error> {
+        self.io.shutdown()
     }
 }
