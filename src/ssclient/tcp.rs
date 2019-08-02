@@ -228,13 +228,15 @@ where
             let mut buf = BytesMut::with_capacity(relay_addr.len());
             relay_addr.write_to_buf(&mut buf);
 
-            trace!(
+            debug!(
                 "Got encrypt stream and going to send addr: {:?}, buf: {:?}",
-                relay_addr,
-                buf
+                relay_addr, buf
             );
 
-            try_timeout(enc_w.write_all(buf), timeout).map(|(w, _)| w)
+            try_timeout(enc_w.write_all(buf), timeout).map(|(w, _)| {
+                debug!("write to relay");
+                w
+            })
         });
 
         (r_fut, w_fut)

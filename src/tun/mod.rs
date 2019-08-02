@@ -2,14 +2,16 @@ use iface::ethernet::{Interface, InterfaceBuilder};
 use iface::phony_socket::PhonySocket;
 use log::debug;
 use phy::TunSocket;
-use smoltcp::socket::{Socket, SocketSet, TcpSocket, UdpSocket};
+use smoltcp::socket::{AnySocket, Socket, SocketHandle, SocketSet, TcpSocket, UdpSocket};
 use smoltcp::time::Instant;
 use smoltcp::wire::IpEndpoint;
 use smoltcp::wire::{IpAddress, IpCidr};
-use std::collections::HashMap;
+use std::borrow::{Borrow, BorrowMut};
+use std::cell::RefCell;
+use std::collections::{HashMap, HashSet};
 use std::io;
 use std::process::Command;
-use tokio::prelude::{Async, AsyncRead, AsyncWrite, Future, Poll};
+use tokio::prelude::{Async, AsyncRead, AsyncWrite, Future, Poll, Stream};
 
 pub mod iface;
 pub mod phy;
@@ -19,7 +21,7 @@ macro_rules! try_ready {
         match $e {
             Ok(Async::Ready(t)) => t,
             Ok(Async::NotReady) => return Ok(Async::NotReady),
-            Err(e) => return Err(From::from(e)),
+            Err(e) => return Err(e),
         }
     };
 }
@@ -73,6 +75,11 @@ impl SocketBuf {
     }
 }
 
+thread_local! {
+    /// Tracks the reactor for the current execution context.
+    static TUN: RefCell<Tun> = RefCell::new(Tun::new("utun4"));
+}
+
 pub struct Tun {
     iface: Interface<'static, PhonySocket>,
     tun: TunSocket,
@@ -92,184 +99,161 @@ impl Tun {
             .any_ip(true)
             .finalize();
 
-        let sockets = SocketSet::new(Vec::with_capacity(100));
+        let sockets = SocketSet::new(vec![]);
         Tun {
             iface,
             tun,
             sockets,
         }
     }
+}
 
-    pub fn recv(&mut self) -> SSClientRead {
-        SSClientRead {
-            iface: &mut self.iface,
-            tun: &mut self.tun,
-            sockets: &mut self.sockets,
-        }
-    }
-
-    pub fn send(&mut self, data: Vec<SocketBuf>) -> SSClientWrite {
-        SSClientWrite {
-            iface: &mut self.iface,
-            tun: &mut self.tun,
-            sockets: &mut self.sockets,
-            data,
-        }
+pub fn listen() -> TunListen {
+    TunListen {
+        new_sockets: vec![],
     }
 }
 
-pub struct SSClientRead<'a> {
-    iface: &'a mut Interface<'static, PhonySocket>,
-    tun: &'a mut TunSocket,
-    sockets: &'a mut SocketSet<'static, 'static, 'static>,
+pub fn bg_send() -> TunWrite {
+    TunWrite { buf: vec![0; 1024] }
 }
 
-impl<'a> Future for SSClientRead<'a> {
-    type Item = Vec<SocketBuf>;
+pub struct TunTcpSocket {
+    handle: SocketHandle,
+}
+
+impl TunTcpSocket {
+    pub fn new(handle: SocketHandle) -> Self {
+        TunTcpSocket { handle }
+    }
+
+    pub fn read(&self, buf: &mut [u8]) -> io::Result<usize> {
+        TUN.with(|tun| {
+            let mut t = tun.borrow_mut();
+            let mut socket = t.sockets.get::<TcpSocket>(self.handle);
+            if socket.may_recv() {
+                socket
+                    .recv_slice(buf)
+                    .map_err(|e| io::ErrorKind::Other.into())
+            } else {
+                Err(io::ErrorKind::WouldBlock.into())
+            }
+        })
+    }
+
+    pub fn write(&self, buf: &[u8]) -> io::Result<usize> {
+        TUN.with(|tun| {
+            let mut t = tun.borrow_mut();
+            let mut socket = t.sockets.get::<TcpSocket>(self.handle);
+            if socket.may_send() {
+                socket
+                    .send_slice(buf)
+                    .map_err(|e| io::ErrorKind::Other.into())
+            } else {
+                Err(io::ErrorKind::WouldBlock.into())
+            }
+        })
+    }
+}
+
+pub struct TunListen {
+    new_sockets: Vec<SocketHandle>,
+}
+
+impl Stream for TunListen {
+    type Item = TunTcpSocket;
     type Error = io::Error;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        {
-            let mut lower = self.iface.device_mut().lower();
-            lower.rx.len();
-            let mut buf = vec![0; 1024];
-            let size = try_ready!(self.tun.poll_read(&mut buf));
-            debug!("ssclientread size {}", size);
-            lower.rx.enqueue_slice(&buf[..size]);
-            debug!("lower.rx size: {}", lower.rx.len());
-        }
+    fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
+        loop {
+            if let Some(handle) = self.new_sockets.pop() {
+                return Ok(Async::Ready(Some(TunTcpSocket::new(handle))));
+            } else {
+                try_ready!(TUN.with(|tun| {
+                    let before_sockets = tun
+                        .borrow()
+                        .sockets
+                        .iter()
+                        .map(|s| s.handle())
+                        .collect::<Vec<_>>();
 
-        match self.iface.poll_read(self.sockets, Instant::now()) {
-            Ok(_) => {
-                debug!("tun.iface.poll_read success");
-            }
-            Err(e) => {
-                debug!("poll_read error: {}", e);
-                return Ok(Async::NotReady);
-            }
-        };
-
-        let mut data = vec![];
-        for mut socket in self.sockets.iter_mut() {
-            let mut buf = vec![0; 1024];
-            match &mut *socket {
-                Socket::Udp(ref mut socket) => {
-                    if !socket.can_recv() {
-                        debug!("skip udp socket: local: {}", socket.endpoint());
-                        continue;
+                    let mut_tun = &mut *tun.borrow_mut();
+                    {
+                        let mut lower = mut_tun.iface.device_mut().lower();
+                        let mut buf = vec![0; 1024];
+                        let size = try_ready!(mut_tun.tun.poll_read(&mut buf));
+                        debug!("ssclientread size {}", size);
+                        lower.rx.enqueue_slice(&buf[..size]);
+                        debug!("lower.rx size: {}", lower.rx.len());
                     }
 
-                    match socket.recv_slice(&mut buf) {
-                        Ok((size, endpoint)) => {
-                            buf.truncate(size);
-                            data.push(SocketBuf::new_udp(endpoint, socket.endpoint(), buf));
+                    match mut_tun
+                        .iface
+                        .poll_read(&mut mut_tun.sockets, Instant::now())
+                    {
+                        Ok(_) => {
+                            debug!("tun.iface.poll_read success");
                         }
                         Err(e) => {
-                            debug!("udp socket recv error: {}", e);
+                            debug!("poll_read error: {}", e);
                         }
                     };
-                }
-                Socket::Tcp(ref mut socket) => {
-                    if !socket.may_recv() {
-                        debug!(
-                            "skip tcp socket local: {}, remote: {}",
-                            socket.local_endpoint(),
-                            socket.remote_endpoint()
-                        );
-                        continue;
-                    }
-                    match socket.recv_slice(&mut buf) {
-                        Ok(size) => {
-                            buf.truncate(size);
-                            data.push(SocketBuf::new_tcp(
-                                socket.remote_endpoint(),
-                                socket.local_endpoint(),
-                                buf,
-                            ));
-                        }
-                        Err(e) => {
-                            debug!("tcp socket recv error: {}", e);
-                        }
-                    }
-                }
-                _ => unreachable!(),
+
+                    let after_sockets = TUN.with(|tun| {
+                        tun.borrow()
+                            .sockets
+                            .iter()
+                            .map(|s| s.handle())
+                            .collect::<Vec<_>>()
+                    });
+
+                    self.new_sockets = after_sockets
+                        .into_iter()
+                        .filter(|s| !before_sockets.contains(s))
+                        .collect();
+
+                    Ok(Async::Ready(()))
+                }))
             }
         }
-
-        Ok(Async::Ready(data))
     }
 }
 
-pub struct SSClientWrite<'a> {
-    iface: &'a mut Interface<'static, PhonySocket>,
-    tun: &'a mut TunSocket,
-    sockets: &'a mut SocketSet<'static, 'static, 'static>,
-    data: Vec<SocketBuf>,
+pub struct TunWrite {
+    buf: Vec<u8>,
 }
 
-impl<'a> Future for SSClientWrite<'a> {
+impl Future for TunWrite {
     type Item = ();
     type Error = io::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        #[derive(Copy, Clone, Hash, PartialEq, Eq, Debug)]
-        enum MapKey {
-            Udp(IpEndpoint),
-            Tcp(IpEndpoint, IpEndpoint),
-        }
-
-        let mut map = HashMap::with_capacity(10);
-        for mut socket in self.sockets.iter_mut() {
-            let (key, handle) = match &mut *socket {
-                Socket::Udp(socket) => (MapKey::Udp(socket.endpoint()), socket.handle()),
-                Socket::Tcp(socket) => (
-                    MapKey::Tcp(socket.local_endpoint(), socket.remote_endpoint()),
-                    socket.handle(),
-                ),
-                _ => unreachable!(),
-            };
-            map.insert(key, handle);
-        }
-
-        macro_rules! get_socket {
-            ($key:expr, $ty:ty) => {{
-                let handle = map[$key];
-                self.sockets.get::<$ty>(handle)
-            }};
-        }
-
-        for socket_buf in &self.data {
-            match socket_buf {
-                SocketBuf::Tcp(Addr { src, dst }, buf) => {
-                    let mut socket = get_socket!(&MapKey::Tcp(*src, *dst), TcpSocket);
-                    let size = socket.send_slice(&buf).unwrap();
-                    assert_eq!(size, buf.len());
-                }
-                SocketBuf::Udp(Addr { src, dst }, buf) => {
-                    let mut socket = get_socket!(&MapKey::Udp(*src), UdpSocket);
-                    socket.send_slice(&buf, *dst).unwrap();
-                }
-            }
-        }
-
-        match self.iface.poll_write(self.sockets, Instant::now()) {
-            Ok(_) => debug!("tun.iface.poll_write successfully"),
-            Err(e) => {
-                debug!("poll_read error: {}", e);
-            }
-        };
-
-        let mut lower = self.iface.device_mut().lower();
         loop {
-            debug!("lower.tx.dequeue_many");
-            let ip_buf = lower.tx.dequeue_many(1024);
-            if ip_buf.is_empty() {
-                break;
-            }
-            let size = try_ready!(self.tun.poll_write(ip_buf));
-            assert_eq!(size, ip_buf.len())
-        }
+            try_ready!(TUN.with(|tun| {
+                let mut_tun = &mut *tun.borrow_mut();
 
-        Ok(Async::Ready(()))
+                if self.buf.is_empty() {
+                    match mut_tun
+                        .iface
+                        .poll_write(&mut mut_tun.sockets, Instant::now())
+                    {
+                        Ok(_) => debug!("tun.iface.poll_write successfully"),
+                        Err(e) => {
+                            debug!("poll_read error: {}", e);
+                        }
+                    }
+
+                    let mut lower = mut_tun.iface.device_mut().lower();
+                    debug!("lower.tx.dequeue_many");
+                    let size = lower.tx.dequeue_slice(&mut self.buf);
+                    self.buf.truncate(size);
+                }
+
+                let size = try_ready!(mut_tun.tun.poll_write(&self.buf));
+                let s2 = self.buf.drain(0..size).count();
+                debug!("write {} bytes to tun.", s2);
+                Ok(Async::Ready(()))
+            }))
+        }
     }
 }
