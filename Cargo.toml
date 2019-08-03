@@ -25,7 +25,8 @@ shadowsocks-rust = {version = "1.7.0", features = ["sodium"], default-features =
 
 [dependencies.smoltcp]
 git = "https://github.com/gfreezy/smoltcp"
-branch = "pub-fun"
+rev = "10eff99"
+
 default-features = false
 features = [
 	"std", "log",

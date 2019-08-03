@@ -1,3 +1,4 @@
+use log::debug;
 use smoltcp::phy;
 use smoltcp::phy::{Device, DeviceCapabilities};
 use smoltcp::storage::RingBuffer;
@@ -51,6 +52,7 @@ impl<'a> Device<'a> for PhonySocket {
 
         let mut buf = vec![0; self.mtu];
         let size = lower.rx.dequeue_slice(&mut buf);
+        debug!("dequeue {} bytes", size);
         buf.truncate(size);
         let rx = RxToken { buf };
         let tx = TxToken {
@@ -100,6 +102,11 @@ impl phy::TxToken for TxToken {
         let mut buf = vec![0; len];
         let ret = f(&mut buf);
         let size = lower.tx.enqueue_slice(&buf);
+        debug!(
+            "tx.enqueue_slice: {}, lower.tx size: {}",
+            size,
+            lower.tx.len()
+        );
         assert_eq!(size, len);
         ret
     }

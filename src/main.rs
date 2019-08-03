@@ -18,7 +18,7 @@ use std::io::Read;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::time::Duration;
 use tokio::prelude::future::lazy;
-use tokio::prelude::{AsyncRead, AsyncSink, AsyncWrite, Future, Sink, Stream};
+use tokio::prelude::{AsyncRead, AsyncSink, AsyncWrite, Future, Sink, Stream, Write};
 use tokio::runtime::current_thread::{block_on_all, run, spawn};
 use tokio::sync::mpsc::channel;
 use tun::{Addr, SocketBuf, Tun};
@@ -41,12 +41,10 @@ fn main() -> io::Result<()> {
     run(lazy(|| {
         spawn(bg_send().map_err(|_| ()));
         listen()
-            .for_each(|socket| {
+            .for_each(|mut socket| {
                 spawn(lazy(move || {
-                    let mut buf = vec![0; 1024];
-                    let size = socket.read(&mut buf).unwrap();
-                    let s = socket.write(&buf[..size]).unwrap();
-                    Ok(())
+                    let (reader, writer) = socket.split();
+                    tokio::io::copy(reader, writer).map(|_| ()).map_err(|_| ())
                 }));
                 Ok(())
             })
