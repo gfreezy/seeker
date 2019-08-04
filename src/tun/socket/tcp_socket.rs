@@ -1,8 +1,10 @@
+use crate::tun::socket::to_socket_addr;
 use crate::tun::TUN;
 use log::debug;
 use smoltcp::socket::{SocketHandle, TcpSocket};
 use std::io;
 use std::io::{Read, Write};
+use std::net::SocketAddr;
 use tokio::prelude::task::current;
 use tokio::prelude::{Async, AsyncRead, AsyncWrite};
 
@@ -14,6 +16,22 @@ pub struct TunTcpSocket {
 impl TunTcpSocket {
     pub fn new(handle: SocketHandle) -> Self {
         TunTcpSocket { handle }
+    }
+
+    pub fn remote_addr(&self) -> SocketAddr {
+        TUN.with(|tun| {
+            let mut t = tun.borrow_mut();
+            let mut socket = t.sockets.get::<TcpSocket>(self.handle);
+            to_socket_addr(socket.remote_endpoint())
+        })
+    }
+
+    pub fn local_addr(&self) -> SocketAddr {
+        TUN.with(|tun| {
+            let mut t = tun.borrow_mut();
+            let mut socket = t.sockets.get::<TcpSocket>(self.handle);
+            to_socket_addr(socket.local_endpoint())
+        })
     }
 }
 

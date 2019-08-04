@@ -1,0 +1,4 @@
+#!/bin/bash
+HOST=$1
+sudo route add `dig $HOST|grep 'ANSWER SECTION' -A 1|tail -n 1|awk '{print $NF}'` 10.0.0.1
+curl $HOST

@@ -463,6 +463,9 @@ impl<'a> InterfaceInner<'a> {
         // Auto create a new  udp socket.
         let handle = self.new_tcp_socket(sockets, &ip_repr, &tcp_repr);
         let mut tcp_socket = sockets.get::<TcpSocket>(handle);
+        if !tcp_socket.accepts(&ip_repr, &tcp_repr) {
+            panic!("tcp sockt not accepts: {:?} {:?}", &ip_repr, &tcp_repr);
+        }
         match tcp_socket.process(timestamp, &ip_repr, &tcp_repr) {
             // The packet is valid and handled by socket.
             Ok(reply) => return Ok(reply.map_or(Packet::None, Packet::Tcp)),
