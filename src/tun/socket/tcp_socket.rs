@@ -28,7 +28,7 @@ impl Read for TunTcpSocket {
                 if socket.can_recv() {
                     let size = socket
                         .recv_slice(buf)
-                        .map_err(|e| -> io::Error { io::ErrorKind::Other.into() })?;
+                        .map_err(|_| -> io::Error { io::ErrorKind::Other.into() })?;
                     Ok(size)
                 } else {
                     debug!("TunTcpSocket.read will block");
@@ -52,7 +52,7 @@ impl Write for TunTcpSocket {
             if socket.can_send() {
                 let size = socket
                     .send_slice(buf)
-                    .map_err(|e| -> io::Error { io::ErrorKind::Other.into() })?;
+                    .map_err(|_| -> io::Error { io::ErrorKind::Other.into() })?;
                 if let Some(task) = t.tun_write_task.take() {
                     task.notify();
                 }

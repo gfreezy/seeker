@@ -7,21 +7,17 @@ pub mod socket;
 use iface::ethernet::{Interface, InterfaceBuilder};
 use iface::phony_socket::PhonySocket;
 use log::debug;
-use smoltcp::socket::{AnySocket, Socket, SocketHandle, SocketSet, TcpSocket, UdpSocket};
+use smoltcp::socket::{Socket, SocketHandle, SocketSet, TcpSocket};
 use smoltcp::time::Instant;
-use smoltcp::wire::IpEndpoint;
 use smoltcp::wire::{IpAddress, IpCidr};
-use std::borrow::{Borrow, BorrowMut};
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::io;
 use std::process::Command;
 use tokio::prelude::task::Task;
-use tokio::prelude::{
-    task::current, Async, AsyncRead, AsyncWrite, Future, Poll, Read, Stream, Write,
-};
+use tokio::prelude::{task::current, Async, AsyncRead, AsyncWrite, Future, Poll, Stream};
 
-use socket::{TunSocket, TunTcpSocket, TunUdpSocket};
+use socket::TunSocket;
 
 fn setup_ip(tun_name: &str, ip: &str, dest_ip: &str) {
     let output = Command::new("ifconfig")

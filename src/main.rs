@@ -1,26 +1,19 @@
-#![feature(async_await)]
-
 mod ssclient;
 mod tun;
 
 use crate::tun::socket::TunSocket;
 use crate::tun::{bg_send, listen};
-use log::debug;
 use shadowsocks::crypto::CipherType;
 use shadowsocks::relay::tcprelay::{DecryptedRead, EncryptedWrite};
 use shadowsocks::{ServerAddr, ServerConfig};
 use smoltcp::wire::IpAddress;
 use smoltcp::wire::IpEndpoint;
-use std::collections::HashMap;
 use std::env;
 use std::io;
-use std::io::Read;
 use std::net::{Ipv4Addr, SocketAddr};
-use std::time::Duration;
 use tokio::prelude::future::lazy;
-use tokio::prelude::{AsyncRead, AsyncSink, AsyncWrite, Future, IntoFuture, Sink, Stream, Write};
-use tokio::runtime::current_thread::{block_on_all, run, spawn};
-use tokio::sync::mpsc::channel;
+use tokio::prelude::{AsyncRead, Future, Stream};
+use tokio::runtime::current_thread::{run, spawn};
 
 fn main() -> io::Result<()> {
     env_logger::init();
@@ -40,7 +33,7 @@ fn main() -> io::Result<()> {
     run(lazy(|| {
         spawn(bg_send().map_err(|_| ()));
         listen()
-            .for_each(|mut socket| {
+            .for_each(|socket| {
                 spawn(lazy(move || -> Box<dyn Future<Item = (), Error = ()>> {
                     match socket {
                         TunSocket::Tcp(socket) => {
@@ -48,7 +41,7 @@ fn main() -> io::Result<()> {
                             Box::new(tokio::io::copy(reader, writer).map(|_| ()).map_err(|_| ()))
                         }
                         TunSocket::Udp(socket) => {
-                            let mut buf = vec![0; 1000];
+                            let buf = vec![0; 1000];
                             Box::new(
                                 socket
                                     .recv_dgram(buf)
@@ -68,14 +61,4 @@ fn main() -> io::Result<()> {
     }));
 
     Ok(())
-}
-
-fn to_socket_addr(endpoint: IpEndpoint) -> SocketAddr {
-    match endpoint.addr {
-        IpAddress::Ipv4(addr) => {
-            let a: Ipv4Addr = addr.into();
-            (a, endpoint.port).into()
-        }
-        _ => unreachable!(),
-    }
 }

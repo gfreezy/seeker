@@ -223,6 +223,7 @@ impl TunSocket {
         self.write(src, AF_INET as u8)
     }
 
+    #[allow(dead_code)]
     pub fn write6(&self, src: &[u8]) -> usize {
         self.write(src, AF_INET6 as u8)
     }

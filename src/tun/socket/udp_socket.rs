@@ -2,11 +2,10 @@ use crate::tun::socket::to_socket_addr;
 use crate::tun::TUN;
 use log::debug;
 use smoltcp::socket::{SocketHandle, UdpSocket};
-use std::io::{Read, Write};
+use std::io;
 use std::net::SocketAddr;
-use std::{io, mem};
 use tokio::prelude::task::current;
-use tokio::prelude::{Async, AsyncRead, AsyncWrite, Future, Poll};
+use tokio::prelude::{Async, Future, Poll};
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct TunUdpSocket {
@@ -26,7 +25,7 @@ impl TunUdpSocket {
             if socket.can_recv() {
                 let (size, endpoint) = socket
                     .recv_slice(buf)
-                    .map_err(|e| -> io::Error { io::ErrorKind::Other.into() })?;
+                    .map_err(|_| -> io::Error { io::ErrorKind::Other.into() })?;
                 Ok(Async::Ready((size, to_socket_addr(endpoint))))
             } else {
                 let h = socket.handle();
@@ -48,7 +47,7 @@ impl TunUdpSocket {
                 };
                 socket
                     .send_slice(buf, endpoint)
-                    .map_err(|e| -> io::Error { io::ErrorKind::Other.into() })?;
+                    .map_err(|_e| -> io::Error { io::ErrorKind::Other.into() })?;
                 if let Some(task) = t.tun_write_task.take() {
                     task.notify();
                 }
