@@ -1,9 +1,9 @@
 #![feature(async_await)]
-#![feature(impl_trait_in_bindings)]
 
 mod ssclient;
 mod tun;
 
+use crate::tun::socket::TunSocket;
 use crate::tun::{bg_send, listen};
 use log::debug;
 use shadowsocks::crypto::CipherType;
@@ -18,10 +18,9 @@ use std::io::Read;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::time::Duration;
 use tokio::prelude::future::lazy;
-use tokio::prelude::{AsyncRead, AsyncSink, AsyncWrite, Future, Sink, Stream, Write};
+use tokio::prelude::{AsyncRead, AsyncSink, AsyncWrite, Future, IntoFuture, Sink, Stream, Write};
 use tokio::runtime::current_thread::{block_on_all, run, spawn};
 use tokio::sync::mpsc::channel;
-use tun::{Addr, SocketBuf, Tun};
 
 fn main() -> io::Result<()> {
     env_logger::init();
@@ -42,9 +41,26 @@ fn main() -> io::Result<()> {
         spawn(bg_send().map_err(|_| ()));
         listen()
             .for_each(|mut socket| {
-                spawn(lazy(move || {
-                    let (reader, writer) = socket.split();
-                    tokio::io::copy(reader, writer).map(|_| ()).map_err(|_| ())
+                spawn(lazy(move || -> Box<dyn Future<Item = (), Error = ()>> {
+                    match socket {
+                        TunSocket::Tcp(socket) => {
+                            let (reader, writer) = socket.split();
+                            Box::new(tokio::io::copy(reader, writer).map(|_| ()).map_err(|_| ()))
+                        }
+                        TunSocket::Udp(socket) => {
+                            let mut buf = vec![0; 1000];
+                            Box::new(
+                                socket
+                                    .recv_dgram(buf)
+                                    .and_then(|(socket, mut buf, size, addr)| {
+                                        buf.truncate(size);
+                                        socket.send_dgram(buf, addr)
+                                    })
+                                    .map(|_| ())
+                                    .map_err(|_| ()),
+                            )
+                        }
+                    }
                 }));
                 Ok(())
             })
