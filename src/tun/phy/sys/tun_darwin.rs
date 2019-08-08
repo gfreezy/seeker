@@ -3,6 +3,7 @@
 
 use crate::tun::phy::{errno_str, Error};
 use libc::*;
+use std::io;
 use std::mem::size_of;
 use std::mem::size_of_val;
 use std::os::unix::io::{AsRawFd, RawFd};
@@ -190,7 +191,7 @@ impl TunSocket {
         Ok(unsafe { ifr.ifr_ifru.ifru_mtu } as _)
     }
 
-    fn write(&self, src: &[u8], af: u8) -> usize {
+    fn write(&self, src: &[u8], af: u8) -> io::Result<usize> {
         let mut hdr = [0u8, 0u8, 0u8, af as u8];
         let mut iov = [
             iovec {
@@ -214,21 +215,21 @@ impl TunSocket {
         };
 
         match unsafe { sendmsg(self.fd, &msg_hdr, 0) } {
-            -1 => 0,
-            n => (n - 4) as usize,
+            -1 => Err(io::Error::last_os_error()),
+            n => Ok((n - 4) as usize),
         }
     }
 
-    pub fn write4(&self, src: &[u8]) -> usize {
+    pub fn write4(&self, src: &[u8]) -> io::Result<usize> {
         self.write(src, AF_INET as u8)
     }
 
     #[allow(dead_code)]
-    pub fn write6(&self, src: &[u8]) -> usize {
+    pub fn write6(&self, src: &[u8]) -> io::Result<usize> {
         self.write(src, AF_INET6 as u8)
     }
 
-    pub fn read<'a>(&self, dst: &'a mut [u8]) -> Result<&'a mut [u8], Error> {
+    pub fn read<'a>(&self, dst: &'a mut [u8]) -> io::Result<&'a mut [u8]> {
         let mut hdr = [0u8; 4];
 
         let mut iov = [
@@ -253,7 +254,7 @@ impl TunSocket {
         };
 
         match unsafe { recvmsg(self.fd, &mut msg_hdr, 0) } {
-            -1 => Err(Error::IfaceRead(errno())),
+            -1 => Err(io::Error::last_os_error()),
             0..=4 => Ok(&mut dst[..0]),
             n => Ok(&mut dst[..(n - 4) as usize]),
         }

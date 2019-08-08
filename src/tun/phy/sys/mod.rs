@@ -41,15 +41,14 @@ impl Read for TunSocket {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, io::Error> {
         match self.tun.read(buf) {
             Ok(filled_buf) => Ok(filled_buf.len()),
-            Err(error::Error::IfaceRead(_errno)) => Err(io::Error::last_os_error()),
-            Err(err) => panic!("unexpected error: {}", err),
+            Err(err) => Err(err),
         }
     }
 }
 
 impl Write for TunSocket {
     fn write(&mut self, buf: &[u8]) -> Result<usize, io::Error> {
-        Ok(self.tun.write4(buf))
+        self.tun.write4(buf)
     }
 
     fn flush(&mut self) -> Result<(), io::Error> {

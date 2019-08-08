@@ -178,12 +178,11 @@ pub fn connect_proxy_server(
     debug!("Connecting to proxy {:?}, timeout: {:?}", svr_addr, timeout);
     match svr_addr {
         ServerAddr::SocketAddr(addr) => {
-            dbg!(addr);
+            addr;
             let fut = try_timeout(TcpStream::connect(addr), timeout);
             boxed_future(fut)
         }
         ServerAddr::DomainName(domain, port) => {
-            dbg!(domain, port);
             let port = *port;
             let fut = {
                 try_timeout(
@@ -194,13 +193,12 @@ pub fn connect_proxy_server(
                     timeout,
                 )
                 .and_then(move |ips| {
-                    dbg!(&ips);
                     let ip = ips.into_iter().next().unwrap();
                     let fut = TcpStream::connect(&SocketAddr::new(ip, port));
                     try_timeout(fut, timeout)
                 })
                 .map_err(|e| {
-                    debug!("resolve error: {}", e);
+                    debug!("resolve error2: {}", e);
                     e
                 })
             };

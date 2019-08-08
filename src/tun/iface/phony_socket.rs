@@ -6,6 +6,8 @@ use smoltcp::time::Instant;
 use std::cell::{RefCell, RefMut};
 use std::rc::Rc;
 
+const MAX_PACKETS: usize = 10;
+
 #[derive(Debug)]
 pub struct PhonySocket {
     lower: Rc<RefCell<Lower>>,
@@ -15,7 +17,7 @@ pub struct PhonySocket {
 impl PhonySocket {
     pub fn new(mtu: usize) -> Self {
         PhonySocket {
-            lower: Rc::new(RefCell::new(Lower::new())),
+            lower: Rc::new(RefCell::new(Lower::new(mtu))),
             mtu,
         }
     }
@@ -28,14 +30,22 @@ impl PhonySocket {
 #[derive(Debug)]
 pub struct Lower {
     pub rx: RingBuffer<'static, u8>,
-    pub tx: RingBuffer<'static, u8>,
+    pub tx: RingBuffer<'static, Vec<u8>>,
 }
 
 impl Lower {
-    pub fn new() -> Self {
+    pub fn new(mtu: usize) -> Self {
+        // TODO: tx 应该是一个 Vec<Packet>，发送的时候要以 packet 为单位发送，不能将 packet 拆分
+        let tx = {
+            let mut tx = Vec::with_capacity(MAX_PACKETS);
+            for i in 0..MAX_PACKETS {
+                tx.push(vec![0; mtu])
+            }
+            tx
+        };
         Lower {
-            rx: RingBuffer::new(vec![0; 1024 * 10]),
-            tx: RingBuffer::new(vec![0; 1024 * 10]),
+            rx: RingBuffer::new(vec![0; mtu * MAX_PACKETS]),
+            tx: RingBuffer::new(tx),
         }
     }
 }
@@ -99,15 +109,10 @@ impl phy::TxToken for TxToken {
         F: FnOnce(&mut [u8]) -> smoltcp::Result<R>,
     {
         let mut lower = self.lower.borrow_mut();
-        let mut buf = vec![0; len];
-        let ret = f(&mut buf);
-        let size = lower.tx.enqueue_slice(&buf);
-        debug!(
-            "tx.enqueue_slice: {}, lower.tx size: {}",
-            size,
-            lower.tx.len()
-        );
-        assert_eq!(size, len);
+        let buf = lower.tx.enqueue_one()?;
+        buf.resize(len, 0);
+        let ret = f(buf);
+        debug!("TxToken.consume {} bytes", len);
         ret
     }
 }

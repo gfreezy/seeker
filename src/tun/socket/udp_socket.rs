@@ -7,13 +7,14 @@ use std::net::SocketAddr;
 use tokio::prelude::task::current;
 use tokio::prelude::{Async, Future, Poll};
 
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Eq, PartialEq, Hash)]
 pub struct TunUdpSocket {
     pub(crate) handle: SocketHandle,
 }
 
 impl TunUdpSocket {
     pub fn new(handle: SocketHandle) -> Self {
+        TUN.with(|tun| tun.borrow_mut().sockets.retain(handle));
         TunUdpSocket { handle }
     }
 
@@ -72,6 +73,18 @@ impl TunUdpSocket {
         T: AsRef<[u8]>,
     {
         TunSendDgram::new(self, buf, addr)
+    }
+}
+
+impl Clone for TunUdpSocket {
+    fn clone(&self) -> Self {
+        TunUdpSocket::new(self.handle)
+    }
+}
+
+impl Drop for TunUdpSocket {
+    fn drop(&mut self) {
+        TUN.with(|tun| tun.borrow_mut().sockets.release(self.handle))
     }
 }
 

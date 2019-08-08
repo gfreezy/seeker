@@ -6,7 +6,7 @@ pub mod socket;
 
 use iface::ethernet::{Interface, InterfaceBuilder};
 use iface::phony_socket::PhonySocket;
-use log::debug;
+use log::{debug, error};
 use smoltcp::socket::{Socket, SocketHandle, SocketSet, TcpSocket};
 use smoltcp::time::Instant;
 use smoltcp::wire::{IpAddress, IpCidr};
@@ -17,6 +17,8 @@ use std::process::Command;
 use tokio::prelude::task::Task;
 use tokio::prelude::{task::current, Async, AsyncRead, AsyncWrite, Future, Poll, Stream};
 
+use crate::tun::phy::Error;
+use crate::tun::socket::TunTcpSocket;
 use socket::TunSocket;
 
 fn setup_ip(tun_name: &str, ip: &str, dest_ip: &str) {
@@ -63,7 +65,7 @@ impl Tun {
     pub fn new(tun_name: &str) -> Self {
         let tun = phy::TunSocket::new(tun_name).expect("open tun");
         let tun_name = tun.name();
-        setup_ip(&tun_name, "10.0.0.1", "10.0.0.100");
+        setup_ip(&tun_name, "10.0.0.1", "10.0.1.1");
 
         let device = PhonySocket::new(tun.mtu());
         let ip_addrs = vec![IpCidr::new(IpAddress::v4(10, 0, 0, 1), 24)];
@@ -92,7 +94,7 @@ pub fn listen() -> TunListen {
 }
 
 pub fn bg_send() -> TunWrite {
-    TunWrite { buf: vec![0; 1024] }
+    TunWrite { buf: vec![0; 1530] }
 }
 
 pub struct TunListen {
@@ -102,7 +104,13 @@ pub struct TunListen {
 
 impl TunListen {
     fn may_recv_tun_sockets(&mut self) -> HashSet<TunSocket> {
-        TUN.with(|tun| {
+        #[derive(Debug, Eq, PartialEq, Hash)]
+        enum Handle {
+            Tcp(SocketHandle),
+            Udp(SocketHandle),
+        }
+
+        let handles = TUN.with(|tun| {
             let mut_tun = &mut *tun.borrow_mut();
             mut_tun
                 .sockets
@@ -110,14 +118,14 @@ impl TunListen {
                 .filter_map(|s| match s {
                     Socket::Tcp(s) => {
                         if s.may_recv() {
-                            Some(TunSocket::new_tcp_socket(s.handle()))
+                            Some(Handle::Tcp(s.handle()))
                         } else {
                             None
                         }
                     }
                     Socket::Udp(s) => {
                         if s.can_recv() {
-                            Some(TunSocket::new_udp_socket(s.handle()))
+                            Some(Handle::Udp(s.handle()))
                         } else {
                             None
                         }
@@ -125,7 +133,15 @@ impl TunListen {
                     _ => unreachable!(),
                 })
                 .collect::<HashSet<_>>()
-        })
+        });
+
+        handles
+            .into_iter()
+            .map(|h| match h {
+                Handle::Tcp(h) => TunSocket::new_tcp_socket(h),
+                Handle::Udp(h) => TunSocket::new_udp_socket(h),
+            })
+            .collect()
     }
 }
 
@@ -136,6 +152,7 @@ impl Stream for TunListen {
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
         debug!("TunListen.poll");
         loop {
+            debug!("TunListen.poll start loop");
             if let Some(s) = self.new_sockets.pop() {
                 debug!("new socket: {}", s);
                 if let TunSocket::Tcp(_) = s {
@@ -165,16 +182,16 @@ impl Stream for TunListen {
                             debug!("tun.iface.poll_read success");
                         }
                         Err(e) => {
-                            debug!("poll_read error: {}, poll again", e);
+                            error!("poll_read error: {}, poll again", e);
                             return Ok(Async::Ready(()));
                         }
                     };
 
                     if let Some(task) = mut_tun.tun_write_task.take() {
+                        debug!("notify TunWrite");
                         task.notify();
                     }
 
-                    let mut to_remove_handle = vec![];
                     for mut socket in mut_tun.sockets.iter_mut() {
                         match &mut *socket {
                             Socket::Tcp(ref mut s) => {
@@ -191,8 +208,6 @@ impl Stream for TunListen {
                                             }
                                         }
                                     }
-                                } else {
-                                    to_remove_handle.push(s.handle());
                                 }
                             }
                             Socket::Udp(s) => {
@@ -215,31 +230,33 @@ impl Stream for TunListen {
                         }
                     }
 
-                    for h in to_remove_handle {
-                        mut_tun.sockets.remove(h);
-                        self.active_tcp_handles.remove(&h);
-                    }
-
-                    Ok(Async::Ready(()))
-                }));
-
-                TUN.with(|tun| {
-                    let mut_tun = &mut *tun.borrow_mut();
-
+                    let mut to_remove_handle = vec![];
                     for handle in &self.active_tcp_handles {
                         let mut s = mut_tun.sockets.get::<TcpSocket>(*handle);
                         if !s.may_recv() {
                             debug!("close socket {}", handle);
                             s.close();
-                            if let Some(t) = mut_tun.socket_read_tasks.get_mut(&s.handle()) {
+                            to_remove_handle.push(*handle);
+                            if let Some(t) = mut_tun.socket_read_tasks.get_mut(handle) {
                                 if let Some(task) = t.take() {
-                                    debug!("notify udp socket {} to close", s.handle());
+                                    debug!("notify tcp socket {} to close", handle);
                                     task.notify();
                                 }
                             }
                         }
                     }
-                });
+
+                    for h in to_remove_handle {
+                        debug!("TunListen.poll release handle: {}", h);
+                        mut_tun.sockets.release(h);
+                        self.active_tcp_handles.remove(&h);
+                    }
+
+                    debug!("TunListen.poll sockets.prune");
+                    mut_tun.sockets.prune();
+
+                    Ok(Async::Ready(()))
+                }));
 
                 let after_sockets = self.may_recv_tun_sockets();
 
@@ -253,78 +270,94 @@ pub struct TunWrite {
     buf: Vec<u8>,
 }
 
+impl TunWrite {
+    fn poll_write_sockets_to_phoney_socket(tun: &mut Tun) -> Poll<(), io::Error> {
+        let processed_any = match tun.iface.poll_write(&mut tun.sockets, Instant::now()) {
+            Ok(processed) => {
+                debug!("tun.iface.poll_write successfully");
+                processed
+            }
+            Err(e) => {
+                error!("poll_read error: {}, poll again.", e);
+                return Ok(Async::Ready(()));
+            }
+        };
+
+        debug!("TunWrite processed_any: {}", processed_any);
+
+        for socket in tun.sockets.iter_mut() {
+            match &*socket {
+                Socket::Tcp(s) => {
+                    debug!("tcp socket {} state: {}.", s.handle(), s.state());
+                    if s.can_send() {
+                        debug!("tcp socket {} can send", s.handle());
+                        if let Some(t) = tun.socket_write_tasks.get_mut(&s.handle()) {
+                            if let Some(task) = t.take() {
+                                debug!("notify tcp socket {} for write", s.handle());
+                                task.notify();
+                            }
+                        }
+                    }
+                }
+                Socket::Udp(s) => {
+                    if s.can_send() {
+                        debug!("udp socket {} can send.", s.handle());
+                        if let Some(t) = tun.socket_read_tasks.get_mut(&s.handle()) {
+                            if let Some(task) = t.take() {
+                                debug!("notify udp socket {} for write", s.handle());
+                                task.notify();
+                            }
+                        }
+                    }
+                }
+                _ => unreachable!(),
+            }
+        }
+
+        if !processed_any {
+            debug!("TunWrite NotReady");
+            tun.tun_write_task = Some(current());
+            return Ok(Async::NotReady);
+        }
+        Ok(Async::Ready(()))
+    }
+}
+
 impl Future for TunWrite {
     type Item = ();
     type Error = io::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         loop {
-            try_ready!(TUN.with(|tun| {
+            debug!("TunWrite.poll loop: self.buf: {}", self.buf.len());
+            match TUN.with(|tun| {
                 let mut_tun = &mut *tun.borrow_mut();
 
-                if self.buf.is_empty() {
-                    let processed_any = match mut_tun
-                        .iface
-                        .poll_write(&mut mut_tun.sockets, Instant::now())
-                    {
-                        Ok(processed) => {
-                            debug!("tun.iface.poll_write successfully");
-                            processed
-                        }
-                        Err(e) => {
-                            debug!("poll_read error: {}, poll again.", e);
+                {
+                    let mut lower = mut_tun.iface.device_mut().lower();
+                    let buf = lower.tx.dequeue_one();
+                    match buf {
+                        Ok(buf) => {
+                            debug!("lower.tx.dequeue_one, size: {}", buf.len());
+
+                            let size = try_ready!(mut_tun.tun.poll_write(buf.as_slice()));
+                            assert_eq!(size, buf.len());
+                            debug!("write {} bytes to tun.", size);
                             return Ok(Async::Ready(()));
                         }
-                    };
-
-                    for socket in mut_tun.sockets.iter_mut() {
-                        match &*socket {
-                            Socket::Tcp(s) => {
-                                if s.can_send() {
-                                    debug!("tcp socket {} can send", s.handle());
-                                    if let Some(t) = mut_tun.socket_write_tasks.get_mut(&s.handle())
-                                    {
-                                        if let Some(task) = t.take() {
-                                            debug!("notify tcp socket {} for write", s.handle());
-                                            task.notify();
-                                        }
-                                    }
-                                }
-                            }
-                            Socket::Udp(s) => {
-                                if s.can_send() {
-                                    debug!("udp socket {} can send.", s.handle());
-                                    if let Some(t) = mut_tun.socket_read_tasks.get_mut(&s.handle())
-                                    {
-                                        if let Some(task) = t.take() {
-                                            debug!("notify udp socket {} for write", s.handle());
-                                            task.notify();
-                                        }
-                                    }
-                                }
-                            }
-                            _ => unreachable!(),
+                        Err(smoltcp::Error::Exhausted) => {}
+                        Err(err) => {
+                            return Err(io::Error::new(io::ErrorKind::Other, err.to_string()))
                         }
                     }
-
-                    if !processed_any {
-                        mut_tun.tun_write_task = Some(current());
-                        return Ok(Async::NotReady);
-                    }
-
-                    let mut lower = mut_tun.iface.device_mut().lower();
-                    self.buf.resize(self.buf.capacity(), 0);
-                    let size = lower.tx.dequeue_slice(&mut self.buf);
-                    debug!("lower.tx.dequeue_slice: {}", size);
-                    self.buf.truncate(size);
-                    debug!("tun write buf {}", self.buf.len());
                 }
 
-                let size = try_ready!(mut_tun.tun.poll_write(&self.buf));
-                let s2 = self.buf.drain(0..size).count();
-                debug!("write {} bytes to tun.", s2);
-                Ok(Async::Ready(()))
-            }))
+                TunWrite::poll_write_sockets_to_phoney_socket(&mut *mut_tun)
+            }) {
+                Ok(Async::NotReady) => return Ok(Async::NotReady),
+                Err(e) => return Err(e),
+                _ => {}
+            }
         }
     }
 }
