@@ -1,6 +1,6 @@
 // Copyright (C) 2016 whitequark@whitequark.org
 // SPDX-License-Identifier: 0BSD
-use log::debug;
+use log::{debug, error};
 use managed::ManagedSlice;
 use smoltcp::phy::RxToken;
 use smoltcp::phy::{Device, DeviceCapabilities, TxToken};
@@ -228,8 +228,8 @@ where
                 inner
                     .process_ipv4(sockets, timestamp, &frame)
                     .map_err(|err| {
-                        debug!("cannot process ingress packet: {}", err);
-                        debug!(
+                        error!("cannot process ingress packet: {}", err);
+                        error!(
                             "packet dump follows:\n{}",
                             PrettyPrinter::<Ipv4Packet<&[u8]>>::new("", &frame)
                         );
@@ -241,7 +241,7 @@ where
                         inner
                             .dispatch(tx_token, timestamp, response)
                             .map_err(|err| {
-                                debug!("cannot dispatch response packet: {}", err);
+                                error!("cannot dispatch response packet: {}", err);
                                 err
                             })
                     })

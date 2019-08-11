@@ -7,6 +7,7 @@ use std::cell::{RefCell, RefMut};
 use std::rc::Rc;
 
 const MAX_PACKETS: usize = 10;
+const MAX_PACKETS: usize = 10240;
 
 #[derive(Debug)]
 pub struct PhonySocket {

@@ -19,7 +19,9 @@ use tokio::net::TcpStream;
 use tokio::prelude::future::lazy;
 use tokio::prelude::Future;
 use tokio::runtime::current_thread::spawn;
-use trust_dns_resolver::config::{ResolverConfig, ResolverOpts};
+use trust_dns_resolver::config::{
+    NameServerConfig, NameServerConfigGroup, ResolverConfig, ResolverOpts,
+};
 use trust_dns_resolver::AsyncResolver;
 
 pub struct SSClient {
@@ -29,10 +31,12 @@ pub struct SSClient {
 
 impl SSClient {
     pub fn new(server_config: ServerConfig) -> Self {
-        //        let config = ResolverConfig::new();
-        //        let options = ResolverOpts::default();
-        //        let (resolver, background) = AsyncResolver::new(config, options);
-        let (resolver, background) = AsyncResolver::from_system_conf().unwrap();
+        let nameserver_config_group =
+            NameServerConfigGroup::from_ips_clear(&["114.114.114.114".parse().unwrap()], 53);
+        let config = ResolverConfig::from_parts(None, vec![], nameserver_config_group);
+        let options = ResolverOpts::default();
+        let (resolver, background) = AsyncResolver::new(config, options);
+        //        let (resolver, background) = AsyncResolver::from_system_conf().unwrap();
         spawn(background.map(|_| ()));
         SSClient {
             srv_cfg: Arc::new(server_config),

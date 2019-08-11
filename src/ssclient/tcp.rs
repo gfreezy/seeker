@@ -178,7 +178,6 @@ pub fn connect_proxy_server(
     debug!("Connecting to proxy {:?}, timeout: {:?}", svr_addr, timeout);
     match svr_addr {
         ServerAddr::SocketAddr(addr) => {
-            addr;
             let fut = try_timeout(TcpStream::connect(addr), timeout);
             boxed_future(fut)
         }
