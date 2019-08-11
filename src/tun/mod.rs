@@ -167,7 +167,7 @@ impl Stream for TunListen {
 
                     {
                         let mut lower = mut_tun.iface.device_mut().lower();
-                        let mut buf = vec![0; 1024];
+                        let mut buf = vec![0; 2000];
                         let size = try_ready!(mut_tun.tun.poll_read(&mut buf));
                         debug!("tun poll_read size {}", size);
                         lower.rx.enqueue_slice(&buf[..size]);

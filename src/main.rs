@@ -46,7 +46,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         ServerAddr::DomainName(server_addr.to_string(), 14187),
         "rixCloud".to_string(),
         method,
-        Some(Duration::from_secs(5)),
+        Some(Duration::from_secs(30)),
         None,
     );
 

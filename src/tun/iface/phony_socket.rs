@@ -6,8 +6,7 @@ use smoltcp::time::Instant;
 use std::cell::{RefCell, RefMut};
 use std::rc::Rc;
 
-const MAX_PACKETS: usize = 10;
-const MAX_PACKETS: usize = 10240;
+const MAX_PACKETS: usize = 102400;
 
 #[derive(Debug)]
 pub struct PhonySocket {
