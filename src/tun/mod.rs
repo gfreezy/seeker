@@ -167,7 +167,7 @@ impl Stream for TunListen {
 
                     {
                         let mut lower = mut_tun.iface.device_mut().lower();
-                        let mut buf = vec![0; 2000];
+                        let mut buf = vec![0; mut_tun.tun.mtu()];
                         let size = try_ready!(mut_tun.tun.poll_read(&mut buf));
                         debug!("tun poll_read size {}", size);
                         lower.rx.enqueue_slice(&buf[..size]);
@@ -180,6 +180,9 @@ impl Stream for TunListen {
                     {
                         Ok(_) => {
                             debug!("tun.iface.poll_read success");
+                        }
+                        Err(smoltcp::Error::Dropped) => {
+                            return Ok(Async::Ready(()));
                         }
                         Err(e) => {
                             error!("poll_read error: {}, poll again", e);

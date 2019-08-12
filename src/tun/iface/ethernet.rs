@@ -228,8 +228,8 @@ where
                 inner
                     .process_ipv4(sockets, timestamp, &frame)
                     .map_err(|err| {
-                        error!("cannot process ingress packet: {}", err);
-                        error!(
+                        debug!("cannot process ingress packet: {}", err);
+                        debug!(
                             "packet dump follows:\n{}",
                             PrettyPrinter::<Ipv4Packet<&[u8]>>::new("", &frame)
                         );

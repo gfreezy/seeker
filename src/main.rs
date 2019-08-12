@@ -46,7 +46,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         ServerAddr::DomainName(server_addr.to_string(), 14187),
         "rixCloud".to_string(),
         method,
-        Some(Duration::from_secs(30)),
+        Some(Duration::from_secs(5)),
         None,
     );
 
@@ -70,44 +70,36 @@ fn main() -> Result<(), Box<dyn Error>> {
                                 authority
                                     .lookup_host(remote_ip)
                                     .and_then(move |domain| {
+                                        let port = remote_addr.port();
                                         debug!(
                                             "send remote addr to ss server: {} {}",
-                                            &domain,
-                                            remote_addr.port()
+                                            &domain, port,
                                         );
-                                        let addr =
-                                            Address::DomainNameAddress(domain, remote_addr.port());
+                                        let addr = Address::DomainNameAddress(domain.clone(), port);
+                                        let domain1 = domain.clone();
                                         let (reader, writer) = socket.split();
-                                        client.handle_connect((reader, writer), addr)
+                                        client
+                                            .handle_connect((reader, writer), addr)
+                                            .map(move |r| {
+                                                info!(
+                                                    "handle connect ok, domain: {}, port: {}",
+                                                    domain, port
+                                                );
+                                                r
+                                            })
+                                            .map_err(move |e| {
+                                                error!(
+                                                "handle connect error: {}, domain: {}, port: {}",
+                                                e, domain1, port
+                                            );
+                                                e
+                                            })
                                     })
                                     .map_err(|e| {
                                         error!("handle_connect error: {}", e);
                                         ()
                                     }),
                             )
-                            //                            let addr = match remote_addr.ip().to_string().as_str() {
-                            //                                "10.0.0.2" => Address::SocketAddress(SocketAddr::new(
-                            //                                    "106.75.50.164".parse().unwrap(),
-                            //                                    remote_addr.port(),
-                            //                                )),
-                            //                                "10.0.0.3" => Address::SocketAddress(SocketAddr::new(
-                            //                                    "31.13.71.7".parse().unwrap(),
-                            //                                    remote_addr.port(),
-                            //                                )),
-                            //                                "10.0.0.4" => Address::DomainNameAddress(
-                            //                                    "twitter.com".to_string(),
-                            //                                    remote_addr.port(),
-                            //                                ),
-                            //                                _ => Address::SocketAddress(remote_addr),
-                            //                            };
-                            //                            debug!("send remote addr to ss server: {}", &addr);
-                            //                            let (reader, writer) = socket.split();
-                            //                            Box::new(client.handle_connect((reader, writer), addr).map_err(
-                            //                                |e| {
-                            //                                    error!("handle_connect error: {}", e);
-                            //                                    ()
-                            //                                },
-                            //                            ))
                         }
                         TunSocket::Udp(socket) => {
                             let buf = vec![0; 1000];
