@@ -2,3 +2,4 @@
 **/*.rs.bk
 config.json
 Procfile
+/dns.db
