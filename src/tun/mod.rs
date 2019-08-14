@@ -7,7 +7,7 @@ pub mod socket;
 use iface::ethernet::{Interface, InterfaceBuilder};
 use iface::phony_socket::PhonySocket;
 use log::{debug, error};
-use smoltcp::socket::{Socket, SocketHandle, SocketSet, TcpSocket};
+use smoltcp::socket::{Socket, SocketHandle, SocketSet};
 use smoltcp::time::Instant;
 use smoltcp::wire::{IpAddress, IpCidr};
 use std::cell::RefCell;
@@ -17,8 +17,6 @@ use std::process::Command;
 use tokio::prelude::task::Task;
 use tokio::prelude::{task::current, Async, AsyncRead, AsyncWrite, Future, Poll, Stream};
 
-use crate::tun::phy::Error;
-use crate::tun::socket::TunTcpSocket;
 use socket::TunSocket;
 
 fn setup_ip(tun_name: &str, ip: &str, dest_ip: &str) {
@@ -89,7 +87,6 @@ impl Tun {
 pub fn listen() -> TunListen {
     TunListen {
         new_sockets: vec![],
-        active_tcp_handles: HashSet::new(),
     }
 }
 
@@ -99,17 +96,16 @@ pub fn bg_send() -> TunWrite {
 
 pub struct TunListen {
     new_sockets: Vec<TunSocket>,
-    active_tcp_handles: HashSet<SocketHandle>,
+}
+
+#[derive(Debug, Eq, PartialEq, Hash)]
+enum Handle {
+    Tcp(SocketHandle),
+    Udp(SocketHandle),
 }
 
 impl TunListen {
-    fn may_recv_tun_sockets(&mut self) -> HashSet<TunSocket> {
-        #[derive(Debug, Eq, PartialEq, Hash)]
-        enum Handle {
-            Tcp(SocketHandle),
-            Udp(SocketHandle),
-        }
-
+    fn may_recv_tun_handles(&mut self) -> HashSet<Handle> {
         let handles = TUN.with(|tun| {
             let mut_tun = &mut *tun.borrow_mut();
             mut_tun
@@ -124,7 +120,7 @@ impl TunListen {
                         }
                     }
                     Socket::Udp(s) => {
-                        if s.can_recv() {
+                        if s.is_open() {
                             Some(Handle::Udp(s.handle()))
                         } else {
                             None
@@ -134,14 +130,7 @@ impl TunListen {
                 })
                 .collect::<HashSet<_>>()
         });
-
         handles
-            .into_iter()
-            .map(|h| match h {
-                Handle::Tcp(h) => TunSocket::new_tcp_socket(h),
-                Handle::Udp(h) => TunSocket::new_udp_socket(h),
-            })
-            .collect()
     }
 }
 
@@ -155,12 +144,9 @@ impl Stream for TunListen {
             debug!("TunListen.poll start loop");
             if let Some(s) = self.new_sockets.pop() {
                 debug!("new socket: {}", s);
-                if let TunSocket::Tcp(_) = s {
-                    self.active_tcp_handles.insert(s.handle());
-                }
                 return Ok(Async::Ready(Some(s)));
             } else {
-                let before_sockets = self.may_recv_tun_sockets();
+                let before_handles = self.may_recv_tun_handles();
 
                 try_ready!(TUN.with(|tun| {
                     let mut_tun = &mut *tun.borrow_mut();
@@ -181,9 +167,6 @@ impl Stream for TunListen {
                         Ok(_) => {
                             debug!("tun.iface.poll_read success");
                         }
-                        Err(smoltcp::Error::Dropped) => {
-                            return Ok(Async::Ready(()));
-                        }
                         Err(e) => {
                             error!("poll_read error: {}, poll again", e);
                             return Ok(Async::Ready(()));
@@ -200,13 +183,17 @@ impl Stream for TunListen {
                             Socket::Tcp(ref mut s) => {
                                 debug!("tcp socket {} state: {}.", s.handle(), s.state());
                                 if s.is_open() {
-                                    if s.can_recv() {
-                                        debug!("tcp socket {} can recv.", s.handle());
+                                    // notify can recv or notify to be closed
+                                    if s.can_recv() || !s.may_recv() {
+                                        debug!("tcp socket {} can recv or close.", s.handle());
                                         if let Some(t) =
                                             mut_tun.socket_read_tasks.get_mut(&s.handle())
                                         {
                                             if let Some(task) = t.take() {
-                                                debug!("notify tcp socket {} for read", s.handle());
+                                                debug!(
+                                                    "notify tcp socket {} for read or close",
+                                                    s.handle()
+                                                );
                                                 task.notify();
                                             }
                                         }
@@ -233,37 +220,30 @@ impl Stream for TunListen {
                         }
                     }
 
-                    let mut to_remove_handle = vec![];
-                    for handle in &self.active_tcp_handles {
-                        let mut s = mut_tun.sockets.get::<TcpSocket>(*handle);
-                        if !s.may_recv() {
-                            debug!("close socket {}", handle);
-                            s.close();
-                            to_remove_handle.push(*handle);
-                            if let Some(t) = mut_tun.socket_read_tasks.get_mut(handle) {
-                                if let Some(task) = t.take() {
-                                    debug!("notify tcp socket {} to close", handle);
-                                    task.notify();
-                                }
-                            }
-                        }
-                    }
-
-                    for h in to_remove_handle {
-                        debug!("TunListen.poll release handle: {}", h);
-                        mut_tun.sockets.release(h);
-                        self.active_tcp_handles.remove(&h);
-                    }
-
                     debug!("TunListen.poll sockets.prune");
                     mut_tun.sockets.prune();
 
                     Ok(Async::Ready(()))
                 }));
 
-                let after_sockets = self.may_recv_tun_sockets();
+                let after_handles = self.may_recv_tun_handles();
+                self.new_sockets = after_handles
+                    .difference(&before_handles)
+                    .map(|h| {
+                        let socket = match h {
+                            Handle::Tcp(h) => TunSocket::new_tcp_socket(*h),
+                            Handle::Udp(h) => TunSocket::new_udp_socket(*h),
+                        };
 
-                self.new_sockets = after_sockets.difference(&before_sockets).cloned().collect();
+                        let handle = socket.handle();
+                        // move handle to socket
+                        TUN.with(|tun| {
+                            tun.borrow_mut().sockets.release(handle);
+                            debug!("release handle {}", handle);
+                        });
+                        socket
+                    })
+                    .collect();
             }
         }
     }

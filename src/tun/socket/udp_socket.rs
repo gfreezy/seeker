@@ -14,11 +14,21 @@ pub struct TunUdpSocket {
 
 impl TunUdpSocket {
     pub fn new(handle: SocketHandle) -> Self {
+        debug!("TunUdpSocket.new: {}", handle);
+
         TUN.with(|tun| tun.borrow_mut().sockets.retain(handle));
         TunUdpSocket { handle }
     }
 
-    pub fn poll_recv_from(&mut self, buf: &mut [u8]) -> Poll<(usize, SocketAddr), io::Error> {
+    pub fn local_addr(&self) -> SocketAddr {
+        TUN.with(|tun| {
+            let mut t = tun.borrow_mut();
+            let socket = t.sockets.get::<UdpSocket>(self.handle);
+            to_socket_addr(socket.endpoint())
+        })
+    }
+
+    pub fn poll_recv_from(&self, buf: &mut [u8]) -> Poll<(usize, SocketAddr), io::Error> {
         debug!("TunUdpSocket.read");
         TUN.with(|tun| {
             let mut t = tun.borrow_mut();
@@ -36,7 +46,7 @@ impl TunUdpSocket {
         })
     }
 
-    pub fn poll_send_to(&mut self, buf: &[u8], target: &SocketAddr) -> Poll<(), io::Error> {
+    pub fn poll_send_to(&self, buf: &[u8], target: &SocketAddr) -> Poll<(), io::Error> {
         debug!("TunUdpSocket.write");
         TUN.with(|tun| {
             let mut t = tun.borrow_mut();
@@ -61,6 +71,7 @@ impl TunUdpSocket {
         })
     }
 
+    #[allow(dead_code)]
     pub fn recv_dgram<T>(self, buf: T) -> TunRecvDgram<T>
     where
         T: AsMut<[u8]>,
@@ -84,6 +95,7 @@ impl Clone for TunUdpSocket {
 
 impl Drop for TunUdpSocket {
     fn drop(&mut self) {
+        debug!("TunUdpSocket.drop: {}", self.handle);
         TUN.with(|tun| tun.borrow_mut().sockets.release(self.handle))
     }
 }
@@ -97,6 +109,7 @@ pub struct TunRecvDgram<T> {
     state: Option<InnerTunRecvDgram<T>>,
 }
 
+#[allow(dead_code)]
 impl<T> TunRecvDgram<T> {
     fn new(socket: TunUdpSocket, buffer: T) -> Self {
         TunRecvDgram {
@@ -113,9 +126,9 @@ where
     type Error = io::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, io::Error> {
-        let mut state = self.state.take().expect("take state");
+        let state = self.state.as_mut().expect("take state");
         let (n, addr) = try_ready!(state.socket.poll_recv_from(state.buffer.as_mut()));
-
+        let state = self.state.take().unwrap();
         Ok(Async::Ready((state.socket, state.buffer, n, addr)))
     }
 }
@@ -150,10 +163,11 @@ where
     type Error = io::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        let mut state = self.state.take().expect("take state");
+        let state = self.state.as_mut().expect("take state");
         try_ready!(state
             .socket
             .poll_send_to(state.buffer.as_ref(), &state.addr));
+        let state = self.state.take().unwrap();
         Ok(Async::Ready((state.socket, state.buffer)))
     }
 }

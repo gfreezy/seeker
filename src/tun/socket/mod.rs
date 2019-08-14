@@ -51,6 +51,13 @@ impl TunSocket {
             TunSocket::Udp(s) => s.handle,
         }
     }
+
+    pub fn local_addr(&self) -> SocketAddr {
+        match self {
+            TunSocket::Tcp(s) => s.local_addr(),
+            TunSocket::Udp(s) => s.local_addr(),
+        }
+    }
 }
 
 impl Display for TunSocket {

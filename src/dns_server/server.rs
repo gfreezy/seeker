@@ -1,13 +1,9 @@
 use crate::dns_server::authority::LocalAuthority;
 use log::debug;
 use std::net::{Ipv4Addr, SocketAddr};
-use std::sync::Arc;
-use tokio::executor::current_thread::spawn;
 use tokio::net::UdpSocket;
 use trust_dns::rr::Name;
-use trust_dns_resolver::config::NameServerConfigGroup;
-use trust_dns_server::authority::{Catalog, ZoneType};
-use trust_dns_server::store::forwarder::{ForwardAuthority, ForwardConfig};
+use trust_dns_server::authority::Catalog;
 use trust_dns_server::ServerFuture;
 
 pub fn run_dns_server(
@@ -16,17 +12,7 @@ pub fn run_dns_server(
 ) -> (ServerFuture<Catalog>, LocalAuthority) {
     debug!("run dns server");
     let udpsocket = UdpSocket::bind(addr).unwrap();
-    let local_authority = LocalAuthority::new(start_ip);
-    //    let config = ForwardConfig {
-    //        name_servers: NameServerConfigGroup::from_ips_clear(
-    //            &["114.114.114.114".parse().unwrap()],
-    //            53,
-    //        ),
-    //        options: None,
-    //    };
-    //    let (foward_authority, bg) =
-    //        ForwardAuthority::try_from_config(Name::root().into(), ZoneType::Forward, &config).unwrap();
-    //    spawn(bg);
+    let local_authority = LocalAuthority::new("dns.db", start_ip);
     let mut catalog = Catalog::new();
     catalog.upsert(Name::root().into(), Box::new(local_authority.clone()));
     //    catalog.upsert(Name::root().into(), Box::new(foward_authority));

@@ -1,5 +1,6 @@
 // Copyright (C) 2016 whitequark@whitequark.org
 // SPDX-License-Identifier: 0BSD
+#![allow(dead_code)]
 use log::{debug, error};
 use managed::ManagedSlice;
 use smoltcp::phy::RxToken;
@@ -9,8 +10,8 @@ use smoltcp::socket::{PollAt, Socket, SocketSet, UdpSocket};
 use smoltcp::socket::{SocketHandle, TcpSocket};
 use smoltcp::time::{Duration, Instant};
 use smoltcp::wire::{
-    EthernetFrame, IpAddress, IpCidr, IpEndpoint, IpProtocol, IpRepr, Ipv4Address, Ipv4Packet,
-    Ipv4Repr, PrettyPrinter, TcpControl, TcpPacket, TcpRepr, UdpPacket, UdpRepr,
+    EthernetFrame, IpAddress, IpCidr, IpEndpoint, IpProtocol, IpRepr, Ipv4Packet, Ipv4Repr,
+    PrettyPrinter, TcpControl, TcpPacket, TcpRepr, UdpPacket, UdpRepr,
 };
 use smoltcp::{Error, Result};
 
@@ -275,7 +276,6 @@ where
                 }
                 Socket::Tcp(ref mut socket) => socket.dispatch(timestamp, &caps, |response| {
                     let resp = Packet::Tcp(response);
-                    debug!("send tcp packet: {:?}", &resp);
                     respond!(resp)
                 }),
                 _ => unreachable!(),
@@ -366,19 +366,32 @@ impl<'a> InterfaceInner<'a> {
         sockets: &mut SocketSet,
         ip_repr: &IpRepr,
         udp_repr: &UdpRepr,
-    ) -> SocketHandle {
+    ) -> Result<SocketHandle> {
         let dst_addr = ip_repr.dst_addr();
         let dst_port = udp_repr.dst_port;
 
-        let udp_rx_buffer = UdpSocketBuffer::new(vec![UdpPacketMetadata::EMPTY], vec![0; 1500]);
-        let udp_tx_buffer = UdpSocketBuffer::new(vec![UdpPacketMetadata::EMPTY], vec![0; 1500]);
+        let udp_rx_buffer =
+            UdpSocketBuffer::new(vec![UdpPacketMetadata::EMPTY; 100], vec![0; 65536]);
+        let udp_tx_buffer =
+            UdpSocketBuffer::new(vec![UdpPacketMetadata::EMPTY; 100], vec![0; 65536]);
         let mut udp_socket = UdpSocket::new(udp_rx_buffer, udp_tx_buffer);
         udp_socket
             .bind(IpEndpoint::new(dst_addr, dst_port))
             .unwrap();
 
+        if !udp_socket.accepts(&ip_repr, &udp_repr) {
+            error!("local_endpoint: {}", udp_socket.endpoint());
+            error!("udp sockt not accepts: {:?} {:?}", &ip_repr, &udp_repr);
+            return Err(Error::Dropped);
+        }
+
         let handle = sockets.add(udp_socket);
-        handle
+        debug!(
+            "udp sockt received: {:?} {:?}, handle: {}",
+            &ip_repr, &udp_repr, handle
+        );
+
+        Ok(handle)
     }
 
     fn process_udp<'frame>(
@@ -391,6 +404,8 @@ impl<'a> InterfaceInner<'a> {
         let udp_packet = UdpPacket::new_checked(ip_payload)?;
         let checksum_caps = self.device_capabilities.checksum.clone();;
         let udp_repr = UdpRepr::parse(&udp_packet, &src_addr, &dst_addr, &checksum_caps)?;
+
+        debug!("recv udp packet: {:?}", &udp_repr);
 
         for mut udp_socket in sockets.iter_mut().filter_map(UdpSocket::downcast) {
             if !udp_socket.accepts(&ip_repr, &udp_repr) {
@@ -406,7 +421,7 @@ impl<'a> InterfaceInner<'a> {
         }
 
         // Auto create a new  udp socket.
-        let handle = self.new_udp_socket(sockets, &ip_repr, &udp_repr);
+        let handle = self.new_udp_socket(sockets, &ip_repr, &udp_repr)?;
         let mut udp_socket = sockets.get::<UdpSocket>(handle);
         match udp_socket.process(&ip_repr, &udp_repr) {
             // The packet is valid and handled by socket.
@@ -437,13 +452,13 @@ impl<'a> InterfaceInner<'a> {
             .unwrap();
 
         if !tcp_socket.accepts(&ip_repr, &tcp_repr) {
-            debug!("socket state: {}", tcp_socket.state());
-            debug!(
+            error!("socket state: {}", tcp_socket.state());
+            error!(
                 "remote_endpoint: {}, local_endpoint: {}",
                 tcp_socket.remote_endpoint(),
                 tcp_socket.local_endpoint()
             );
-            debug!("tcp sockt not accepts: {:?} {:?}", &ip_repr, &tcp_repr);
+            error!("tcp sockt not accepts: {:?} {:?}", &ip_repr, &tcp_repr);
             return Err(Error::Dropped);
         }
 
@@ -473,8 +488,11 @@ impl<'a> InterfaceInner<'a> {
             match tcp_socket.process(timestamp, &ip_repr, &tcp_repr) {
                 // The packet is valid and handled by socket.
                 Ok(reply) => return Ok(reply.map_or(Packet::None, Packet::Tcp)),
-                // The packet is malformed, or doesn't match the socket state,
-                // or the socket buffer is full.
+                // The packet is malformed, or doesn't match the socket state
+                Err(smoltcp::Error::Dropped) if tcp_repr.control != TcpControl::Rst => {
+                    return Ok(Packet::Tcp(TcpSocket::rst_reply(&ip_repr, &tcp_repr)))
+                }
+                // the socket buffer is full.
                 Err(e) => return Err(e),
             }
         }
@@ -485,7 +503,13 @@ impl<'a> InterfaceInner<'a> {
         }
 
         // Auto create a new  udp socket.
-        let handle = self.try_new_tcp_socket(sockets, &ip_repr, &tcp_repr)?;
+        let handle = match self.try_new_tcp_socket(sockets, &ip_repr, &tcp_repr) {
+            Ok(h) => h,
+            Err(smoltcp::Error::Dropped) if tcp_repr.control != TcpControl::Rst => {
+                return Ok(Packet::Tcp(TcpSocket::rst_reply(&ip_repr, &tcp_repr)))
+            }
+            Err(e) => return Err(e),
+        };
         let mut tcp_socket = sockets.get::<TcpSocket>(handle);
         match tcp_socket.process(timestamp, &ip_repr, &tcp_repr) {
             // The packet is valid and handled by socket.

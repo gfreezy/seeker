@@ -2,22 +2,16 @@ use super::ahead::DecryptedReader as AeadDecryptedReader;
 use super::ahead::EncryptedWriter as AeadEncryptedWriter;
 use super::stream::DecryptedReader as StreamDecryptedReader;
 use super::stream::EncryptedWriter as StreamEncryptedWriter;
-use byte_string::ByteStr;
-use bytes::{BufMut, BytesMut};
+use crate::ssclient::{resolve, try_timeout};
+use bytes::BufMut;
 use log::debug;
-use log::trace;
-use shadowsocks::crypto::CipherCategory;
 use shadowsocks::relay::boxed_future;
-use shadowsocks::relay::socks5::Address;
-use shadowsocks::relay::tcprelay::{DecryptedRead, EncryptedWrite, TimeoutFuture};
-use shadowsocks::{ServerAddr, ServerConfig};
+use shadowsocks::relay::tcprelay::{DecryptedRead, EncryptedWrite};
+use shadowsocks::ServerConfig;
 use std::io;
 use std::io::{BufRead, Read, Write};
-use std::net::SocketAddr;
 use std::sync::Arc;
-use std::time::Duration;
-use tokio::io::write_all;
-use tokio::io::{read_exact, ReadHalf, WriteHalf};
+use tokio::io::{ReadHalf, WriteHalf};
 use tokio::net::TcpStream;
 use tokio::prelude::{AsyncRead, AsyncWrite, Future};
 use trust_dns_resolver::AsyncResolver;
@@ -151,57 +145,17 @@ where
     }
 }
 
-fn try_timeout<T, F>(
-    fut: F,
-    dur: Option<Duration>,
-) -> impl Future<Item = T, Error = io::Error> + Send
-where
-    F: Future<Item = T, Error = io::Error> + Send + 'static,
-    T: 'static,
-{
-    use tokio::prelude::*;
-
-    match dur {
-        Some(dur) => TimeoutFuture::Wait(fut.timeout(dur)),
-        _ => TimeoutFuture::Direct(fut),
-    }
-}
-
 pub fn connect_proxy_server(
     svr_cfg: Arc<ServerConfig>,
     async_resolver: &AsyncResolver,
 ) -> impl Future<Item = TcpStream, Error = io::Error> + Send {
     let timeout = svr_cfg.timeout();
-
-    let svr_addr = svr_cfg.addr();
-
-    debug!("Connecting to proxy {:?}, timeout: {:?}", svr_addr, timeout);
-    match svr_addr {
-        ServerAddr::SocketAddr(addr) => {
-            let fut = try_timeout(TcpStream::connect(addr), timeout);
-            boxed_future(fut)
-        }
-        ServerAddr::DomainName(domain, port) => {
-            let port = *port;
-            let fut = {
-                try_timeout(
-                    async_resolver.lookup_ip(domain.as_str()).map_err(|e| {
-                        debug!("resolve error: {}", e);
-                        e.into()
-                    }),
-                    timeout,
-                )
-                .and_then(move |ips| {
-                    let ip = ips.into_iter().next().unwrap();
-                    let fut = TcpStream::connect(&SocketAddr::new(ip, port));
-                    try_timeout(fut, timeout)
-                })
-                .map_err(|e| {
-                    debug!("resolve error2: {}", e);
-                    e
-                })
-            };
-            boxed_future(fut)
-        }
-    }
+    debug!(
+        "Connecting to proxy {:?}, timeout: {:?}",
+        svr_cfg.addr(),
+        timeout
+    );
+    let fut = resolve(async_resolver, svr_cfg)
+        .and_then(move |addr| try_timeout(TcpStream::connect(&addr), timeout));
+    boxed_future(fut)
 }

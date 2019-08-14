@@ -31,7 +31,7 @@
 //! |      2       |     Fixed     |   Variable   |   Fixed    |
 //! +--------------+---------------+--------------+------------+
 //! ```
-
+#![allow(dead_code)]
 use std::{
     cmp,
     io::{self, BufRead, Read},
@@ -75,6 +75,7 @@ impl<R> DecryptedReader<R>
 where
     R: AsyncRead,
 {
+    #[allow(dead_code)]
     pub fn new(r: R, t: CipherType, key: &[u8], nounce: &[u8]) -> DecryptedReader<R> {
         DecryptedReader {
             reader: r,
@@ -88,6 +89,7 @@ where
         }
     }
 
+    #[allow(dead_code)]
     pub fn get_ref(&self) -> &R {
         &self.reader
     }
@@ -98,6 +100,7 @@ where
     ///
     /// It is inadvisable to read directly from or write directly to the
     /// underlying reader.
+    #[allow(dead_code)]
     pub fn get_mut(&mut self) -> &mut R {
         &mut self.reader
     }
@@ -106,6 +109,7 @@ where
     ///
     /// The internal buffer is flushed before returning the reader. Any leftover
     /// data in the read buffer is lost.
+    #[allow(dead_code)]
     pub fn into_inner(self) -> R {
         self.reader
     }
@@ -280,6 +284,7 @@ where
     W: AsyncWrite,
 {
     /// Creates a new EncryptedWriter
+    #[allow(dead_code)]
     pub fn new(w: W, t: CipherType, key: &[u8], nonce: &[u8]) -> EncryptedWriter<W> {
         EncryptedWriter {
             writer: w,

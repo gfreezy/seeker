@@ -1,28 +1,22 @@
-use std::collections::HashMap;
-use std::env;
+#![recursion_limit = "128"]
 use std::error::Error;
-use std::io;
-use std::net::{Ipv4Addr, SocketAddr};
+use std::net::Ipv4Addr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use log::{debug, error, info};
+use log::{error, info};
 use shadowsocks::crypto::CipherType;
 use shadowsocks::relay::socks5::Address;
-use shadowsocks::relay::socks5::Address::SocketAddress;
-use shadowsocks::relay::tcprelay::{DecryptedRead, EncryptedWrite};
 use shadowsocks::{ServerAddr, ServerConfig};
-use smoltcp::wire::IpAddress;
-use smoltcp::wire::IpEndpoint;
 use tokio::prelude::future::lazy;
 use tokio::prelude::{AsyncRead, Future, Stream};
 use tokio::runtime::current_thread::{run, spawn};
-use trust_dns_server::authority::Authority;
 
 use crate::dns_server::server::run_dns_server;
 use crate::ssclient::SSClient;
 use crate::tun::socket::TunSocket;
 use crate::tun::{bg_send, listen};
+use shadowsocks::relay::boxed_future;
 
 mod dns_server;
 mod ssclient;
@@ -33,12 +27,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     better_panic::install();
 
     let mut args = pico_args::Arguments::from_env();
-    let debug = args.contains("-d");
     let local = args.contains("--local");
     let _name: Option<String> = args.value_from_str("--tun")?;
 
     let (server_addr, method) = if local {
-        ("127.0.0.1", CipherType::ChaCha20Ietf)
+        ("127.0.0.1", CipherType::Plain)
     } else {
         ("sg1.edge.bgp.app", CipherType::ChaCha20Ietf)
     };
@@ -46,7 +39,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         ServerAddr::DomainName(server_addr.to_string(), 14187),
         "rixCloud".to_string(),
         method,
-        Some(Duration::from_secs(5)),
+        Some(Duration::from_secs(30)),
         None,
     );
 
@@ -61,60 +54,45 @@ fn main() -> Result<(), Box<dyn Error>> {
                 info!("new socket accepted: {}", socket);
                 let client = client.clone();
                 let authority = authority.clone();
-                spawn(lazy(move || -> Box<dyn Future<Item = (), Error = ()>> {
-                    match socket {
-                        TunSocket::Tcp(socket) => {
-                            let remote_addr = socket.local_addr();
-                            let remote_ip = remote_addr.ip().to_string();
-                            Box::new(
-                                authority
-                                    .lookup_host(remote_ip)
-                                    .and_then(move |domain| {
-                                        let port = remote_addr.port();
-                                        debug!(
-                                            "send remote addr to ss server: {} {}",
-                                            &domain, port,
-                                        );
-                                        let addr = Address::DomainNameAddress(domain.clone(), port);
-                                        let domain1 = domain.clone();
-                                        let (reader, writer) = socket.split();
-                                        client
-                                            .handle_connect((reader, writer), addr)
-                                            .map(move |r| {
-                                                info!(
-                                                    "handle connect ok, domain: {}, port: {}",
-                                                    domain, port
-                                                );
-                                                r
-                                            })
-                                            .map_err(move |e| {
-                                                error!(
-                                                "handle connect error: {}, domain: {}, port: {}",
-                                                e, domain1, port
-                                            );
-                                                e
-                                            })
-                                    })
-                                    .map_err(|e| {
-                                        error!("handle_connect error: {}", e);
-                                        ()
-                                    }),
-                            )
-                        }
-                        TunSocket::Udp(socket) => {
-                            let buf = vec![0; 1000];
-                            Box::new(
-                                socket
-                                    .recv_dgram(buf)
-                                    .and_then(|(socket, mut buf, size, addr)| {
-                                        buf.truncate(size);
-                                        socket.send_dgram(buf, addr)
-                                    })
-                                    .map(|_| ())
-                                    .map_err(|_| ()),
-                            )
-                        }
-                    }
+
+                spawn(lazy(move || {
+                    let remote_addr = socket.local_addr();
+                    let remote_ip = remote_addr.ip().to_string();
+                    let remote_port = remote_addr.port();
+
+                    authority
+                        .lookup_host(remote_ip.clone())
+                        .then(move |ret| {
+                            let addr = match ret {
+                                Ok(d) => Address::DomainNameAddress(d, remote_port),
+                                Err(_) => Address::SocketAddress(remote_addr),
+                            };
+                            info!("send remote addr to ss server, addr: {}", addr,);
+                            futures::finished(addr)
+                        })
+                        .and_then(move |addr| match socket {
+                            TunSocket::Tcp(socket) => {
+                                let addr1 = addr.clone();
+                                let addr2 = addr.clone();
+                                let (reader, writer) = socket.split();
+                                boxed_future(
+                                    client
+                                        .handle_connect((reader, writer), addr)
+                                        .map(move |r| {
+                                            info!("handle connect ok, addr: {}", addr1);
+                                            r
+                                        })
+                                        .map_err(move |e| {
+                                            error!("handle connect error: {}, addr: {}", e, addr2);
+                                            e
+                                        }),
+                                )
+                            }
+                            TunSocket::Udp(socket) => {
+                                boxed_future(client.handle_packets(socket, addr))
+                            }
+                        })
+                        .map_err(|_| ())
                 }));
                 Ok(())
             })

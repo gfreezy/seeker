@@ -35,10 +35,9 @@ pub struct Lower {
 
 impl Lower {
     pub fn new(mtu: usize) -> Self {
-        // TODO: tx 应该是一个 Vec<Packet>，发送的时候要以 packet 为单位发送，不能将 packet 拆分
         let tx = {
             let mut tx = Vec::with_capacity(MAX_PACKETS);
-            for i in 0..MAX_PACKETS {
+            for _i in 0..MAX_PACKETS {
                 tx.push(vec![0; mtu])
             }
             tx

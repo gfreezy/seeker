@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Stream protocol implementation
 
 use std::{
@@ -25,6 +26,7 @@ where
     sent_final: bool,
 }
 
+#[allow(dead_code)]
 impl<R> DecryptedReader<R>
 where
     R: AsyncRead,

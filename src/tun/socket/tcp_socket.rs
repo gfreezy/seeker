@@ -22,18 +22,10 @@ impl TunTcpSocket {
         TunTcpSocket { handle }
     }
 
-    pub fn remote_addr(&self) -> SocketAddr {
-        TUN.with(|tun| {
-            let mut t = tun.borrow_mut();
-            let mut socket = t.sockets.get::<TcpSocket>(self.handle);
-            to_socket_addr(socket.remote_endpoint())
-        })
-    }
-
     pub fn local_addr(&self) -> SocketAddr {
         TUN.with(|tun| {
             let mut t = tun.borrow_mut();
-            let mut socket = t.sockets.get::<TcpSocket>(self.handle);
+            let socket = t.sockets.get::<TcpSocket>(self.handle);
             to_socket_addr(socket.local_endpoint())
         })
     }
