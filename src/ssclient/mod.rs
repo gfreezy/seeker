@@ -38,7 +38,7 @@ pub struct SSClient {
 impl SSClient {
     pub fn new(server_config: ServerConfig) -> Self {
         let nameserver_config_group =
-            NameServerConfigGroup::from_ips_clear(&["114.114.114.114".parse().unwrap()], 53);
+            NameServerConfigGroup::from_ips_clear(&["223.5.5.5".parse().unwrap()], 53);
         let config = ResolverConfig::from_parts(None, vec![], nameserver_config_group);
         let options = ResolverOpts::default();
         let (resolver, background) = AsyncResolver::new(config, options);
