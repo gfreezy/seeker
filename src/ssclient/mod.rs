@@ -36,16 +36,16 @@ pub struct SSClient {
 }
 
 impl SSClient {
-    pub fn new(server_config: ServerConfig) -> Self {
+    pub fn new(server_config: Arc<ServerConfig>, dns: &SocketAddr) -> Self {
         let nameserver_config_group =
-            NameServerConfigGroup::from_ips_clear(&["223.5.5.5".parse().unwrap()], 53);
+            NameServerConfigGroup::from_ips_clear(&[dns.ip()], dns.port());
         let config = ResolverConfig::from_parts(None, vec![], nameserver_config_group);
         let options = ResolverOpts::default();
         let (resolver, background) = AsyncResolver::new(config, options);
         //        let (resolver, background) = AsyncResolver::from_system_conf().unwrap();
         spawn(background.map(|_| ()));
         SSClient {
-            srv_cfg: Arc::new(server_config),
+            srv_cfg: server_config,
             async_resolver: resolver,
         }
     }

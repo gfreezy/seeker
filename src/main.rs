@@ -1,6 +1,6 @@
 #![recursion_limit = "128"]
 use std::error::Error;
-use std::net::Ipv4Addr;
+use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -22,6 +22,12 @@ mod dns_server;
 mod ssclient;
 mod tun;
 
+struct Config {
+    server_config: Arc<ServerConfig>,
+    dns_start_ip: Ipv4Addr,
+    dns_server: SocketAddr,
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
     env_logger::init();
     better_panic::install();
@@ -42,11 +48,16 @@ fn main() -> Result<(), Box<dyn Error>> {
         Some(Duration::from_secs(30)),
         None,
     );
+    let config = Config {
+        server_config: Arc::new(srv_cfg),
+        dns_start_ip: Ipv4Addr::new(10, 0, 0, 10),
+        dns_server: "223.5.5.5:53".parse().unwrap(),
+    };
 
     run(lazy(move || {
-        let addr = "127.0.0.1:53".parse().unwrap();
-        let (_, authority) = run_dns_server(&addr, Ipv4Addr::new(10, 0, 0, 10));
-        let client = Arc::new(SSClient::new(srv_cfg));
+        let dns_listen = "0.0.0.0:53".parse().unwrap();
+        let (_, authority) = run_dns_server(&dns_listen, config.dns_start_ip);
+        let client = Arc::new(SSClient::new(config.server_config, &config.dns_server));
         spawn(bg_send().map_err(|_| ()));
 
         listen()
