@@ -19,9 +19,10 @@ use tokio::prelude::{task::current, Async, AsyncRead, AsyncWrite, Future, Poll, 
 
 use socket::TunSocket;
 
-fn setup_ip(tun_name: &str, ip: &str, dest_ip: &str) {
+fn setup_ip(tun_name: &str, ip: &IpAddress, cidr: &IpCidr) {
+    let ip_s = ip.to_string();
     let output = Command::new("ifconfig")
-        .args(&[tun_name, ip, dest_ip])
+        .args(&[tun_name, &ip_s, &ip_s])
         .output()
         .expect("run ifconfig");
     if !output.status.success() {
@@ -33,8 +34,8 @@ fn setup_ip(tun_name: &str, ip: &str, dest_ip: &str) {
     }
     let output = Command::new("route")
         .arg("add")
-        .arg("10.0.0.0/24")
-        .arg(ip)
+        .arg(cidr.to_string())
+        .arg(ip_s)
         .output()
         .expect("add route");
     if !output.status.success() {
@@ -47,7 +48,7 @@ fn setup_ip(tun_name: &str, ip: &str, dest_ip: &str) {
 }
 
 thread_local! {
-    static TUN: RefCell<Tun> = RefCell::new(Tun::new("utun4"));
+    static TUN: RefCell<Option<Tun>> = RefCell::new(None);
 }
 
 pub struct Tun {
@@ -60,38 +61,39 @@ pub struct Tun {
 }
 
 impl Tun {
-    pub fn new(tun_name: &str) -> Self {
-        let tun = phy::TunSocket::new(tun_name).expect("open tun");
+    pub fn setup(tun_name: String, tun_ip: IpAddress, tun_cidr: IpCidr) {
+        let tun = phy::TunSocket::new(tun_name.as_str()).expect("open tun");
         let tun_name = tun.name();
-        setup_ip(&tun_name, "10.0.0.1", "10.0.1.1");
+        setup_ip(&tun_name, &tun_ip, &tun_cidr);
 
         let device = PhonySocket::new(tun.mtu());
-        let ip_addrs = vec![IpCidr::new(IpAddress::v4(10, 0, 0, 1), 24)];
+        let ip_addrs = vec![tun_cidr];
         let iface = InterfaceBuilder::new(device)
             .ip_addrs(ip_addrs)
             .any_ip(true)
             .finalize();
 
         let sockets = SocketSet::new(vec![]);
-        Tun {
+        let tun = Tun {
             iface,
             tun,
             sockets,
             socket_read_tasks: HashMap::new(),
             socket_write_tasks: HashMap::new(),
             tun_write_task: None,
+        };
+        TUN.with(|cell| cell.borrow_mut().replace(tun));
+    }
+
+    pub fn listen() -> TunListen {
+        TunListen {
+            new_sockets: vec![],
         }
     }
-}
 
-pub fn listen() -> TunListen {
-    TunListen {
-        new_sockets: vec![],
+    pub fn bg_send() -> TunWrite {
+        TunWrite { buf: vec![0; 1530] }
     }
-}
-
-pub fn bg_send() -> TunWrite {
-    TunWrite { buf: vec![0; 1530] }
 }
 
 pub struct TunListen {
@@ -107,7 +109,11 @@ enum Handle {
 impl TunListen {
     fn may_recv_tun_handles(&mut self) -> HashSet<Handle> {
         let handles = TUN.with(|tun| {
-            let mut_tun = &mut *tun.borrow_mut();
+            let mut s = tun.borrow_mut();
+            let mut_tun = match *s {
+                Some(ref mut tun) => tun,
+                None => unreachable!(),
+            };
             mut_tun
                 .sockets
                 .iter()
@@ -149,7 +155,11 @@ impl Stream for TunListen {
                 let before_handles = self.may_recv_tun_handles();
 
                 try_ready!(TUN.with(|tun| {
-                    let mut_tun = &mut *tun.borrow_mut();
+                    let mut s = tun.borrow_mut();
+                    let mut_tun = match *s {
+                        Some(ref mut tun) => tun,
+                        None => unreachable!(),
+                    };
 
                     {
                         let mut lower = mut_tun.iface.device_mut().lower();
@@ -238,7 +248,7 @@ impl Stream for TunListen {
                         let handle = socket.handle();
                         // move handle to socket
                         TUN.with(|tun| {
-                            tun.borrow_mut().sockets.release(handle);
+                            tun.borrow_mut().as_mut().map(|t| t.sockets.release(handle));
                             debug!("release handle {}", handle);
                         });
                         socket
@@ -314,7 +324,11 @@ impl Future for TunWrite {
         loop {
             debug!("TunWrite.poll loop: self.buf: {}", self.buf.len());
             match TUN.with(|tun| {
-                let mut_tun = &mut *tun.borrow_mut();
+                let mut s = tun.borrow_mut();
+                let mut_tun = match *s {
+                    Some(ref mut tun) => tun,
+                    None => unreachable!(),
+                };
 
                 {
                     let mut lower = mut_tun.iface.device_mut().lower();

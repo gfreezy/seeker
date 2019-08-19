@@ -16,14 +16,25 @@ impl TunUdpSocket {
     pub fn new(handle: SocketHandle) -> Self {
         debug!("TunUdpSocket.new: {}", handle);
 
-        TUN.with(|tun| tun.borrow_mut().sockets.retain(handle));
+        TUN.with(|tun| {
+            let mut s = tun.borrow_mut();
+            let mut_tun = match *s {
+                Some(ref mut tun) => tun,
+                None => unreachable!(),
+            };
+            mut_tun.sockets.retain(handle)
+        });
         TunUdpSocket { handle }
     }
 
     pub fn local_addr(&self) -> SocketAddr {
         TUN.with(|tun| {
-            let mut t = tun.borrow_mut();
-            let socket = t.sockets.get::<UdpSocket>(self.handle);
+            let mut s = tun.borrow_mut();
+            let mut_tun = match *s {
+                Some(ref mut tun) => tun,
+                None => unreachable!(),
+            };
+            let socket = mut_tun.sockets.get::<UdpSocket>(self.handle);
             to_socket_addr(socket.endpoint())
         })
     }
@@ -31,8 +42,12 @@ impl TunUdpSocket {
     pub fn poll_recv_from(&self, buf: &mut [u8]) -> Poll<(usize, SocketAddr), io::Error> {
         debug!("TunUdpSocket.read");
         TUN.with(|tun| {
-            let mut t = tun.borrow_mut();
-            let mut socket = t.sockets.get::<UdpSocket>(self.handle);
+            let mut s = tun.borrow_mut();
+            let mut_tun = match *s {
+                Some(ref mut tun) => tun,
+                None => unreachable!(),
+            };
+            let mut socket = mut_tun.sockets.get::<UdpSocket>(self.handle);
             if socket.can_recv() {
                 let (size, endpoint) = socket
                     .recv_slice(buf)
@@ -40,7 +55,7 @@ impl TunUdpSocket {
                 Ok(Async::Ready((size, to_socket_addr(endpoint))))
             } else {
                 let h = socket.handle();
-                t.socket_read_tasks.insert(h, Some(current()));
+                mut_tun.socket_read_tasks.insert(h, Some(current()));
                 Err(io::ErrorKind::WouldBlock.into())
             }
         })
@@ -49,8 +64,12 @@ impl TunUdpSocket {
     pub fn poll_send_to(&self, buf: &[u8], target: &SocketAddr) -> Poll<(), io::Error> {
         debug!("TunUdpSocket.write");
         TUN.with(|tun| {
-            let mut t = tun.borrow_mut();
-            let mut socket = t.sockets.get::<UdpSocket>(self.handle);
+            let mut s = tun.borrow_mut();
+            let mut_tun = match *s {
+                Some(ref mut tun) => tun,
+                None => unreachable!(),
+            };
+            let mut socket = mut_tun.sockets.get::<UdpSocket>(self.handle);
             if socket.can_send() {
                 let endpoint = match target {
                     SocketAddr::V4(addr) => addr.clone().into(),
@@ -59,13 +78,13 @@ impl TunUdpSocket {
                 socket
                     .send_slice(buf, endpoint)
                     .map_err(|_e| -> io::Error { io::ErrorKind::Other.into() })?;
-                if let Some(task) = t.tun_write_task.take() {
+                if let Some(task) = mut_tun.tun_write_task.take() {
                     task.notify();
                 }
                 Ok(Async::Ready(()))
             } else {
                 let h = socket.handle();
-                t.socket_write_tasks.insert(h, Some(current()));
+                mut_tun.socket_write_tasks.insert(h, Some(current()));
                 Err(io::ErrorKind::WouldBlock.into())
             }
         })
@@ -96,7 +115,14 @@ impl Clone for TunUdpSocket {
 impl Drop for TunUdpSocket {
     fn drop(&mut self) {
         debug!("TunUdpSocket.drop: {}", self.handle);
-        TUN.with(|tun| tun.borrow_mut().sockets.release(self.handle))
+        TUN.with(|tun| {
+            let mut s = tun.borrow_mut();
+            let mut_tun = match *s {
+                Some(ref mut tun) => tun,
+                None => unreachable!(),
+            };
+            mut_tun.sockets.release(self.handle)
+        })
     }
 }
 

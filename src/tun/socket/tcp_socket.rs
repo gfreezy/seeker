@@ -17,15 +17,26 @@ impl TunTcpSocket {
     pub fn new(handle: SocketHandle) -> Self {
         debug!("TunTcpSocket.new: {}", handle);
 
-        TUN.with(|tun| tun.borrow_mut().sockets.retain(handle));
+        TUN.with(|tun| {
+            let mut s = tun.borrow_mut();
+            let mut_tun = match *s {
+                Some(ref mut tun) => tun,
+                None => unreachable!(),
+            };
+            mut_tun.sockets.retain(handle)
+        });
 
         TunTcpSocket { handle }
     }
 
     pub fn local_addr(&self) -> SocketAddr {
         TUN.with(|tun| {
-            let mut t = tun.borrow_mut();
-            let socket = t.sockets.get::<TcpSocket>(self.handle);
+            let mut s = tun.borrow_mut();
+            let mut_tun = match *s {
+                Some(ref mut tun) => tun,
+                None => unreachable!(),
+            };
+            let socket = mut_tun.sockets.get::<TcpSocket>(self.handle);
             to_socket_addr(socket.local_endpoint())
         })
     }
@@ -41,15 +52,26 @@ impl Clone for TunTcpSocket {
 impl Drop for TunTcpSocket {
     fn drop(&mut self) {
         debug!("TunTcpSocket.drop: {}", self.handle);
-        TUN.with(|tun| tun.borrow_mut().sockets.release(self.handle))
+        TUN.with(|tun| {
+            let mut s = tun.borrow_mut();
+            let mut_tun = match *s {
+                Some(ref mut tun) => tun,
+                None => unreachable!(),
+            };
+            mut_tun.sockets.release(self.handle)
+        })
     }
 }
 
 impl Read for TunTcpSocket {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         TUN.with(|tun| {
-            let mut t = tun.borrow_mut();
-            let mut socket = t.sockets.get::<TcpSocket>(self.handle);
+            let mut s = tun.borrow_mut();
+            let mut_tun = match *s {
+                Some(ref mut tun) => tun,
+                None => unreachable!(),
+            };
+            let mut socket = mut_tun.sockets.get::<TcpSocket>(self.handle);
             debug!("TunTcpSocket.read socket state: {}", socket.state());
             if socket.may_recv() {
                 if socket.can_recv() {
@@ -65,7 +87,7 @@ impl Read for TunTcpSocket {
                 } else {
                     debug!("TunTcpSocket.read will block");
                     let h = socket.handle();
-                    t.socket_read_tasks.insert(h, Some(current()));
+                    mut_tun.socket_read_tasks.insert(h, Some(current()));
                     Err(io::ErrorKind::WouldBlock.into())
                 }
             } else {
@@ -79,8 +101,12 @@ impl Write for TunTcpSocket {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         debug!("TunTcpSocket.write");
         TUN.with(|tun| {
-            let mut t = tun.borrow_mut();
-            let mut socket = t.sockets.get::<TcpSocket>(self.handle);
+            let mut s = tun.borrow_mut();
+            let mut_tun = match *s {
+                Some(ref mut tun) => tun,
+                None => unreachable!(),
+            };
+            let mut socket = mut_tun.sockets.get::<TcpSocket>(self.handle);
             if socket.may_send() {
                 if socket.can_send() {
                     let size = socket
@@ -92,14 +118,14 @@ impl Write for TunTcpSocket {
                         //                        std::str::from_utf8(buf).unwrap()
                     );
 
-                    if let Some(task) = t.tun_write_task.take() {
+                    if let Some(task) = mut_tun.tun_write_task.take() {
                         task.notify();
                     }
                     Ok(size)
                 } else {
                     debug!("TunTcpSocket.write will block");
                     let h = socket.handle();
-                    t.socket_write_tasks.insert(h, Some(current()));
+                    mut_tun.socket_write_tasks.insert(h, Some(current()));
                     Err(io::ErrorKind::WouldBlock.into())
                 }
             } else {

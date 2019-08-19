@@ -15,8 +15,9 @@ use tokio::runtime::current_thread::{run, spawn};
 use crate::dns_server::server::run_dns_server;
 use crate::ssclient::SSClient;
 use crate::tun::socket::TunSocket;
-use crate::tun::{bg_send, listen};
+use crate::tun::Tun;
 use shadowsocks::relay::boxed_future;
+use smoltcp::wire::{IpAddress, IpCidr};
 
 mod dns_server;
 mod ssclient;
@@ -26,6 +27,9 @@ struct Config {
     server_config: Arc<ServerConfig>,
     dns_start_ip: Ipv4Addr,
     dns_server: SocketAddr,
+    tun_name: String,
+    tun_ip: IpAddress,
+    tun_cidr: IpCidr,
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -45,22 +49,27 @@ fn main() -> Result<(), Box<dyn Error>> {
         ServerAddr::DomainName(server_addr.to_string(), 14187),
         "rixCloud".to_string(),
         method,
-        Some(Duration::from_secs(30)),
+        Some(Duration::from_secs(5)),
         None,
     );
     let config = Config {
         server_config: Arc::new(srv_cfg),
         dns_start_ip: Ipv4Addr::new(10, 0, 0, 10),
         dns_server: "223.5.5.5:53".parse().unwrap(),
+        tun_name: "utun4".to_string(),
+        tun_ip: IpAddress::v4(10, 0, 0, 1),
+        tun_cidr: IpCidr::new(IpAddress::v4(10, 0, 0, 0), 24),
     };
+
+    Tun::setup(config.tun_name.clone(), config.tun_ip, config.tun_cidr);
 
     run(lazy(move || {
         let dns_listen = "0.0.0.0:53".parse().unwrap();
         let (_, authority) = run_dns_server(&dns_listen, config.dns_start_ip);
         let client = Arc::new(SSClient::new(config.server_config, &config.dns_server));
-        spawn(bg_send().map_err(|_| ()));
+        spawn(Tun::bg_send().map_err(|_| ()));
 
-        listen()
+        Tun::listen()
             .for_each(move |socket| {
                 info!("new socket accepted: {}", socket);
                 let client = client.clone();
