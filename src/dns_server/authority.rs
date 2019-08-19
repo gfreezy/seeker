@@ -1,4 +1,5 @@
-use log::debug;
+use log::{debug, error};
+use shadowsocks::relay::boxed_future;
 use sled::Db;
 use std::io;
 use std::net::Ipv4Addr;
@@ -8,6 +9,7 @@ use tokio::prelude::{future, Async, Future};
 use trust_dns::op::LowerQuery;
 use trust_dns::proto::rr::{RData, Record};
 use trust_dns::rr::{LowerName, Name};
+use trust_dns_resolver::AsyncResolver;
 use trust_dns_server::authority::{Authority, LookupError, LookupObject, MessageRequest, ZoneType};
 use trust_dns_server::proto::op::ResponseCode;
 use trust_dns_server::proto::rr::dnssec::SupportedAlgorithms;
@@ -18,10 +20,11 @@ const NEXT_IP: &str = "next_ip";
 struct Inner {
     cache: Db,
     next_ip: u32,
+    async_resolver: AsyncResolver,
 }
 
 impl Inner {
-    fn new<P: AsRef<Path>>(path: P, next_ip: u32) -> Self {
+    fn new<P: AsRef<Path>>(path: P, next_ip: u32, async_resolver: AsyncResolver) -> Self {
         let tree = Db::start_default(path).expect("open db error");
         let next_ip = match tree.get(NEXT_IP.as_bytes()) {
             Ok(Some(v)) => {
@@ -38,23 +41,8 @@ impl Inner {
         Inner {
             cache: tree,
             next_ip,
+            async_resolver,
         }
-    }
-
-    fn lookup_ip(&mut self, domain: String) -> impl Future<Item = String, Error = io::Error> {
-        let domain = domain.trim_end_matches(".");
-        let addr = if let Some(addr) = self.cache.get(&domain.to_string()).expect("get domain") {
-            String::from_utf8(addr.to_vec()).unwrap()
-        } else {
-            let addr = self.gen_ipaddr();
-            self.cache
-                .set(NEXT_IP.as_bytes(), &self.next_ip.to_be_bytes())
-                .unwrap();
-            self.cache.set(domain.as_bytes(), addr.as_bytes()).unwrap();
-            self.cache.set(addr.as_bytes(), domain.as_bytes()).unwrap();
-            addr
-        };
-        future::finished(addr)
     }
 
     fn lookup_host(&self, addr: String) -> impl Future<Item = String, Error = io::Error> {
@@ -86,12 +74,12 @@ pub struct LocalAuthority {
 }
 
 impl LocalAuthority {
-    pub fn new<P: AsRef<Path>>(path: P, next_ip: Ipv4Addr) -> Self {
+    pub fn new<P: AsRef<Path>>(path: P, next_ip: Ipv4Addr, async_resolver: AsyncResolver) -> Self {
         let n = u32::from_be_bytes(next_ip.octets());
         debug!("LocalAuthority.new next_ip: {}", n);
         LocalAuthority {
             origin: Name::root().into(),
-            inner: Arc::new(Mutex::new(Inner::new(path, n))),
+            inner: Arc::new(Mutex::new(Inner::new(path, n, async_resolver))),
         }
     }
 
@@ -100,6 +88,7 @@ impl LocalAuthority {
         LookupIP {
             domain,
             inner: self.inner.clone(),
+            lookup_future: None,
         }
     }
 
@@ -114,6 +103,7 @@ impl LocalAuthority {
 pub struct LookupIP {
     domain: String,
     inner: Arc<Mutex<Inner>>,
+    lookup_future: Option<Box<dyn Future<Item = String, Error = io::Error> + Send>>,
 }
 
 impl Future for LookupIP {
@@ -121,8 +111,48 @@ impl Future for LookupIP {
     type Error = io::Error;
 
     fn poll(&mut self) -> Result<Async<Self::Item>, Self::Error> {
-        let mut guard = self.inner.lock().unwrap();
-        guard.lookup_ip(self.domain.clone()).poll()
+        if let Some(ref mut fut) = self.lookup_future {
+            fut.poll()
+        } else {
+            let mut guard = self.inner.lock().unwrap();
+            let domain = self.domain.trim_end_matches(".").to_string();
+            if let Some(addr) = guard.cache.get(&domain).expect("get domain") {
+                let ip = String::from_utf8(addr.to_vec()).unwrap();
+                debug!("resolve from cache, domain: {}, ip: {}", &domain, &ip);
+                Ok(Async::Ready(ip))
+            } else {
+                if domain.contains("google") {
+                    let addr = guard.gen_ipaddr();
+                    debug!("resolve to tun, domain: {}, ip: {}", &domain, &addr);
+
+                    guard
+                        .cache
+                        .set(NEXT_IP.as_bytes(), &guard.next_ip.to_be_bytes())
+                        .unwrap();
+                    guard.cache.set(domain.as_bytes(), addr.as_bytes()).unwrap();
+                    guard.cache.set(addr.as_bytes(), domain.as_bytes()).unwrap();
+                    Ok(Async::Ready(addr))
+                } else {
+                    let domain2 = domain.clone();
+                    debug!("direct, domain: {}", &domain2);
+                    self.lookup_future = Some(boxed_future(
+                        guard
+                            .async_resolver
+                            .lookup_ip(domain.as_str())
+                            .map(move |ips| {
+                                let ip = ips.into_iter().next().unwrap();
+                                debug!("resolve domain {}, ip: {}", &domain, ip);
+                                ip.to_string()
+                            })
+                            .map_err(move |e| {
+                                error!("resolve domain {}: {}", domain2, e);
+                                io::ErrorKind::Other.into()
+                            }),
+                    ));
+                    self.lookup_future.as_mut().unwrap().poll()
+                }
+            }
+        }
     }
 }
 

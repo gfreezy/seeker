@@ -18,6 +18,8 @@ use crate::tun::socket::TunSocket;
 use crate::tun::Tun;
 use shadowsocks::relay::boxed_future;
 use smoltcp::wire::{IpAddress, IpCidr};
+use trust_dns_resolver::config::{NameServerConfigGroup, ResolverConfig, ResolverOpts};
+use trust_dns_resolver::AsyncResolver;
 
 mod dns_server;
 mod ssclient;
@@ -64,9 +66,16 @@ fn main() -> Result<(), Box<dyn Error>> {
     Tun::setup(config.tun_name.clone(), config.tun_ip, config.tun_cidr);
 
     run(lazy(move || {
+        let dns = config.dns_server;
+        let nameserver_config_group =
+            NameServerConfigGroup::from_ips_clear(&[dns.ip()], dns.port());
+        let resolver_config = ResolverConfig::from_parts(None, vec![], nameserver_config_group);
+        let options = ResolverOpts::default();
+        let (resolver, background) = AsyncResolver::new(resolver_config, options);
+        spawn(background);
         let dns_listen = "0.0.0.0:53".parse().unwrap();
-        let (_, authority) = run_dns_server(&dns_listen, config.dns_start_ip);
-        let client = Arc::new(SSClient::new(config.server_config, &config.dns_server));
+        let (_, authority) = run_dns_server(&dns_listen, config.dns_start_ip, resolver.clone());
+        let client = Arc::new(SSClient::new(config.server_config, resolver));
         spawn(Tun::bg_send().map_err(|_| ()));
 
         Tun::listen()

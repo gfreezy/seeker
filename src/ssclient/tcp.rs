@@ -2,7 +2,7 @@ use super::ahead::DecryptedReader as AeadDecryptedReader;
 use super::ahead::EncryptedWriter as AeadEncryptedWriter;
 use super::stream::DecryptedReader as StreamDecryptedReader;
 use super::stream::EncryptedWriter as StreamEncryptedWriter;
-use crate::ssclient::{resolve, try_timeout};
+use crate::ssclient::{resolve_remote_server, try_timeout};
 use bytes::BufMut;
 use log::debug;
 use shadowsocks::relay::boxed_future;
@@ -155,7 +155,7 @@ pub fn connect_proxy_server(
         svr_cfg.addr(),
         timeout
     );
-    let fut = resolve(async_resolver, svr_cfg)
+    let fut = resolve_remote_server(async_resolver, svr_cfg)
         .and_then(move |addr| try_timeout(TcpStream::connect(&addr), timeout));
     boxed_future(fut)
 }

@@ -26,8 +26,6 @@ use std::time::Duration;
 use tokio::io::{ReadHalf, WriteHalf};
 use tokio::net::UdpSocket;
 use tokio::prelude::{Future, FutureExt, Stream};
-use tokio::runtime::current_thread::spawn;
-use trust_dns_resolver::config::{NameServerConfigGroup, ResolverConfig, ResolverOpts};
 use trust_dns_resolver::AsyncResolver;
 
 pub struct SSClient {
@@ -36,17 +34,10 @@ pub struct SSClient {
 }
 
 impl SSClient {
-    pub fn new(server_config: Arc<ServerConfig>, dns: &SocketAddr) -> Self {
-        let nameserver_config_group =
-            NameServerConfigGroup::from_ips_clear(&[dns.ip()], dns.port());
-        let config = ResolverConfig::from_parts(None, vec![], nameserver_config_group);
-        let options = ResolverOpts::default();
-        let (resolver, background) = AsyncResolver::new(config, options);
-        //        let (resolver, background) = AsyncResolver::from_system_conf().unwrap();
-        spawn(background.map(|_| ()));
+    pub fn new(server_config: Arc<ServerConfig>, async_resolver: AsyncResolver) -> Self {
         SSClient {
             srv_cfg: server_config,
-            async_resolver: resolver,
+            async_resolver,
         }
     }
 
@@ -67,13 +58,13 @@ impl SSClient {
                 let rhalf = srv_r
                     .and_then(move |svr_r| svr_r.copy_timeout_opt(w, timeout))
                     .map_err(|e| {
-                        error!("copy srv to local: {:#?}", e);
+                        debug!("copy srv to local: {:#?}", e);
                         e
                     });
                 let whalf = srv_w
                     .and_then(move |svr_w| svr_w.copy_timeout_opt(r, timeout))
                     .map_err(|e| {
-                        error!("copy local to srv: {:#?}", e);
+                        debug!("copy local to srv: {:#?}", e);
                         e
                     });
                 tunnel(whalf, rhalf)
@@ -87,7 +78,7 @@ impl SSClient {
     ) -> impl Future<Item = (), Error = io::Error> + Send {
         let svr_cfg = self.srv_cfg.clone();
 
-        resolve(&self.async_resolver, svr_cfg.clone()).and_then(|remote_addr| {
+        resolve_remote_server(&self.async_resolver, svr_cfg.clone()).and_then(|remote_addr| {
             PacketStream::new(socket.clone()).for_each(move |(pkt, src)| {
                 let addr = addr.clone();
                 let addr2 = addr.clone();
@@ -179,7 +170,7 @@ impl SSClient {
 }
 
 /// Resolve address to IP
-pub fn resolve(
+pub fn resolve_remote_server(
     async_resolver: &AsyncResolver,
     svr_cfg: Arc<ServerConfig>,
 ) -> impl Future<Item = SocketAddr, Error = io::Error> + Send {
