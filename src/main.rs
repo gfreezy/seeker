@@ -1,6 +1,6 @@
 #![recursion_limit = "128"]
 use std::error::Error;
-use std::net::{Ipv4Addr, SocketAddr};
+use std::net::Ipv4Addr;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -12,27 +12,22 @@ use tokio::prelude::future::lazy;
 use tokio::prelude::{AsyncRead, Future, Stream};
 use tokio::runtime::current_thread::{run, spawn};
 
-use crate::dns_server::server::run_dns_server;
-use crate::ssclient::SSClient;
-use crate::tun::socket::TunSocket;
-use crate::tun::Tun;
 use shadowsocks::relay::boxed_future;
 use smoltcp::wire::{IpAddress, IpCidr};
 use trust_dns_resolver::config::{NameServerConfigGroup, ResolverConfig, ResolverOpts};
 use trust_dns_resolver::AsyncResolver;
 
+mod config;
 mod dns_server;
 mod ssclient;
 mod tun;
 
-struct Config {
-    server_config: Arc<ServerConfig>,
-    dns_start_ip: Ipv4Addr,
-    dns_server: SocketAddr,
-    tun_name: String,
-    tun_ip: IpAddress,
-    tun_cidr: IpCidr,
-}
+use crate::config::rule::{Action, ProxyRules, Rule};
+use config::Config;
+use dns_server::server::run_dns_server;
+use ssclient::SSClient;
+use tun::socket::TunSocket;
+use tun::Tun;
 
 fn main() -> Result<(), Box<dyn Error>> {
     env_logger::init();
@@ -54,6 +49,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         Some(Duration::from_secs(5)),
         None,
     );
+    let rules = ProxyRules::new(vec![
+        Rule::DomainSuffix("google.com".to_string(), Action::Proxy),
+        Rule::DomainSuffix("twitter.com".to_string(), Action::Proxy),
+        Rule::DomainSuffix("youtube.com".to_string(), Action::Proxy),
+    ]);
     let config = Config {
         server_config: Arc::new(srv_cfg),
         dns_start_ip: Ipv4Addr::new(10, 0, 0, 10),
@@ -61,6 +61,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         tun_name: "utun4".to_string(),
         tun_ip: IpAddress::v4(10, 0, 0, 1),
         tun_cidr: IpCidr::new(IpAddress::v4(10, 0, 0, 0), 24),
+        rules,
     };
 
     Tun::setup(config.tun_name.clone(), config.tun_ip, config.tun_cidr);
@@ -74,7 +75,12 @@ fn main() -> Result<(), Box<dyn Error>> {
         let (resolver, background) = AsyncResolver::new(resolver_config, options);
         spawn(background);
         let dns_listen = "0.0.0.0:53".parse().unwrap();
-        let (_, authority) = run_dns_server(&dns_listen, config.dns_start_ip, resolver.clone());
+        let (_, authority) = run_dns_server(
+            &dns_listen,
+            config.dns_start_ip,
+            resolver.clone(),
+            config.rules,
+        );
         let client = Arc::new(SSClient::new(config.server_config, resolver));
         spawn(Tun::bg_send().map_err(|_| ()));
 

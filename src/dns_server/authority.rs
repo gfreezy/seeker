@@ -1,3 +1,4 @@
+use crate::config::rule::{Action, ProxyRules};
 use log::{debug, error};
 use shadowsocks::relay::boxed_future;
 use sled::Db;
@@ -21,10 +22,16 @@ struct Inner {
     cache: Db,
     next_ip: u32,
     async_resolver: AsyncResolver,
+    rules: ProxyRules,
 }
 
 impl Inner {
-    fn new<P: AsRef<Path>>(path: P, next_ip: u32, async_resolver: AsyncResolver) -> Self {
+    fn new<P: AsRef<Path>>(
+        path: P,
+        next_ip: u32,
+        async_resolver: AsyncResolver,
+        rules: ProxyRules,
+    ) -> Self {
         let tree = Db::start_default(path).expect("open db error");
         let next_ip = match tree.get(NEXT_IP.as_bytes()) {
             Ok(Some(v)) => {
@@ -42,6 +49,7 @@ impl Inner {
             cache: tree,
             next_ip,
             async_resolver,
+            rules,
         }
     }
 
@@ -74,12 +82,17 @@ pub struct LocalAuthority {
 }
 
 impl LocalAuthority {
-    pub fn new<P: AsRef<Path>>(path: P, next_ip: Ipv4Addr, async_resolver: AsyncResolver) -> Self {
+    pub fn new<P: AsRef<Path>>(
+        path: P,
+        next_ip: Ipv4Addr,
+        async_resolver: AsyncResolver,
+        rules: ProxyRules,
+    ) -> Self {
         let n = u32::from_be_bytes(next_ip.octets());
         debug!("LocalAuthority.new next_ip: {}", n);
         LocalAuthority {
             origin: Name::root().into(),
-            inner: Arc::new(Mutex::new(Inner::new(path, n, async_resolver))),
+            inner: Arc::new(Mutex::new(Inner::new(path, n, async_resolver, rules))),
         }
     }
 
@@ -121,35 +134,44 @@ impl Future for LookupIP {
                 debug!("resolve from cache, domain: {}, ip: {}", &domain, &ip);
                 Ok(Async::Ready(ip))
             } else {
-                if domain.contains("google") {
-                    let addr = guard.gen_ipaddr();
-                    debug!("resolve to tun, domain: {}, ip: {}", &domain, &addr);
+                let default_action = guard.rules.default_action();
+                let action = guard
+                    .rules
+                    .action_for_domain(&domain)
+                    .unwrap_or(default_action);
+                match action {
+                    Action::Reject => Ok(Async::Ready("127.0.0.1".to_string())),
+                    Action::Direct => {
+                        let domain2 = domain.clone();
+                        debug!("direct, domain: {}", &domain2);
+                        self.lookup_future = Some(boxed_future(
+                            guard
+                                .async_resolver
+                                .lookup_ip(domain.as_str())
+                                .map(move |ips| {
+                                    let ip = ips.into_iter().next().unwrap();
+                                    debug!("resolve domain {}, ip: {}", &domain, ip);
+                                    ip.to_string()
+                                })
+                                .map_err(move |e| {
+                                    error!("resolve domain {}: {}", domain2, e);
+                                    io::ErrorKind::Other.into()
+                                }),
+                        ));
+                        self.lookup_future.as_mut().unwrap().poll()
+                    }
+                    Action::Proxy => {
+                        let addr = guard.gen_ipaddr();
+                        debug!("resolve to tun, domain: {}, ip: {}", &domain, &addr);
 
-                    guard
-                        .cache
-                        .set(NEXT_IP.as_bytes(), &guard.next_ip.to_be_bytes())
-                        .unwrap();
-                    guard.cache.set(domain.as_bytes(), addr.as_bytes()).unwrap();
-                    guard.cache.set(addr.as_bytes(), domain.as_bytes()).unwrap();
-                    Ok(Async::Ready(addr))
-                } else {
-                    let domain2 = domain.clone();
-                    debug!("direct, domain: {}", &domain2);
-                    self.lookup_future = Some(boxed_future(
                         guard
-                            .async_resolver
-                            .lookup_ip(domain.as_str())
-                            .map(move |ips| {
-                                let ip = ips.into_iter().next().unwrap();
-                                debug!("resolve domain {}, ip: {}", &domain, ip);
-                                ip.to_string()
-                            })
-                            .map_err(move |e| {
-                                error!("resolve domain {}: {}", domain2, e);
-                                io::ErrorKind::Other.into()
-                            }),
-                    ));
-                    self.lookup_future.as_mut().unwrap().poll()
+                            .cache
+                            .set(NEXT_IP.as_bytes(), &guard.next_ip.to_be_bytes())
+                            .unwrap();
+                        guard.cache.set(domain.as_bytes(), addr.as_bytes()).unwrap();
+                        guard.cache.set(addr.as_bytes(), domain.as_bytes()).unwrap();
+                        Ok(Async::Ready(addr))
+                    }
                 }
             }
         }
