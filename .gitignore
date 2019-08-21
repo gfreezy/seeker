@@ -3,3 +3,4 @@
 config.json
 Procfile
 /dns.db
+config.yml
