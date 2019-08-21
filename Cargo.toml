@@ -25,6 +25,8 @@ pico-args = "0.2.0"
 shadowsocks-rust = {version = "1.7.0", features = ["sodium"], default-features = false}
 bimap = "0.4.0"
 sled = "0.24.1"
+serde = { version = "1.0.99", features = ["derive"] }
+serde_yaml = "0.8.9"
 
 [dependencies.smoltcp]
 git = "https://github.com/gfreezy/smoltcp"

@@ -1,30 +1,26 @@
 #![recursion_limit = "128"]
-use std::error::Error;
-use std::net::Ipv4Addr;
-use std::sync::Arc;
-use std::time::Duration;
-
-use log::{error, info};
-use shadowsocks::crypto::CipherType;
-use shadowsocks::relay::socks5::Address;
-use shadowsocks::{ServerAddr, ServerConfig};
-use tokio::prelude::future::lazy;
-use tokio::prelude::{AsyncRead, Future, Stream};
-use tokio::runtime::current_thread::{run, spawn};
-
-use shadowsocks::relay::boxed_future;
-use smoltcp::wire::{IpAddress, IpCidr};
-use trust_dns_resolver::config::{NameServerConfigGroup, ResolverConfig, ResolverOpts};
-use trust_dns_resolver::AsyncResolver;
 
 mod config;
 mod dns_server;
 mod ssclient;
 mod tun;
 
-use crate::config::rule::{Action, ProxyRules, Rule};
+use std::error::Error;
+use std::sync::Arc;
+
+use log::{error, info};
+use shadowsocks::relay::socks5::Address;
+use tokio::prelude::future::lazy;
+use tokio::prelude::{AsyncRead, Future, Stream};
+use tokio::runtime::current_thread::{run, spawn};
+
+use shadowsocks::relay::boxed_future;
+use trust_dns_resolver::config::{NameServerConfigGroup, ResolverConfig, ResolverOpts};
+use trust_dns_resolver::AsyncResolver;
+
 use config::Config;
 use dns_server::server::run_dns_server;
+use pico_args::Arguments;
 use ssclient::SSClient;
 use tun::socket::TunSocket;
 use tun::Tun;
@@ -33,36 +29,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     env_logger::init();
     better_panic::install();
 
-    let mut args = pico_args::Arguments::from_env();
-    let local = args.contains("--local");
-    let _name: Option<String> = args.value_from_str("--tun")?;
+    let mut args = Arguments::from_env();
+    let path: String = args.value_from_str("--config")?.unwrap();
 
-    let (server_addr, method) = if local {
-        ("127.0.0.1", CipherType::Plain)
-    } else {
-        ("sg1.edge.bgp.app", CipherType::ChaCha20Ietf)
-    };
-    let srv_cfg = ServerConfig::new(
-        ServerAddr::DomainName(server_addr.to_string(), 14187),
-        "rixCloud".to_string(),
-        method,
-        Some(Duration::from_secs(5)),
-        None,
-    );
-    let rules = ProxyRules::new(vec![
-        Rule::DomainSuffix("google.com".to_string(), Action::Proxy),
-        Rule::DomainSuffix("twitter.com".to_string(), Action::Proxy),
-        Rule::DomainSuffix("youtube.com".to_string(), Action::Proxy),
-    ]);
-    let config = Config {
-        server_config: Arc::new(srv_cfg),
-        dns_start_ip: Ipv4Addr::new(10, 0, 0, 10),
-        dns_server: "223.5.5.5:53".parse().unwrap(),
-        tun_name: "utun4".to_string(),
-        tun_ip: IpAddress::v4(10, 0, 0, 1),
-        tun_cidr: IpCidr::new(IpAddress::v4(10, 0, 0, 0), 24),
-        rules,
-    };
+    let config = Config::from_config_file(&path);
 
     Tun::setup(config.tun_name.clone(), config.tun_ip, config.tun_cidr);
 

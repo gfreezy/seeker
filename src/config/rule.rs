@@ -1,5 +1,7 @@
+use crate::config::ip_cidr_from_str;
 use smoltcp::wire::IpCidr;
 use std::net::Ipv4Addr;
+use std::str::FromStr;
 use std::sync::Arc;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -42,6 +44,7 @@ impl ProxyRules {
             .next()
     }
 
+    #[allow(dead_code)]
     pub fn action_for_ip(&self, ip: Ipv4Addr) -> Option<Action> {
         self.rules
             .iter()
@@ -57,5 +60,41 @@ impl ProxyRules {
 
     pub fn default_action(&self) -> Action {
         Action::Direct
+    }
+}
+
+impl FromStr for Action {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s {
+            "REJECT" => Action::Reject,
+            "DIRECT" => Action::Direct,
+            "PROXY" => Action::Proxy,
+            _ => unreachable!(),
+        })
+    }
+}
+
+impl FromStr for Rule {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let segments = s.splitn(3, ",").collect::<Vec<_>>();
+        let (rule, criteria, action) = (segments[0], segments[1], segments[2]);
+        Ok(match rule {
+            "DOMAIN" => Rule::Domain(criteria.to_string(), Action::from_str(action).unwrap()),
+            "DOMAIN-SUFFIX" => {
+                Rule::DomainSuffix(criteria.to_string(), Action::from_str(action).unwrap())
+            }
+            "DOMAIN-KEYWORD" => {
+                Rule::DomainKeyword(criteria.to_string(), Action::from_str(action).unwrap())
+            }
+            "IP-CIDR" => Rule::IpCidr(
+                ip_cidr_from_str(criteria),
+                Action::from_str(action).unwrap(),
+            ),
+            _ => unreachable!(),
+        })
     }
 }
