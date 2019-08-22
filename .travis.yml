@@ -8,6 +8,7 @@ env:
   BIN_NAME: dump-cat
 addons:
   homebrew:
+    update: true
     packages:
       - libsodium
 matrix:
