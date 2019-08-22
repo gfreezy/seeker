@@ -41,7 +41,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         let nameserver_config_group =
             NameServerConfigGroup::from_ips_clear(&[dns.ip()], dns.port());
         let resolver_config = ResolverConfig::from_parts(None, vec![], nameserver_config_group);
-        let options = ResolverOpts::default();
+        let mut options = ResolverOpts::default();
+        options.cache_size = 1024;
         let (resolver, background) = AsyncResolver::new(resolver_config, options);
         spawn(background);
         let dns_listen = "0.0.0.0:53".parse().unwrap();
