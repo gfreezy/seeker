@@ -59,7 +59,7 @@ impl ProxyRules {
     }
 
     pub fn default_action(&self) -> Action {
-        Action::Direct
+        Action::Proxy
     }
 }
 
