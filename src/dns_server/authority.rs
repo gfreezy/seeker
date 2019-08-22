@@ -140,7 +140,7 @@ impl Future for LookupIP {
                     .action_for_domain(&domain)
                     .unwrap_or(default_action);
                 match action {
-                    Action::Reject => Ok(Async::Ready(Some("127.0.0.1".to_string()))),
+                    Action::Reject => Ok(Async::Ready(None)),
                     Action::Direct => {
                         let domain2 = domain.clone();
                         debug!("direct, domain: {}", &domain2);
@@ -155,7 +155,10 @@ impl Future for LookupIP {
                                 })
                                 .map_err(move |e| {
                                     error!("resolve domain {}: {}", domain2, e);
-                                    io::ErrorKind::Other.into()
+                                    io::Error::new(
+                                        io::ErrorKind::Other,
+                                        "resolve domain error".to_string(),
+                                    )
                                 }),
                         ));
                         self.lookup_future.as_mut().unwrap().poll()
