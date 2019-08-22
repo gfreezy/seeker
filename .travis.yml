@@ -1,0 +1,36 @@
+if: tag IS blank
+language: rust
+sudo: false
+rust:
+  - stable
+cache: cargo
+env:
+  BIN_NAME: dump-cat
+
+matrix:
+  include:
+    - name: macOS Build
+      os: osx
+    - name: Linux Build
+      os: linux
+install:
+  - rustup component add rustfmt clippy
+script:
+  - mkdir -p artifacts
+  - cargo fmt --all -- --check
+  - cargo clippy
+  - cargo test --verbose --all
+  - cargo build --release
+  - cp target/release/$BIN_NAME artifacts/$BIN_NAME-$TRAVIS_OS_NAME
+before_deploy:
+  - export TRAVIS_TAG="preview"
+deploy:
+  provider: releases
+  api_key: $KEY
+  skip_cleanup: true
+  draft: true
+  overwrite: true
+  file_glob: true
+  file: artifacts/$BIN_NAME-*
+  on:
+    branch: master
