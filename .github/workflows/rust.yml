@@ -18,9 +18,13 @@ jobs:
         rust: [stable]
 
     steps:
-    - uses: hecrj/setup-rust-action@master
-      with:
-        rust-version: ${{ matrix.rust }}
+    - name: Install rustup
+      run: curl https://sh.rustup.rs -sSf | sh -s -- -y
+    - name: Install rust
+      run: rustup install ${{ matrix.rust }}
+    - name: Install homebrew
+      run: /usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
+      if: matrix.os == "macOS-latest"
     - uses: actions/checkout@v1
     - name: Build
       run: cargo build --verbose
