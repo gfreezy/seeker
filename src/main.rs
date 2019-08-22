@@ -103,7 +103,6 @@ fn main() -> Result<(), Box<dyn Error>> {
             })
             .map_err(|e| {
                 error!("for_each error: {}", e);
-                ()
             })
     }));
 

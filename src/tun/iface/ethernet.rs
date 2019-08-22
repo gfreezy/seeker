@@ -425,9 +425,9 @@ impl<'a> InterfaceInner<'a> {
         let mut udp_socket = sockets.get::<UdpSocket>(handle);
         match udp_socket.process(&ip_repr, &udp_repr) {
             // The packet is valid and handled by socket.
-            Ok(()) => return Ok(Packet::None),
+            Ok(()) => Ok(Packet::None),
             // The packet is malformed, or the socket buffer is full.
-            Err(e) => return Err(e),
+            Err(e) => Err(e),
         }
     }
 
@@ -513,10 +513,10 @@ impl<'a> InterfaceInner<'a> {
         let mut tcp_socket = sockets.get::<TcpSocket>(handle);
         match tcp_socket.process(timestamp, &ip_repr, &tcp_repr) {
             // The packet is valid and handled by socket.
-            Ok(reply) => return Ok(reply.map_or(Packet::None, Packet::Tcp)),
+            Ok(reply) => Ok(reply.map_or(Packet::None, Packet::Tcp)),
             // The packet is malformed, or doesn't match the socket state,
             // or the socket buffer is full.
-            Err(e) => return Err(e),
+            Err(e) => Err(e),
         }
     }
 

@@ -19,7 +19,7 @@ use tokio::prelude::{task::current, Async, AsyncRead, AsyncWrite, Future, Poll, 
 
 use socket::TunSocket;
 
-fn setup_ip(tun_name: &str, ip: &IpAddress, cidr: &IpCidr) {
+fn setup_ip(tun_name: &str, ip: IpAddress, cidr: IpCidr) {
     let ip_s = ip.to_string();
     let output = Command::new("ifconfig")
         .args(&[tun_name, &ip_s, &ip_s])
@@ -64,7 +64,7 @@ impl Tun {
     pub fn setup(tun_name: String, tun_ip: IpAddress, tun_cidr: IpCidr) {
         let tun = phy::TunSocket::new(tun_name.as_str()).expect("open tun");
         let tun_name = tun.name();
-        setup_ip(&tun_name, &tun_ip, &tun_cidr);
+        setup_ip(&tun_name, tun_ip, tun_cidr);
 
         let device = PhonySocket::new(tun.mtu());
         let ip_addrs = vec![tun_cidr];
@@ -108,7 +108,7 @@ enum Handle {
 
 impl TunListen {
     fn may_recv_tun_handles(&mut self) -> HashSet<Handle> {
-        let handles = TUN.with(|tun| {
+        TUN.with(|tun| {
             let mut s = tun.borrow_mut();
             let mut_tun = match *s {
                 Some(ref mut tun) => tun,
@@ -135,8 +135,7 @@ impl TunListen {
                     _ => unreachable!(),
                 })
                 .collect::<HashSet<_>>()
-        });
-        handles
+        })
     }
 }
 
@@ -212,16 +211,13 @@ impl Stream for TunListen {
                             }
                             Socket::Udp(s) => {
                                 debug!("udp socket {}.", s.handle());
-                                if s.is_open() {
-                                    if s.can_recv() {
-                                        debug!("udp socket {} can recv.", s.handle());
-                                        if let Some(t) =
-                                            mut_tun.socket_read_tasks.get_mut(&s.handle())
-                                        {
-                                            if let Some(task) = t.take() {
-                                                debug!("notify udp socket {} for read", s.handle());
-                                                task.notify();
-                                            }
+                                if s.is_open() && s.can_recv() {
+                                    debug!("udp socket {} can recv.", s.handle());
+                                    if let Some(t) = mut_tun.socket_read_tasks.get_mut(&s.handle())
+                                    {
+                                        if let Some(task) = t.take() {
+                                            debug!("notify udp socket {} for read", s.handle());
+                                            task.notify();
                                         }
                                     }
                                 }
@@ -248,8 +244,8 @@ impl Stream for TunListen {
                         let handle = socket.handle();
                         // move handle to socket
                         TUN.with(|tun| {
-                            tun.borrow_mut().as_mut().map(|t| t.sockets.release(handle));
                             debug!("release handle {}", handle);
+                            tun.borrow_mut().as_mut().map(|t| t.sockets.release(handle))
                         });
                         socket
                     })
