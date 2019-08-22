@@ -45,6 +45,7 @@ rules:
   - 'DOMAIN-KEYWORD,itunes.apple.com,PROXY'
   - 'DOMAIN-SUFFIX,apple.co,REJECT'
   - 'DOMAIN-SUFFIX,apple.com,REJECT'
+  - 'MATCH,DIRECT'
 ```
 
 ## 重置 DNS 分配

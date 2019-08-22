@@ -10,6 +10,7 @@ pub enum Rule {
     DomainSuffix(String, Action),
     DomainKeyword(String, Action),
     IpCidr(IpCidr, Action),
+    Match(Action),
 }
 
 #[derive(Eq, PartialEq, Clone, Debug)]
@@ -38,6 +39,7 @@ impl ProxyRules {
                 Rule::Domain(d, action) if d == domain => Some(action.clone()),
                 Rule::DomainSuffix(d, action) if domain.ends_with(d) => Some(action.clone()),
                 Rule::DomainKeyword(d, action) if domain.contains(d) => Some(action.clone()),
+                Rule::Match(action) => Some(action.clone()),
                 _ => None,
             })
             .take(1)
@@ -59,7 +61,7 @@ impl ProxyRules {
     }
 
     pub fn default_action(&self) -> Action {
-        Action::Proxy
+        Action::Direct
     }
 }
 
@@ -81,7 +83,12 @@ impl FromStr for Rule {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let segments = s.splitn(3, ',').collect::<Vec<_>>();
-        let (rule, criteria, action) = (segments[0], segments[1], segments[2]);
+        let (rule, criteria, action) = match segments.len() {
+            2 => (segments[0], "", segments[1]),
+            3 => (segments[0], segments[1], segments[2]),
+            _ => unreachable!(),
+        };
+
         Ok(match rule {
             "DOMAIN" => Rule::Domain(criteria.to_string(), Action::from_str(action).unwrap()),
             "DOMAIN-SUFFIX" => {
@@ -94,6 +101,7 @@ impl FromStr for Rule {
                 ip_cidr_from_str(criteria),
                 Action::from_str(action).unwrap(),
             ),
+            "MATCH" => Rule::Match(Action::from_str(action).unwrap()),
             _ => unreachable!(),
         })
     }
