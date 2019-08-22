@@ -47,7 +47,7 @@ impl SSClient {
         addr: Address,
     ) -> impl Future<Item = (), Error = io::Error> + Send {
         let cfg = self.srv_cfg.clone();
-        let timeout = cfg.timeout();
+        let timeout = Some(Duration::from_secs(30));
         connect_proxy_server(self.srv_cfg.clone(), &self.async_resolver)
             .and_then(move |stream| {
                 debug!("connected remote stream");
