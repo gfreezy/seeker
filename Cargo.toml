@@ -19,14 +19,15 @@ trust-dns-server = "0.16.1"
 mio = "0.6.19"
 log = "0.4.7"
 managed = "0.7.1"
-env_logger = "0.6.2"
 better-panic = "0.1.2"
 pico-args = "0.2.0"
 shadowsocks-rust = {version = "1.7.0", features = ["sodium"], default-features = false}
-bimap = "0.4.0"
 sled = "0.24.1"
 serde = { version = "1.0.99", features = ["derive"] }
 serde_yaml = "0.8.9"
+tracing = "0.1"
+tracing-futures = "0.0.1-alpha.1"
+tracing-fmt = "0.0.1-alpha.3"
 
 [dependencies.smoltcp]
 git = "https://github.com/gfreezy/smoltcp"

@@ -1,12 +1,12 @@
 use crate::tun::socket::to_socket_addr;
 use crate::tun::TUN;
-use log::{debug, info};
 use smoltcp::socket::{SocketHandle, TcpSocket};
 use std::io;
 use std::io::{Read, Write};
 use std::net::SocketAddr;
 use tokio::prelude::task::current;
 use tokio::prelude::{Async, AsyncRead, AsyncWrite};
+use tracing::{debug, info};
 
 #[derive(Debug, Eq, PartialEq, Hash)]
 pub struct TunTcpSocket {

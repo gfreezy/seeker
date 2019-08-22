@@ -6,7 +6,6 @@ pub mod socket;
 
 use iface::ethernet::{Interface, InterfaceBuilder};
 use iface::phony_socket::PhonySocket;
-use log::{debug, error};
 use smoltcp::socket::{Socket, SocketHandle, SocketSet};
 use smoltcp::time::Instant;
 use smoltcp::wire::{IpAddress, IpCidr};
@@ -16,6 +15,7 @@ use std::io;
 use std::process::Command;
 use tokio::prelude::task::Task;
 use tokio::prelude::{task::current, Async, AsyncRead, AsyncWrite, Future, Poll, Stream};
+use tracing::{debug, error};
 
 use socket::TunSocket;
 
@@ -190,11 +190,11 @@ impl Stream for TunListen {
                     for mut socket in mut_tun.sockets.iter_mut() {
                         match &mut *socket {
                             Socket::Tcp(ref mut s) => {
-                                debug!("tcp socket {} state: {}.", s.handle(), s.state());
+                                //                                debug!("tcp socket {} state: {}.", s.handle(), s.state());
                                 if s.is_open() {
                                     // notify can recv or notify to be closed
                                     if s.can_recv() || !s.may_recv() {
-                                        debug!("tcp socket {} can recv or close.", s.handle());
+                                        //                                        debug!("tcp socket {} can recv or close.", s.handle());
                                         if let Some(t) =
                                             mut_tun.socket_read_tasks.get_mut(&s.handle())
                                         {
@@ -210,9 +210,9 @@ impl Stream for TunListen {
                                 }
                             }
                             Socket::Udp(s) => {
-                                debug!("udp socket {}.", s.handle());
+                                //                                debug!("udp socket {}.", s.handle());
                                 if s.is_open() && s.can_recv() {
-                                    debug!("udp socket {} can recv.", s.handle());
+                                    //                                    debug!("udp socket {} can recv.", s.handle());
                                     if let Some(t) = mut_tun.socket_read_tasks.get_mut(&s.handle())
                                     {
                                         if let Some(task) = t.take() {
@@ -277,9 +277,9 @@ impl TunWrite {
         for socket in tun.sockets.iter_mut() {
             match &*socket {
                 Socket::Tcp(s) => {
-                    debug!("tcp socket {} state: {}.", s.handle(), s.state());
+                    //                    debug!("tcp socket {} state: {}.", s.handle(), s.state());
                     if s.can_send() {
-                        debug!("tcp socket {} can send", s.handle());
+                        //                        debug!("tcp socket {} can send", s.handle());
                         if let Some(t) = tun.socket_write_tasks.get_mut(&s.handle()) {
                             if let Some(task) = t.take() {
                                 debug!("notify tcp socket {} for write", s.handle());
@@ -290,7 +290,7 @@ impl TunWrite {
                 }
                 Socket::Udp(s) => {
                     if s.can_send() {
-                        debug!("udp socket {} can send.", s.handle());
+                        //                        debug!("udp socket {} can send.", s.handle());
                         if let Some(t) = tun.socket_read_tasks.get_mut(&s.handle()) {
                             if let Some(task) = t.take() {
                                 debug!("notify udp socket {} for write", s.handle());
