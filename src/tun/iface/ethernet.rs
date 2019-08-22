@@ -13,7 +13,7 @@ use smoltcp::wire::{
     Ipv4Repr, PrettyPrinter, TcpControl, TcpPacket, TcpRepr, UdpPacket, UdpRepr,
 };
 use smoltcp::{Error, Result};
-use tracing::{debug, error};
+use tracing::debug;
 
 #[derive(Debug, PartialEq)]
 enum Packet<'a> {
@@ -242,7 +242,7 @@ where
                         inner
                             .dispatch(tx_token, timestamp, response)
                             .map_err(|err| {
-                                error!("cannot dispatch response packet: {}", err);
+                                debug!("cannot dispatch response packet: {}", err);
                                 err
                             })
                     })
@@ -379,8 +379,8 @@ impl<'a> InterfaceInner<'a> {
             .unwrap();
 
         if !udp_socket.accepts(&ip_repr, &udp_repr) {
-            error!("local_endpoint: {}", udp_socket.endpoint());
-            error!("udp sockt not accepts: {:?} {:?}", &ip_repr, &udp_repr);
+            debug!("local_endpoint: {}", udp_socket.endpoint());
+            debug!("udp sockt not accepts: {:?} {:?}", &ip_repr, &udp_repr);
             return Err(Error::Dropped);
         }
 
@@ -451,13 +451,13 @@ impl<'a> InterfaceInner<'a> {
             .unwrap();
 
         if !tcp_socket.accepts(&ip_repr, &tcp_repr) {
-            error!("socket state: {}", tcp_socket.state());
-            error!(
+            debug!("socket state: {}", tcp_socket.state());
+            debug!(
                 "remote_endpoint: {}, local_endpoint: {}",
                 tcp_socket.remote_endpoint(),
                 tcp_socket.local_endpoint()
             );
-            error!("tcp sockt not accepts: {:?} {:?}", &ip_repr, &tcp_repr);
+            debug!("tcp sockt not accepts: {:?} {:?}", &ip_repr, &tcp_repr);
             return Err(Error::Dropped);
         }
 
