@@ -1,7 +1,6 @@
 // Copyright (C) 2016 whitequark@whitequark.org
 // SPDX-License-Identifier: 0BSD
 #![allow(dead_code)]
-use log::{debug, error};
 use managed::ManagedSlice;
 use smoltcp::phy::RxToken;
 use smoltcp::phy::{Device, DeviceCapabilities, TxToken};
@@ -10,10 +9,11 @@ use smoltcp::socket::{PollAt, Socket, SocketSet, UdpSocket};
 use smoltcp::socket::{SocketHandle, TcpSocket};
 use smoltcp::time::{Duration, Instant};
 use smoltcp::wire::{
-    EthernetFrame, IpAddress, IpCidr, IpEndpoint, IpProtocol, IpRepr, Ipv4Packet, Ipv4Repr,
-    PrettyPrinter, TcpControl, TcpPacket, TcpRepr, UdpPacket, UdpRepr,
+    EthernetFrame, IpAddress, IpCidr, IpEndpoint, IpProtocol, IpRepr, Ipv4Address, Ipv4Packet,
+    Ipv4Repr, PrettyPrinter, TcpControl, TcpPacket, TcpRepr, UdpPacket, UdpRepr,
 };
 use smoltcp::{Error, Result};
+use tracing::{debug, error};
 
 #[derive(Debug, PartialEq)]
 enum Packet<'a> {
@@ -307,7 +307,6 @@ impl<'a> InterfaceInner<'a> {
     }
 
     /// Get the first IPv4 address of the interface.
-    #[cfg(feature = "proto-ipv4")]
     pub fn ipv4_address(&self) -> Option<Ipv4Address> {
         self.ip_addrs
             .iter()
@@ -337,7 +336,7 @@ impl<'a> InterfaceInner<'a> {
         let ip_repr = IpRepr::Ipv4(ipv4_repr);
         let ip_payload = ipv4_packet.payload();
 
-        debug!("recv ip packet: {:?}", &ip_repr);
+        //        debug!("recv ip packet: {:?}", &ip_repr);
 
         if !self.has_ip_addr(ipv4_repr.dst_addr)
             && !ipv4_repr.dst_addr.is_broadcast()
@@ -405,7 +404,7 @@ impl<'a> InterfaceInner<'a> {
         let checksum_caps = self.device_capabilities.checksum.clone();;
         let udp_repr = UdpRepr::parse(&udp_packet, &src_addr, &dst_addr, &checksum_caps)?;
 
-        debug!("recv udp packet: {:?}", &udp_repr);
+        //        debug!("recv udp packet: {:?}", &udp_repr);
 
         for mut udp_socket in sockets.iter_mut().filter_map(UdpSocket::downcast) {
             if !udp_socket.accepts(&ip_repr, &udp_repr) {
@@ -478,7 +477,7 @@ impl<'a> InterfaceInner<'a> {
         let checksum_caps = self.device_capabilities.checksum.clone();;
         let tcp_repr = TcpRepr::parse(&tcp_packet, &src_addr, &dst_addr, &checksum_caps)?;
 
-        debug!("recv tcp packet: {:?}", &tcp_repr);
+        //        debug!("recv tcp packet: {:?}", &tcp_repr);
 
         for mut tcp_socket in sockets.iter_mut().filter_map(TcpSocket::downcast) {
             if !tcp_socket.accepts(&ip_repr, &tcp_repr) {

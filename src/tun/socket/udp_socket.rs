@@ -1,11 +1,11 @@
 use crate::tun::socket::to_socket_addr;
 use crate::tun::TUN;
-use log::debug;
 use smoltcp::socket::{SocketHandle, UdpSocket};
 use std::io;
 use std::net::SocketAddr;
 use tokio::prelude::task::current;
 use tokio::prelude::{Async, Future, Poll};
+use tracing::debug;
 
 #[derive(Debug, Eq, PartialEq, Hash)]
 pub struct TunUdpSocket {

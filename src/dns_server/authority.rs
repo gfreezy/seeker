@@ -1,5 +1,4 @@
 use crate::config::rule::{Action, ProxyRules};
-use log::{debug, error};
 use shadowsocks::relay::boxed_future;
 use sled::Db;
 use std::io;
@@ -7,6 +6,7 @@ use std::net::Ipv4Addr;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use tokio::prelude::{future, Async, Future};
+use tracing::{debug, error};
 use trust_dns::op::LowerQuery;
 use trust_dns::proto::rr::{RData, Record};
 use trust_dns::rr::{LowerName, Name};

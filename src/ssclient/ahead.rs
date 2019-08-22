@@ -40,8 +40,8 @@ use std::{
 
 use byteorder::{BigEndian, ByteOrder};
 use bytes::{BufMut, BytesMut};
-use log::error;
 use tokio::prelude::{AsyncRead, AsyncWrite};
+use tracing::error;
 
 use super::BUFFER_SIZE;
 use shadowsocks::crypto::{self, BoxAeadDecryptor, BoxAeadEncryptor, CipherType};
