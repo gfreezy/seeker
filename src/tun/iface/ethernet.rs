@@ -311,7 +311,7 @@ impl<'a> InterfaceInner<'a> {
         self.ip_addrs
             .iter()
             .filter_map(|addr| match addr {
-                &IpCidr::Ipv4(cidr) => Some(cidr.address()),
+                IpCidr::Ipv4(cidr) => Some(cidr.address()),
                 _ => None,
             })
             .next()
