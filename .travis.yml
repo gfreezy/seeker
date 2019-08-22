@@ -5,7 +5,7 @@ rust:
   - stable
 cache: cargo
 env:
-  BIN_NAME: dump-cat
+  BIN_NAME: seeker
 addons:
   homebrew:
     update: true
