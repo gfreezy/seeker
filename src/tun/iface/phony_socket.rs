@@ -1,12 +1,12 @@
-use log::debug;
 use smoltcp::phy;
 use smoltcp::phy::{Device, DeviceCapabilities};
 use smoltcp::storage::RingBuffer;
 use smoltcp::time::Instant;
 use std::cell::{RefCell, RefMut};
 use std::rc::Rc;
+use tracing::debug;
 
-const MAX_PACKETS: usize = 102400;
+const MAX_PACKETS: usize = 102_400;
 
 #[derive(Debug)]
 pub struct PhonySocket {
