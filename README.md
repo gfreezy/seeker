@@ -1,7 +1,5 @@
 # Dump-cat [![Build Status](https://travis-ci.com/gfreezy/seeker.svg?branch=master)](https://travis-ci.com/gfreezy/seeker)
-使用 Tun 实现 ss 透明代理
-
-## Dependencies
+使用 Tun 实现 ss 透明代理（目前只支持 Mac 系统）
 
 ## Build
 ```bash
