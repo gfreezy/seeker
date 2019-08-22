@@ -6,9 +6,10 @@ rust:
 cache: cargo
 env:
   BIN_NAME: dump-cat
-packages:
-  brew:
-    - libsodium
+addons:
+  homebrew:
+    packages:
+      - libsodium
 matrix:
   include:
     - name: macOS Build
