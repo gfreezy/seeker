@@ -1,8 +1,8 @@
 use crate::config::rule::ProxyRules;
 use crate::dns_server::authority::LocalAuthority;
-use log::debug;
 use std::net::{Ipv4Addr, SocketAddr};
 use tokio::net::UdpSocket;
+use tracing::debug;
 use trust_dns::rr::Name;
 use trust_dns_resolver::AsyncResolver;
 use trust_dns_server::authority::Catalog;

@@ -1,12 +1,12 @@
 use crate::tun::socket::to_socket_addr;
 use crate::tun::TUN;
-use log::debug;
 use smoltcp::socket::{SocketHandle, TcpSocket};
 use std::io;
 use std::io::{Read, Write};
 use std::net::SocketAddr;
 use tokio::prelude::task::current;
 use tokio::prelude::{Async, AsyncRead, AsyncWrite};
+use tracing::{debug, info};
 
 #[derive(Debug, Eq, PartialEq, Hash)]
 pub struct TunTcpSocket {
@@ -83,6 +83,7 @@ impl Read for TunTcpSocket {
                         size,
                         //                        std::str::from_utf8(buf).unwrap()
                     );
+                    assert!(size > 0);
                     Ok(size)
                 } else {
                     debug!("TunTcpSocket.read will block");
@@ -91,6 +92,7 @@ impl Read for TunTcpSocket {
                     Err(io::ErrorKind::WouldBlock.into())
                 }
             } else {
+                info!("read eof for tcp socket: {}", self.handle);
                 Ok(0)
             }
         })
@@ -129,6 +131,7 @@ impl Write for TunTcpSocket {
                     Err(io::ErrorKind::WouldBlock.into())
                 }
             } else {
+                info!("write eof for tcp socket: {}", self.handle);
                 Ok(0)
             }
         })

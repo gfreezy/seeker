@@ -57,7 +57,7 @@ impl Config {
             CipherType::from_str(&yaml_server_config.method).unwrap(),
             yaml_server_config
                 .timeout
-                .map(|t| Duration::from_secs(t as u64)),
+                .map(|t| Duration::from_secs(u64::from(t))),
             None,
         );
         Config {
@@ -78,7 +78,7 @@ impl Config {
 }
 
 fn ip_cidr_from_str(s: &str) -> IpCidr {
-    let segments = s.splitn(2, "/").collect::<Vec<&str>>();
+    let segments = s.splitn(2, '/').collect::<Vec<&str>>();
     let addr = segments[0];
     let len = segments[1];
     let ipaddr: Ipv4Addr = addr.parse().unwrap();

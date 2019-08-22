@@ -4,7 +4,6 @@ use super::stream::DecryptedReader as StreamDecryptedReader;
 use super::stream::EncryptedWriter as StreamEncryptedWriter;
 use crate::ssclient::{resolve_remote_server, try_timeout};
 use bytes::BufMut;
-use log::debug;
 use shadowsocks::relay::boxed_future;
 use shadowsocks::relay::tcprelay::{DecryptedRead, EncryptedWrite};
 use shadowsocks::ServerConfig;
@@ -14,6 +13,8 @@ use std::sync::Arc;
 use tokio::io::{ReadHalf, WriteHalf};
 use tokio::net::TcpStream;
 use tokio::prelude::{AsyncRead, AsyncWrite, Future};
+use tracing::{debug, info, info_span};
+use tracing_futures::Instrument;
 use trust_dns_resolver::AsyncResolver;
 
 type TcpReadHalf<S /* : Read + Write + AsyncRead + AsyncWrite + Send */> = ReadHalf<S>;
@@ -155,7 +156,16 @@ pub fn connect_proxy_server(
         svr_cfg.addr(),
         timeout
     );
-    let fut = resolve_remote_server(async_resolver, svr_cfg)
-        .and_then(move |addr| try_timeout(TcpStream::connect(&addr), timeout));
+    let fut = resolve_remote_server(async_resolver, svr_cfg).and_then(move |addr| {
+        try_timeout(
+            TcpStream::connect(&addr)
+                .map(|s| {
+                    info!("Connected to remote addr: {}", &s.peer_addr().unwrap());
+                    s
+                })
+                .instrument(info_span!("TcpStream::connect", addr=%addr)),
+            timeout,
+        )
+    });
     boxed_future(fut)
 }

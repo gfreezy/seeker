@@ -59,7 +59,7 @@ impl ProxyRules {
     }
 
     pub fn default_action(&self) -> Action {
-        Action::Direct
+        Action::Proxy
     }
 }
 
@@ -80,7 +80,7 @@ impl FromStr for Rule {
     type Err = ();
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let segments = s.splitn(3, ",").collect::<Vec<_>>();
+        let segments = s.splitn(3, ',').collect::<Vec<_>>();
         let (rule, criteria, action) = (segments[0], segments[1], segments[2]);
         Ok(match rule {
             "DOMAIN" => Rule::Domain(criteria.to_string(), Action::from_str(action).unwrap()),

@@ -6,12 +6,8 @@ pub mod udp;
 
 const BUFFER_SIZE: usize = 8 * 1024; // 8K buffer
 
-use crate::ssclient::crypto_io::{decrypt_payload, encrypt_payload};
-use crate::ssclient::tcp::connect_proxy_server;
-use crate::ssclient::udp::{PacketStream, MAXIMUM_UDP_PAYLOAD_SIZE};
 use crate::tun::socket::{TunTcpSocket, TunUdpSocket};
-use log::debug;
-use log::error;
+use crypto_io::{decrypt_payload, encrypt_payload};
 use shadowsocks::relay::boxed_future;
 use shadowsocks::relay::socks5::Address;
 use shadowsocks::relay::tcprelay::{
@@ -23,10 +19,14 @@ use std::io::{Cursor, Read};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
+use tcp::connect_proxy_server;
 use tokio::io::{ReadHalf, WriteHalf};
 use tokio::net::UdpSocket;
 use tokio::prelude::{Future, FutureExt, Stream};
+use tracing::{debug, debug_span, error, info, info_span};
+use tracing_futures::Instrument;
 use trust_dns_resolver::AsyncResolver;
+use udp::{PacketStream, MAXIMUM_UDP_PAYLOAD_SIZE};
 
 pub struct SSClient {
     srv_cfg: Arc<ServerConfig>,
@@ -47,27 +47,40 @@ impl SSClient {
         addr: Address,
     ) -> impl Future<Item = (), Error = io::Error> + Send {
         let cfg = self.srv_cfg.clone();
-        let timeout = cfg.timeout();
+        let timeout = Some(Duration::from_secs(30));
         connect_proxy_server(self.srv_cfg.clone(), &self.async_resolver)
+            .instrument(info_span!("connect_proxy_server"))
             .and_then(move |stream| {
                 debug!("connected remote stream");
                 proxy_server_handshake(stream, cfg, addr)
+                    .instrument(debug_span!("proxy_server_handshake"))
             })
             .and_then(move |(srv_r, srv_w)| {
-                debug!("proxy server handshake successfully");
+                info!("proxy server handshake successfully");
                 let rhalf = srv_r
-                    .and_then(move |svr_r| svr_r.copy_timeout_opt(w, timeout))
+                    .and_then(move |svr_r| {
+                        svr_r
+                            .copy_timeout_opt(w, timeout)
+                            .instrument(debug_span!("copy_srv_to_local"))
+                    })
                     .map_err(|e| {
                         debug!("copy srv to local: {:#?}", e);
                         e
                     });
                 let whalf = srv_w
-                    .and_then(move |svr_w| svr_w.copy_timeout_opt(r, timeout))
+                    .and_then(move |svr_w| {
+                        svr_w
+                            .copy_timeout_opt(r, timeout)
+                            .instrument(debug_span!("copy_local_to_srv"))
+                    })
                     .map_err(|e| {
                         debug!("copy local to srv: {:#?}", e);
                         e
                     });
-                tunnel(whalf, rhalf)
+                tunnel(whalf, rhalf).then(|s| {
+                    info!("finish connection");
+                    s
+                })
             })
     }
 
@@ -187,12 +200,13 @@ pub fn resolve_remote_server(
                 })
                 .map(move |ips| {
                     let ip = ips.into_iter().next().unwrap();
-                    debug!("resolve ss server: {}", ip);
+                    info!("resolve ss server: {}", ip);
                     SocketAddr::new(ip, port)
                 });
             boxed_future(try_timeout(fut, svr_cfg.timeout()))
         }
     }
+    .instrument(info_span!("resolve_remote_server"))
 }
 
 pub fn try_timeout<T, F>(

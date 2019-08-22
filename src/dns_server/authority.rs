@@ -1,5 +1,4 @@
 use crate::config::rule::{Action, ProxyRules};
-use log::{debug, error};
 use shadowsocks::relay::boxed_future;
 use sled::Db;
 use std::io;
@@ -7,6 +6,7 @@ use std::net::Ipv4Addr;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use tokio::prelude::{future, Async, Future};
+use tracing::{debug, error};
 use trust_dns::op::LowerQuery;
 use trust_dns::proto::rr::{RData, Record};
 use trust_dns::rr::{LowerName, Name};
@@ -116,11 +116,11 @@ impl LocalAuthority {
 pub struct LookupIP {
     domain: String,
     inner: Arc<Mutex<Inner>>,
-    lookup_future: Option<Box<dyn Future<Item = String, Error = io::Error> + Send>>,
+    lookup_future: Option<Box<dyn Future<Item = Option<String>, Error = io::Error> + Send>>,
 }
 
 impl Future for LookupIP {
-    type Item = String;
+    type Item = Option<String>;
     type Error = io::Error;
 
     fn poll(&mut self) -> Result<Async<Self::Item>, Self::Error> {
@@ -128,11 +128,11 @@ impl Future for LookupIP {
             fut.poll()
         } else {
             let mut guard = self.inner.lock().unwrap();
-            let domain = self.domain.trim_end_matches(".").to_string();
+            let domain = self.domain.trim_end_matches('.').to_string();
             if let Some(addr) = guard.cache.get(&domain).expect("get domain") {
                 let ip = String::from_utf8(addr.to_vec()).unwrap();
                 debug!("resolve from cache, domain: {}, ip: {}", &domain, &ip);
-                Ok(Async::Ready(ip))
+                Ok(Async::Ready(Some(ip)))
             } else {
                 let default_action = guard.rules.default_action();
                 let action = guard
@@ -140,7 +140,7 @@ impl Future for LookupIP {
                     .action_for_domain(&domain)
                     .unwrap_or(default_action);
                 match action {
-                    Action::Reject => Ok(Async::Ready("127.0.0.1".to_string())),
+                    Action::Reject => Ok(Async::Ready(None)),
                     Action::Direct => {
                         let domain2 = domain.clone();
                         debug!("direct, domain: {}", &domain2);
@@ -151,11 +151,14 @@ impl Future for LookupIP {
                                 .map(move |ips| {
                                     let ip = ips.into_iter().next().unwrap();
                                     debug!("resolve domain {}, ip: {}", &domain, ip);
-                                    ip.to_string()
+                                    Some(ip.to_string())
                                 })
                                 .map_err(move |e| {
                                     error!("resolve domain {}: {}", domain2, e);
-                                    io::ErrorKind::Other.into()
+                                    io::Error::new(
+                                        io::ErrorKind::Other,
+                                        "resolve domain error".to_string(),
+                                    )
                                 }),
                         ));
                         self.lookup_future.as_mut().unwrap().poll()
@@ -170,7 +173,7 @@ impl Future for LookupIP {
                             .unwrap();
                         guard.cache.set(domain.as_bytes(), addr.as_bytes()).unwrap();
                         guard.cache.set(addr.as_bytes(), domain.as_bytes()).unwrap();
-                        Ok(Async::Ready(addr))
+                        Ok(Async::Ready(Some(addr)))
                     }
                 }
             }
@@ -241,11 +244,15 @@ impl Authority for LocalAuthority {
         Box::new(
             self.lookup_ip(name.to_string())
                 .map(|ip| {
-                    let mut record = Record::with(name, RecordType::A, 60);
-                    record.set_rdata(RData::A(ip.parse().unwrap()));
-                    LocalLookup(vec![record])
+                    if let Some(ip) = ip {
+                        let mut record = Record::with(name, RecordType::A, 60);
+                        record.set_rdata(RData::A(ip.parse().unwrap()));
+                        LocalLookup(vec![record])
+                    } else {
+                        LocalLookup(vec![])
+                    }
                 })
-                .map_err(|e| LookupError::Io(e)),
+                .map_err(LookupError::Io),
         )
     }
 
