@@ -30,7 +30,8 @@ before_deploy:
   - export TRAVIS_TAG="preview"
 deploy:
   provider: releases
-  api_key: $KEY
+  api_key:
+    secure: PH8bQxawqSZi6gXymhk4oiOw0eNppNyINtgr/FgYVaFzvP+G9QXPun+aNg0NbSuczRp0cvA+29n7/obkC4NV9u64XC8zo1ov2eNM6qUmAbu/SVN9nvl/M2O721EbdLkZ8+OT7mnPvuDDfdDIdq21MWCksGBi6IMa8w0sCmlVzyVUCz0Qy2dexT0R5UD7vTyvw4+zGznNf8iCYJYijSRBv+drgKO9Nyr6TYgTH7oVzw8UrXiMuGDkuAQCfkUJ+6po9scMq1YMsjPql2xNYJHfmIb7jF69wtbhC++xd7g1QyCkEhSiWLbVS3g7GIePwQqXTeSChC8hHw6zCJSlcnl44T7oaI+UDq1HQFRRA57b5VXY8urd1zXPDEiiHje1H5jz1R/MTBEVVbOXvwNV9O1jrPCG+TedNb3GoThxd+QDQh/JG/Ln20PYNWeHErpunFD0cXy44+SdO42eNzjljzxCVI7n/4KCswzEqSpl1g2RRVRmAbTIdQtLmpKC8PYjyLBtbyVqxVbIPmdjwAdRUvG3flaAE0etZV2kB8RfRt8X2vJMd5v0rlJ0fckCKhBjn3dDYZGq8rFpY9oVobdUT2OycBeK0IP00f0ShGD55vYkXqd9C/yqNgUdx03GR3sGV55+xbBcehuG2Whdvt/2W08omYALqXXMXMTS26aNNMzYI2s=
   skip_cleanup: true
   draft: true
   overwrite: true
