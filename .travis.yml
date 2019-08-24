@@ -3,7 +3,8 @@ language: rust
 sudo: false
 rust:
   - stable
-cache: cargo
+cache:
+  - cargo
 env:
   BIN_NAME: seeker
 matrix:
@@ -12,8 +13,12 @@ matrix:
       os: osx
 #    - name: Linux Build
 #      os: linux
+addons:
+  homebrew:
+    update: true
+    packages:
+      - libsodium
 install:
-  - ci/travis-libsodium.sh
   - rustup component add rustfmt clippy
 script:
   - mkdir -p artifacts
