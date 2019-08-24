@@ -1442,6 +1442,7 @@ dependencies = [
  "sled 0.24.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "smoltcp 0.5.0 (git+https://github.com/gfreezy/smoltcp?rev=10eff99)",
  "tokio 0.1.22 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tokio-signal 0.2.7 (registry+https://github.com/rust-lang/crates.io-index)",
  "tracing 0.1.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "tracing-fmt 0.0.1-alpha.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "tracing-futures 0.0.1-alpha.1 (registry+https://github.com/rust-lang/crates.io-index)",
