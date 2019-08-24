@@ -24,14 +24,14 @@ script:
   - cargo fmt --all -- --check
   - cargo clippy
   - cargo test --verbose --all
-  - cargo build --release
-  - cp target/release/$BIN_NAME artifacts/$BIN_NAME-$TRAVIS_OS_NAME
+#  - cargo build --release
+#  - cp target/release/$BIN_NAME artifacts/$BIN_NAME-$TRAVIS_OS_NAME
 before_deploy:
   - export TRAVIS_TAG="preview"
 deploy:
   provider: releases
   api_key:
-    secure: PH8bQxawqSZi6gXymhk4oiOw0eNppNyINtgr/FgYVaFzvP+G9QXPun+aNg0NbSuczRp0cvA+29n7/obkC4NV9u64XC8zo1ov2eNM6qUmAbu/SVN9nvl/M2O721EbdLkZ8+OT7mnPvuDDfdDIdq21MWCksGBi6IMa8w0sCmlVzyVUCz0Qy2dexT0R5UD7vTyvw4+zGznNf8iCYJYijSRBv+drgKO9Nyr6TYgTH7oVzw8UrXiMuGDkuAQCfkUJ+6po9scMq1YMsjPql2xNYJHfmIb7jF69wtbhC++xd7g1QyCkEhSiWLbVS3g7GIePwQqXTeSChC8hHw6zCJSlcnl44T7oaI+UDq1HQFRRA57b5VXY8urd1zXPDEiiHje1H5jz1R/MTBEVVbOXvwNV9O1jrPCG+TedNb3GoThxd+QDQh/JG/Ln20PYNWeHErpunFD0cXy44+SdO42eNzjljzxCVI7n/4KCswzEqSpl1g2RRVRmAbTIdQtLmpKC8PYjyLBtbyVqxVbIPmdjwAdRUvG3flaAE0etZV2kB8RfRt8X2vJMd5v0rlJ0fckCKhBjn3dDYZGq8rFpY9oVobdUT2OycBeK0IP00f0ShGD55vYkXqd9C/yqNgUdx03GR3sGV55+xbBcehuG2Whdvt/2W08omYALqXXMXMTS26aNNMzYI2s=
+    secure: m2djaZaUqAwPLhVe1ZyLUDy8pj+mo+YSGqFpDGok1gAXoUoH33L1fp67ngbO27BEObKOmuY/CvbgFjc9qItxPSZY4mFev7l2eeRUacJ3RIZEaOIK+C/iN2U7e7EA1PLuRet+DM9Szbi2cIeYuLbJsbDatsGATwbovbUobgDjEiH24md+/ysZHhlAO2QDhaVxFUBv2xzEpHm0h+V9StE6aqx1PwAw07/10Ye9Eo1s4st79V0/IyYU4zE+I3ZGL4mhw5Nf1MIfwurzfToRH8KLe68HFxy8nhIQYTbMXzEa7IQAxKad7WPkLvdFrvEBEFupS4ewmunoamqSIDPPQMDrpzXDIrRtvxms7UtVxXgONOxYLuA+1CLpiew45Tz5pAlrILUtV5bCEtO5Yz8RDtKJqn/ZzgydqX96tl2TYDOJkgSF3kfwF8M6ZC3XfzyEYYuH0FUma8r4sM0Fb0CiUumykZDi/vvDbabs00BnA0XTskkLMsD3eKzgiRS/EEmTO8Q+jH+EDMVu25sNZWXDQNXCiQBkeG/6wl7NT80pCy8P07XVSqT0IkT55/NX2e8DzoGoqT3BdTArcjf/3wDVL3/qnKVAvE+Mv/HHo+DflxiL1tyHZr0E+9jmsKCWDc1QuDJndi7Jw4ZzXeXabu7CXehD3jt8LbhwVv4DXD8eIN3zcE0=
   skip_cleanup: true
   draft: true
   overwrite: true
