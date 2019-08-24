@@ -3,6 +3,7 @@ language: rust
 sudo: false
 rust:
   - stable
+cache: cargo
 env:
   BIN_NAME: seeker
 matrix:
@@ -19,8 +20,8 @@ script:
   - cargo fmt --all -- --check
   - cargo clippy
   - cargo test --verbose --all
-#  - cargo build --release
-#  - cp target/release/$BIN_NAME artifacts/$BIN_NAME-$TRAVIS_OS_NAME
+  - cargo build --release
+  - cp target/release/$BIN_NAME artifacts/$BIN_NAME-$TRAVIS_OS_NAME
 before_deploy:
   - export TRAVIS_TAG="preview"
 deploy:
