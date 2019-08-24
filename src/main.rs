@@ -118,7 +118,6 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let stream = tokio_signal::ctrl_c().flatten_stream();
     let _ = runtime.block_on(stream.into_future()).ok().unwrap();
-    //    runtime.run().unwrap();
     Ok(())
 }
 
