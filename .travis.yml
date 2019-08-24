@@ -3,7 +3,6 @@ language: rust
 sudo: false
 rust:
   - stable
-cache: cargo
 env:
   BIN_NAME: seeker
 matrix:
