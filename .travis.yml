@@ -4,7 +4,16 @@ sudo: false
 rust:
   - stable
 cache:
-  - cargo
+  directories:
+    - $HOME/.cargo
+    - $TRAVIS_BUILD_DIR/target
+    # `cache: ccache: true` has no effect if `language:` is not `c` or `cpp`
+    - $HOME/.ccache
+    # https://stackoverflow.com/questions/39930171/cache-brew-builds-with-travis-ci
+    - $HOME/Library/Caches/Homebrew
+    - /usr/local/Homebrew/
+    # used in OSX custom build script dealing with local bottle caching
+    - $HOME/local_bottle_metadata
 env:
   BIN_NAME: seeker
 matrix:
@@ -18,6 +27,34 @@ addons:
     update: true
     packages:
       - libsodium
+
+before_install: |
+  if [ -n "$IS_OSX" ]; then
+      TAPS="$(brew --repository)/Library/Taps"
+      if [ -e "$TAPS/caskroom/homebrew-cask" -a -e "$TAPS/homebrew/homebrew-cask" ]; then
+          rm -rf "$TAPS/caskroom/homebrew-cask"
+      fi
+      find "$TAPS" -type d -name .git -exec \
+              bash -xec '
+                  cd $(dirname '\''{}'\'') || echo "status: $?"
+                  git clean -fxd || echo "status: $?"
+                  sleep 1 || echo "status: $?"
+                  git status || echo "status: $?"' \; || echo "status: $?"
+      brew_cache_cleanup
+  fi
+
+before_cache: |
+  # Cleanup dirs to be cached
+  set -e; set -x
+  if [ -n "$IS_OSX" ]; then
+      # When Taps is cached, this dir causes "Error: file exists" on `brew update`
+      if [ -e "$(brew --repository)/Library/Taps/homebrew/homebrew-cask/homebrew-cask" ]; then
+          rm -rf "$(brew --repository)/Library/Taps/homebrew/homebrew-cask/homebrew-cask"
+      fi
+      brew_cache_cleanup
+  fi
+  set +x; set +e
+
 install:
   - rustup component add rustfmt clippy
 script:
