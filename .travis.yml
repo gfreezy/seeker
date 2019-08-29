@@ -9,14 +9,7 @@ env:
   - BIN_NAME=seeker
   - SODIUM_BUILD_STATIC=yes
   - SODIUM_STATIC=yes
-
-matrix:
-  include:
-    - name: macOS Build
-      os: osx
-#    - name: Linux Build
-#      os: linux
-
+os: osx
 install:
   - rustup component add rustfmt clippy
 script:
