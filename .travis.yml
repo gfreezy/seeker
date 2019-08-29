@@ -6,10 +6,17 @@ rust:
 cache:
   cargo: true
 env:
-  - BIN_NAME=seeker
-  - SODIUM_BUILD_STATIC=yes
-  - SODIUM_STATIC=yes
-os: osx
+  global:
+    - BIN_NAME=seeker
+    - SODIUM_BUILD_STATIC=yes
+    - SODIUM_STATIC=yes
+matrix:
+  include:
+    - name: macOS Build
+      os: osx
+#    - name: Linux Build
+#      os: linux
+
 install:
   - rustup component add rustfmt clippy
 script:
