@@ -10,6 +10,7 @@ env:
     - BIN_NAME=seeker
     - SODIUM_BUILD_STATIC=yes
     - SODIUM_STATIC=yes
+    - OPENSSL_STATIC=yes
 matrix:
   include:
     - name: macOS Build
