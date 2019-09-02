@@ -324,7 +324,7 @@ impl<'a> InterfaceInner<'a> {
         frame: &'frame T,
     ) -> Result<Packet<'frame>> {
         let ipv4_packet = Ipv4Packet::new_checked(frame)?;
-        let checksum_caps = self.device_capabilities.checksum.clone();;
+        let checksum_caps = self.device_capabilities.checksum.clone();
         let ipv4_repr = Ipv4Repr::parse(&ipv4_packet, &checksum_caps)?;
 
         if !ipv4_repr.src_addr.is_unicast() {
@@ -401,7 +401,7 @@ impl<'a> InterfaceInner<'a> {
     ) -> Result<Packet<'frame>> {
         let (src_addr, dst_addr) = (ip_repr.src_addr(), ip_repr.dst_addr());
         let udp_packet = UdpPacket::new_checked(ip_payload)?;
-        let checksum_caps = self.device_capabilities.checksum.clone();;
+        let checksum_caps = self.device_capabilities.checksum.clone();
         let udp_repr = UdpRepr::parse(&udp_packet, &src_addr, &dst_addr, &checksum_caps)?;
 
         //        debug!("recv udp packet: {:?}", &udp_repr);
@@ -474,7 +474,7 @@ impl<'a> InterfaceInner<'a> {
     ) -> Result<Packet<'frame>> {
         let (src_addr, dst_addr) = (ip_repr.src_addr(), ip_repr.dst_addr());
         let tcp_packet = TcpPacket::new_checked(ip_payload)?;
-        let checksum_caps = self.device_capabilities.checksum.clone();;
+        let checksum_caps = self.device_capabilities.checksum.clone();
         let tcp_repr = TcpRepr::parse(&tcp_packet, &src_addr, &dst_addr, &checksum_caps)?;
 
         //        debug!("recv tcp packet: {:?}", &tcp_repr);
@@ -523,7 +523,7 @@ impl<'a> InterfaceInner<'a> {
     where
         Tx: TxToken,
     {
-        let checksum_caps = self.device_capabilities.checksum.clone();;
+        let checksum_caps = self.device_capabilities.checksum.clone();
         match packet {
             Packet::Udp((ip_repr, udp_repr)) => {
                 self.dispatch_ip(tx_token, timestamp, ip_repr, |ip_repr, payload| {
@@ -581,7 +581,7 @@ impl<'a> InterfaceInner<'a> {
         F: FnOnce(IpRepr, &mut [u8]),
     {
         let ip_repr = ip_repr.lower(&self.ip_addrs)?;
-        let checksum_caps = self.device_capabilities.checksum.clone();;
+        let checksum_caps = self.device_capabilities.checksum.clone();
 
         tx_token.consume(timestamp, ip_repr.total_len(), |mut tx_buffer| {
             ip_repr.emit(&mut tx_buffer, &checksum_caps);
