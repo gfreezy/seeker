@@ -21,7 +21,6 @@ mio = "0.6.19"
 log = "0.4.7"
 managed = "0.7.1"
 better-panic = "0.1.2"
-pico-args = "0.2.0"
 shadowsocks-rust = {version = "1.7.0", features = ["sodium"], default-features = false}
 sled = "0.24.1"
 serde = { version = "1.0.99", features = ["derive"] }
@@ -41,3 +40,7 @@ features = [
 	"socket-tcp",
 	"phy-raw_socket",
 ]
+
+[dependencies.clap]
+version = "2"
+default-features = false

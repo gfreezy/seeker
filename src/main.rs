@@ -17,9 +17,9 @@ use shadowsocks::relay::boxed_future;
 use trust_dns_resolver::config::{NameServerConfigGroup, ResolverConfig, ResolverOpts};
 use trust_dns_resolver::AsyncResolver;
 
+use clap::{App, Arg};
 use config::Config;
 use dns_server::server::run_dns_server;
-use pico_args::Arguments;
 use ssclient::SSClient;
 use std::process::Command;
 use tun::socket::TunSocket;
@@ -30,10 +30,22 @@ fn main() -> Result<(), Box<dyn Error>> {
     let my_subscriber = tracing_fmt::FmtSubscriber::new();
     tracing::subscriber::set_global_default(my_subscriber).expect("setting tracing default failed");
 
-    let mut args = Arguments::from_env();
-    let path: String = args.value_from_str("--config")?.unwrap();
+    let matches = App::new("Seeker")
+        .version("0.0.1")
+        .author("gfreezy <gfreezy@gmail.com>")
+        .about("Tun to Shadowsockets proxy.")
+        .arg(
+            Arg::with_name("config")
+                .short("c")
+                .long("config")
+                .value_name("FILE")
+                .help("Sets config file")
+                .required(true),
+        )
+        .get_matches();
 
-    let config = Config::from_config_file(&path);
+    let path = matches.value_of("config").unwrap();
+    let config = Config::from_config_file(path);
 
     Tun::setup(config.tun_name.clone(), config.tun_ip, config.tun_cidr);
 
