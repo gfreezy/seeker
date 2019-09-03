@@ -26,20 +26,19 @@ use tun::socket::TunSocket;
 use tun::Tun;
 
 fn main() -> Result<(), Box<dyn Error>> {
-    better_panic::install();
     let my_subscriber = tracing_fmt::FmtSubscriber::new();
     tracing::subscriber::set_global_default(my_subscriber).expect("setting tracing default failed");
 
     let matches = App::new("Seeker")
         .version("0.0.1")
         .author("gfreezy <gfreezy@gmail.com>")
-        .about("Tun to Shadowsockets proxy.")
+        .about("Tun to Shadowsockets proxy. https://github.com/gfreezy/seeker")
         .arg(
             Arg::with_name("config")
                 .short("c")
                 .long("config")
                 .value_name("FILE")
-                .help("Sets config file")
+                .help("Sets config file. Sample config at https://github.com/gfreezy/seeker/blob/master/sample_config.yml")
                 .required(true),
         )
         .get_matches();

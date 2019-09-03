@@ -15,7 +15,7 @@ pub fn run_dns_server(
     rules: ProxyRules,
 ) -> (ServerFuture<Catalog>, LocalAuthority) {
     info!("run dns server");
-    let udpsocket = UdpSocket::bind(addr).unwrap();
+    let udpsocket = UdpSocket::bind(addr).expect(&format!("Failed to bind to {}", &addr));
     let local_authority = LocalAuthority::new("dns.db", start_ip, async_resolver, rules);
     let mut catalog = Catalog::new();
     catalog.upsert(Name::root().into(), Box::new(local_authority.clone()));
