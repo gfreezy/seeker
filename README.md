@@ -19,11 +19,7 @@ cargo build --release
     sudo seeker --config path/to/config.yml
     ```
    
-2. 修改本机 DNS 到 `127.0.0.1`
-
-    ```bash
-    networksetup -setdnsservers Wi-Fi 127.0.0.1
-    ```
+2. `seeker` 启动的时候会自动将本机 DNS 修改为 `127.0.0.1`，退出的时候将 DNS 设置为默认值
 
 ## Config
 
