@@ -404,7 +404,7 @@ impl<'a> InterfaceInner<'a> {
         let checksum_caps = self.device_capabilities.checksum.clone();
         let udp_repr = UdpRepr::parse(&udp_packet, &src_addr, &dst_addr, &checksum_caps)?;
 
-        //        debug!("recv udp packet: {:?}", &udp_repr);
+        debug!("recv udp packet: {:?}", &udp_repr);
 
         for mut udp_socket in sockets.iter_mut().filter_map(UdpSocket::downcast) {
             if !udp_socket.accepts(&ip_repr, &udp_repr) {
