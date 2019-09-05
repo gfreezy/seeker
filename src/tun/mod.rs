@@ -4,11 +4,13 @@ pub mod phy;
 #[macro_use]
 pub mod socket;
 
+use futures::try_ready;
 use iface::ethernet::{Interface, InterfaceBuilder};
 use iface::phony_socket::PhonySocket;
 use smoltcp::socket::{Socket, SocketHandle, SocketSet};
 use smoltcp::time::Instant;
 use smoltcp::wire::{IpAddress, IpCidr};
+use socket::TunSocket;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::io;
@@ -16,8 +18,6 @@ use std::process::Command;
 use tokio::prelude::task::Task;
 use tokio::prelude::{task::current, Async, AsyncRead, AsyncWrite, Future, Poll, Stream};
 use tracing::{debug, error};
-
-use socket::TunSocket;
 
 fn setup_ip(tun_name: &str, ip: IpAddress, cidr: IpCidr) {
     let ip_s = ip.to_string();
@@ -210,11 +210,12 @@ impl Stream for TunListen {
                                 }
                             }
                             Socket::Udp(s) => {
-                                //                                debug!("udp socket {}.", s.handle());
+                                debug!("udp socket {}.", s.handle());
                                 if s.is_open() && s.can_recv() {
-                                    //                                    debug!("udp socket {} can recv.", s.handle());
+                                    debug!("udp socket {} can recv.", s.handle());
                                     if let Some(t) = mut_tun.socket_read_tasks.get_mut(&s.handle())
                                     {
+                                        debug!("udp socket {} get task {:?}.", s.handle(), &t);
                                         if let Some(task) = t.take() {
                                             debug!("notify udp socket {} for read", s.handle());
                                             task.notify();
@@ -229,7 +230,8 @@ impl Stream for TunListen {
                     debug!("TunListen.poll sockets.prune");
                     mut_tun.sockets.prune();
 
-                    Ok(Async::Ready(()))
+                    let s: Poll<(), io::Error> = Ok(Async::Ready(()));
+                    s
                 }));
 
                 let after_handles = self.may_recv_tun_handles();

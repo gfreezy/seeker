@@ -1,16 +1,6 @@
 use smoltcp::wire::{IpAddress, IpEndpoint};
 use std::net::{Ipv4Addr, SocketAddr};
 
-macro_rules! try_ready {
-    ($e:expr) => {
-        match $e {
-            Ok(Async::Ready(t)) => t,
-            Ok(Async::NotReady) => return Ok(Async::NotReady),
-            Err(e) => return Err(e),
-        }
-    };
-}
-
 fn to_socket_addr(endpoint: IpEndpoint) -> SocketAddr {
     match endpoint.addr {
         IpAddress::Ipv4(addr) => {

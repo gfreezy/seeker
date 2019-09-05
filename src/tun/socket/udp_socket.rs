@@ -1,5 +1,6 @@
 use crate::tun::socket::to_socket_addr;
 use crate::tun::TUN;
+use futures::try_ready;
 use smoltcp::socket::{SocketHandle, UdpSocket};
 use std::io;
 use std::net::SocketAddr;
@@ -52,11 +53,13 @@ impl TunUdpSocket {
                 let (size, endpoint) = socket
                     .recv_slice(buf)
                     .map_err(|_| -> io::Error { io::ErrorKind::Other.into() })?;
+                debug!("TunUdpSocket.read {} bytes", size);
                 Ok(Async::Ready((size, to_socket_addr(endpoint))))
             } else {
                 let h = socket.handle();
                 mut_tun.socket_read_tasks.insert(h, Some(current()));
-                Err(io::ErrorKind::WouldBlock.into())
+                debug!("TunUdpSocket.read blocks: {:?}", h);
+                Ok(Async::NotReady)
             }
         })
     }
@@ -85,7 +88,7 @@ impl TunUdpSocket {
             } else {
                 let h = socket.handle();
                 mut_tun.socket_write_tasks.insert(h, Some(current()));
-                Err(io::ErrorKind::WouldBlock.into())
+                Ok(Async::NotReady)
             }
         })
     }

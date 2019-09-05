@@ -8,29 +8,34 @@ const BUFFER_SIZE: usize = 8 * 1024; // 8K buffer
 
 use crate::tun::socket::{TunTcpSocket, TunUdpSocket};
 use crypto_io::{decrypt_payload, encrypt_payload};
+use futures::stream::SplitSink;
 use shadowsocks::relay::boxed_future;
 use shadowsocks::relay::socks5::Address;
 use shadowsocks::relay::tcprelay::{
     proxy_server_handshake, tunnel, DecryptedRead, EncryptedWrite, TimeoutFuture,
 };
 use shadowsocks::{ServerAddr, ServerConfig};
+use std::collections::HashMap;
 use std::io;
 use std::io::{Cursor, Read};
 use std::net::SocketAddr;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tcp::connect_proxy_server;
+use tokio::codec::BytesCodec;
 use tokio::io::{ReadHalf, WriteHalf};
-use tokio::net::UdpSocket;
-use tokio::prelude::{Future, FutureExt, Stream};
+use tokio::net::{UdpFramed, UdpSocket};
+use tokio::prelude::{Future, FutureExt, Sink, Stream};
+use tokio::runtime::current_thread::spawn;
 use tracing::{debug, debug_span, error, info, info_span};
 use tracing_futures::Instrument;
 use trust_dns_resolver::AsyncResolver;
-use udp::{PacketStream, MAXIMUM_UDP_PAYLOAD_SIZE};
+use udp::PacketStream;
 
 pub struct SSClient {
     srv_cfg: Arc<ServerConfig>,
     async_resolver: AsyncResolver,
+    remote_udp_map: Arc<Mutex<HashMap<(SocketAddr, u16), SplitSink<UdpFramed<BytesCodec>>>>>,
 }
 
 impl SSClient {
@@ -38,6 +43,7 @@ impl SSClient {
         SSClient {
             srv_cfg: server_config,
             async_resolver,
+            remote_udp_map: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -90,11 +96,12 @@ impl SSClient {
         addr: Address,
     ) -> impl Future<Item = (), Error = io::Error> + Send {
         let svr_cfg = self.srv_cfg.clone();
+        let svr_cfg2 = svr_cfg.clone();
+        let map = self.remote_udp_map.clone();
 
-        resolve_remote_server(&self.async_resolver, svr_cfg.clone()).and_then(|remote_addr| {
+        resolve_remote_server(&self.async_resolver, svr_cfg2).and_then(move |remote_addr| {
             PacketStream::new(socket.clone()).for_each(move |(pkt, src)| {
                 let addr = addr.clone();
-                let addr2 = addr.clone();
                 let svr_cfg_cloned = svr_cfg.clone();
                 let svr_cfg_cloned_cloned = svr_cfg.clone();
                 let socket = socket.clone();
@@ -102,8 +109,6 @@ impl SSClient {
 
                 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(5);
                 let svr_cfg = svr_cfg_cloned_cloned;
-                let local_addr = "0.0.0.0:0".parse().unwrap();
-                let remote_udp = UdpSocket::bind(&local_addr).unwrap();
                 let mut buf = vec![];
                 addr.write_to_buf(&mut buf);
                 buf.extend_from_slice(&pkt);
@@ -115,9 +120,50 @@ impl SSClient {
                     payload.len()
                 );
                 let to = timeout.unwrap_or(DEFAULT_TIMEOUT);
+                let mut locked_map = map.try_lock().unwrap();
+                let key = (src, remote_addr.port());
+                let remote_udp = if let Some(udp) = locked_map.remove(&key) {
+                    udp
+                } else {
+                    let local_addr = "0.0.0.0:0".parse().unwrap();
+                    let remote_udp = UdpSocket::bind(&local_addr).unwrap();
+                    let udp_framed = UdpFramed::new(remote_udp, BytesCodec::new());
+                    let (sink, source) = udp_framed.split();
 
+                    spawn(
+                        source
+                            .for_each(move |(buf, _remote_src)| {
+                                let socket = socket.clone();
+                                let svr_cfg = svr_cfg_cloned.clone();
+                                let payload =
+                                    decrypt_payload(svr_cfg.method(), svr_cfg.key(), &buf).unwrap();
+                                Address::read_from(Cursor::new(payload))
+                                    .map_err(|_| io::ErrorKind::Other.into())
+                                    .and_then(move |(mut cur, addr)| {
+                                        let payload_len =
+                                            cur.get_ref().len() - cur.position() as usize;
+                                        debug!(
+                                            "UDP ASSOCIATE {} <- {}, payload length {} bytes",
+                                            src, addr, payload_len
+                                        );
+                                        let mut data = vec![];
+                                        let size = cur.read_to_end(&mut data).unwrap();
+                                        debug!("UDP payload size: {}", size);
+                                        data.truncate(size);
+                                        socket.clone().send_dgram(data, src)
+                                    })
+                                    .map(|_| ())
+                            })
+                            .map(|_| ())
+                            .map_err(|_| ()),
+                    );
+                    debug!("new tokio udp socket");
+                    sink
+                };
+
+                let map2 = map.clone();
                 let rel = remote_udp
-                    .send_dgram(payload, &remote_addr)
+                    .send((payload.into(), remote_addr))
                     .timeout(to)
                     .map_err(move |err| match err.into_inner() {
                         Some(e) => e,
@@ -129,50 +175,12 @@ impl SSClient {
                             io::Error::new(io::ErrorKind::TimedOut, "udp send timed out")
                         }
                     })
-                    .map(|(remote_udp, _)| (remote_udp, addr2))
-                    .and_then(move |(remote_udp, addr)| {
-                        let buf = vec![0u8; MAXIMUM_UDP_PAYLOAD_SIZE];
-                        let to = timeout.unwrap_or(DEFAULT_TIMEOUT);
-                        let caddr = addr.clone();
-                        remote_udp
-                            .recv_dgram(buf)
-                            .timeout(to)
-                            .map_err(move |err| match err.into_inner() {
-                                Some(e) => e,
-                                None => {
-                                    error!(
-                                        "Udp associate waiting datagram {} <- {} timed out in {:?}",
-                                        src, caddr, to
-                                    );
-                                    io::Error::new(io::ErrorKind::TimedOut, "udp recv timed out")
-                                }
-                            })
-                            .and_then(move |(_remote_udp, buf, n, _from)| {
-                                let svr_cfg = svr_cfg_cloned;
-                                decrypt_payload(svr_cfg.method(), svr_cfg.key(), &buf[..n])
-                            })
-                            .map(|payload| (payload, addr))
-                    })
-                    .and_then(move |(payload, addr)| {
-                        Address::read_from(Cursor::new(payload))
-                            .map_err(From::from)
-                            .map(|(cur, ..)| (cur, addr))
-                    })
-                    .and_then(move |(mut cur, addr)| {
-                        let payload_len = cur.get_ref().len() - cur.position() as usize;
-                        debug!(
-                            "UDP ASSOCIATE {} <- {}, payload length {} bytes",
-                            src, addr, payload_len
-                        );
-                        let mut data = vec![];
-                        let size = cur.read_to_end(&mut data).unwrap();
-                        debug!("UDP payload size: {}", size);
-                        data.truncate(size);
-                        socket.send_dgram(data, src)
-                    })
-                    .map(|_| ());
+                    .map(move |sink| {
+                        let mut m = map2.try_lock().unwrap();
+                        m.insert(key, sink);
+                    });
 
-                tokio::spawn(rel.map_err(|err| {
+                spawn(rel.map_err(|err| {
                     error!("Error occurs in UDP relay: {}", err);
                 }));
 
