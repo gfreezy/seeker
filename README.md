@@ -3,10 +3,9 @@
 
 ## Build
 ```bash
-brew install libsodium
 git clone https://github.com/gfreezy/seeker.git
 cd seeker
-cargo build --release
+OPENSSL_STATIC=yes SODIUM_STATIC=yes SODIUM_BUILD_STATIC=yes cargo build --release
 ```
 
 编译完成后，程序在 `target/release/seeker`。
