@@ -15,8 +15,8 @@ matrix:
   include:
     - name: macOS Build
       os: osx
-#    - name: Linux Build
-#      os: linux
+    - name: Linux Build
+      os: linux
 
 install:
   - rustup component add rustfmt clippy
