@@ -1,13 +1,19 @@
 // Copyright (c) 2019 Cloudflare, Inc. All rights reserved.
 // SPDX-License-Identifier: BSD-3-Clause
 #![allow(dead_code)]
-use crate::tun::phy::{errno_str, Error};
+use crate::tun::phy::Error;
 use libc::*;
 use std::io;
 use std::mem::size_of;
 use std::mem::size_of_val;
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::ptr::null_mut;
+
+pub fn errno_str() -> String {
+    let strerr = unsafe { libc::strerror(*libc::__error()) };
+    let c_str = unsafe { std::ffi::CStr::from_ptr(strerr) };
+    c_str.to_string_lossy().into_owned()
+}
 
 pub fn errno() -> i32 {
     unsafe { *__error() }
