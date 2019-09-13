@@ -23,9 +23,7 @@ impl DNSSetup {
                 std::str::from_utf8(&output.stderr).expect("utf8")
             );
         }
-        DNSSetup {
-            original: "".to_string(),
-        }
+        DNSSetup { original: vec![] }
     }
 
     #[cfg(target_os = "linux")]
