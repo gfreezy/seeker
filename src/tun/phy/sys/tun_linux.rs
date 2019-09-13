@@ -1,8 +1,9 @@
 // Copyright (c) 2019 Cloudflare, Inc. All rights reserved.
 // SPDX-License-Identifier: BSD-3-Clause
-
-use crate::error::Error;
+#![allow(dead_code)]
+use crate::tun::phy::Error;
 use libc::*;
+use std::io;
 use std::os::unix::io::{AsRawFd, RawFd};
 
 pub fn errno() -> i32 {
@@ -24,7 +25,7 @@ union IfrIfru {
     ifru_addr_v6: sockaddr_in,
     ifru_dstaddr: sockaddr,
     ifru_broadaddr: sockaddr,
-    ifru_flags: c_short,
+    ifru_flags: c_int,
     ifru_metric: c_int,
     ifru_mtu: c_int,
     ifru_phys: c_int,
@@ -33,10 +34,10 @@ union IfrIfru {
     //ifru_data: caddr_t,
     //ifru_devmtu: ifdevmtu,
     //ifru_kpi: ifkpi,
-    ifru_wake_flags: uint32_t,
-    ifru_route_refcnt: uint32_t,
+    ifru_wake_flags: u32,
+    ifru_route_refcnt: u32,
     ifru_cap: [c_int; 2],
-    ifru_functional_type: uint32_t,
+    ifru_functional_type: u32,
 }
 
 #[repr(C)]
@@ -133,24 +134,24 @@ impl TunSocket {
         Ok(unsafe { ifr.ifr_ifru.ifru_mtu } as _)
     }
 
-    pub fn write4(&self, src: &[u8]) -> usize {
+    pub fn write4(&self, src: &[u8]) -> io::Result<usize> {
         self.write(src)
     }
 
-    pub fn write6(&self, src: &[u8]) -> usize {
+    pub fn write6(&self, src: &[u8]) -> io::Result<usize> {
         self.write(src)
     }
 
-    fn write(&self, buf: &[u8]) -> usize {
+    fn write(&self, buf: &[u8]) -> io::Result<usize> {
         match unsafe { write(self.fd, buf.as_ptr() as _, buf.len() as _) } {
-            -1 => 0,
-            n => n as usize,
+            -1 => Ok(0),
+            n => Ok(n as usize),
         }
     }
 
-    pub fn read<'a>(&self, dst: &'a mut [u8]) -> Result<&'a mut [u8], Error> {
+    pub fn read<'a>(&self, dst: &'a mut [u8]) -> io::Result<&'a mut [u8]> {
         match unsafe { read(self.fd, dst.as_mut_ptr() as _, dst.len()) } {
-            -1 => Err(Error::IfaceRead(errno())),
+            -1 => Err(io::Error::last_os_error()),
             n @ _ => Ok(&mut dst[..n as usize]),
         }
     }
