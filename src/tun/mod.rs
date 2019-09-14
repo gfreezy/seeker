@@ -4,6 +4,7 @@ pub mod phy;
 #[macro_use]
 pub mod socket;
 
+use crate::sysconfig::setup_ip;
 use futures::try_ready;
 use iface::ethernet::{Interface, InterfaceBuilder};
 use iface::phony_socket::PhonySocket;
@@ -14,77 +15,9 @@ use socket::TunSocket;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::io;
-use std::process::Command;
 use tokio::prelude::task::Task;
 use tokio::prelude::{task::current, Async, AsyncRead, AsyncWrite, Future, Poll, Stream};
 use tracing::{debug, error};
-
-#[cfg(target_os = "macos")]
-fn setup_ip(tun_name: &str, ip: IpAddress, cidr: IpCidr) {
-    let ip_s = ip.to_string();
-    let output = Command::new("ifconfig")
-        .args(&[tun_name, &ip_s, &ip_s])
-        .output()
-        .expect("run ifconfig");
-    if !output.status.success() {
-        panic!(
-            "stdout: {}\nstderr: {}",
-            std::str::from_utf8(&output.stdout).expect("utf8"),
-            std::str::from_utf8(&output.stderr).expect("utf8")
-        );
-    }
-    let output = Command::new("route")
-        .arg("add")
-        .arg(cidr.to_string())
-        .arg(ip_s)
-        .output()
-        .expect("add route");
-    if !output.status.success() {
-        panic!(
-            "stdout: {}\nstderr: {}",
-            std::str::from_utf8(&output.stdout).expect("utf8"),
-            std::str::from_utf8(&output.stderr).expect("utf8")
-        );
-    }
-}
-
-#[cfg(target_os = "linux")]
-fn setup_ip(tun_name: &str, ip: IpAddress, cidr: IpCidr) {
-    let ip_s = ip.to_string();
-    let output = Command::new("ip")
-        .args(&["addr", "replace", &ip_s, "dev", tun_name])
-        .output()
-        .expect("run ip addr");
-    if !output.status.success() {
-        panic!(
-            "stdout: {}\nstderr: {}",
-            std::str::from_utf8(&output.stdout).expect("utf8"),
-            std::str::from_utf8(&output.stderr).expect("utf8")
-        );
-    }
-    let output = Command::new("ip")
-        .args(&["link", "set", tun_name, "up"])
-        .output()
-        .expect("run ip addr");
-    if !output.status.success() {
-        panic!(
-            "stdout: {}\nstderr: {}",
-            std::str::from_utf8(&output.stdout).expect("utf8"),
-            std::str::from_utf8(&output.stderr).expect("utf8")
-        );
-    }
-    let output = Command::new("ip")
-        .args(&["route", "add", cidr.to_string().as_str(), "dev", tun_name])
-        .output()
-        .expect("add route");
-    if !output.status.success() {
-        panic!(
-            "stdout: {}\nstderr: {}",
-            std::str::from_utf8(&output.stdout).expect("utf8"),
-            std::str::from_utf8(&output.stderr).expect("utf8")
-        );
-    }
-}
 
 thread_local! {
     static TUN: RefCell<Option<Tun>> = RefCell::new(None);
