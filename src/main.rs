@@ -1,29 +1,28 @@
-mod config;
-mod dns_server;
-mod ssclient;
-mod tun;
-
 use std::error::Error;
 use std::sync::Arc;
 
+use clap::{App, Arg};
+use shadowsocks::relay::boxed_future;
 use shadowsocks::relay::socks5::Address;
 use tokio::prelude::future::lazy;
 use tokio::prelude::{AsyncRead, Future, Stream};
 use tokio::runtime::current_thread::{spawn, Runtime};
 use tracing::{debug_span, error, info, info_span};
 use tracing_futures::Instrument;
-
-use shadowsocks::relay::boxed_future;
 use trust_dns_resolver::config::{NameServerConfigGroup, ResolverConfig, ResolverOpts};
 use trust_dns_resolver::AsyncResolver;
 
-use clap::{App, Arg};
 use config::Config;
 use dns_server::server::run_dns_server;
+use dns_server::setup::DNSSetup;
 use ssclient::SSClient;
-use std::process::Command;
 use tun::socket::TunSocket;
 use tun::Tun;
+
+mod config;
+mod dns_server;
+mod ssclient;
+mod tun;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let my_subscriber = tracing_fmt::FmtSubscriber::new();
@@ -130,41 +129,4 @@ fn main() -> Result<(), Box<dyn Error>> {
     let stream = tokio_signal::ctrl_c().flatten_stream();
     let _ = runtime.block_on(stream.into_future()).ok().unwrap();
     Ok(())
-}
-
-struct DNSSetup;
-
-impl DNSSetup {
-    pub fn new() -> Self {
-        info!("setup dns");
-        let output = Command::new("networksetup")
-            .args(&["-setdnsservers", "Wi-Fi", "127.0.0.1"])
-            .output()
-            .expect("setup local dns");
-        if !output.status.success() {
-            panic!(
-                "stdout: {}\nstderr: {}",
-                std::str::from_utf8(&output.stdout).expect("utf8"),
-                std::str::from_utf8(&output.stderr).expect("utf8")
-            );
-        }
-        DNSSetup
-    }
-}
-
-impl Drop for DNSSetup {
-    fn drop(&mut self) {
-        info!("clear dns");
-        let output = Command::new("networksetup")
-            .args(&["-setdnsservers", "Wi-Fi", "empty"])
-            .output()
-            .expect("clear local dns");
-        if !output.status.success() {
-            panic!(
-                "stdout: {}\nstderr: {}",
-                std::str::from_utf8(&output.stdout).expect("utf8"),
-                std::str::from_utf8(&output.stderr).expect("utf8")
-            );
-        }
-    }
 }
