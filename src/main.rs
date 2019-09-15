@@ -1,3 +1,9 @@
+mod config;
+mod dns_server;
+mod ssclient;
+mod sysconfig;
+mod tun;
+
 use std::error::Error;
 use std::sync::Arc;
 
@@ -14,15 +20,10 @@ use trust_dns_resolver::AsyncResolver;
 
 use config::Config;
 use dns_server::server::run_dns_server;
-use dns_server::setup::DNSSetup;
 use ssclient::SSClient;
+use sysconfig::DNSSetup;
 use tun::socket::TunSocket;
 use tun::Tun;
-
-mod config;
-mod dns_server;
-mod ssclient;
-mod tun;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let my_subscriber = tracing_fmt::FmtSubscriber::new();
