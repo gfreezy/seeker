@@ -8,8 +8,12 @@ use std::error::Error;
 use std::sync::Arc;
 
 use clap::{App, Arg};
+use config::Config;
+use dns_server::server::run_dns_server;
 use shadowsocks::relay::boxed_future;
 use shadowsocks::relay::socks5::Address;
+use ssclient::SSClient;
+use sysconfig::DNSSetup;
 use tokio::prelude::future::lazy;
 use tokio::prelude::{AsyncRead, Future, Stream};
 use tokio::runtime::current_thread::{spawn, Runtime};
@@ -17,11 +21,6 @@ use tracing::{debug_span, error, info, info_span};
 use tracing_futures::Instrument;
 use trust_dns_resolver::config::{NameServerConfigGroup, ResolverConfig, ResolverOpts};
 use trust_dns_resolver::AsyncResolver;
-
-use config::Config;
-use dns_server::server::run_dns_server;
-use ssclient::SSClient;
-use sysconfig::DNSSetup;
 use tun::socket::TunSocket;
 use tun::Tun;
 

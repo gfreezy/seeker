@@ -1,9 +1,5 @@
-#[cfg(any(target_os = "macos", target_os = "ios"))]
-#[path = "darwin.rs"]
-pub mod sys;
+mod net;
+mod proc;
 
-#[cfg(target_os = "linux")]
-#[path = "linux.rs"]
-pub mod sys;
-
-pub use sys::{setup_ip, DNSSetup};
+pub use net::{setup_ip, DNSSetup};
+pub use proc::sys::{list_system_proc_socks, list_user_proc_socks};
