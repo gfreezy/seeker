@@ -125,57 +125,54 @@ impl Future for LookupIP {
 
     fn poll(&mut self) -> Result<Async<Self::Item>, Self::Error> {
         if let Some(ref mut fut) = self.lookup_future {
-            fut.poll()
-        } else {
-            let mut guard = self.inner.lock().unwrap();
-            let domain = self.domain.trim_end_matches('.').to_string();
-            if let Some(addr) = guard.cache.get(&domain).expect("get domain") {
-                let ip = String::from_utf8(addr.to_vec()).unwrap();
-                debug!("resolve from cache, domain: {}, ip: {}", &domain, &ip);
-                Ok(Async::Ready(Some(ip)))
-            } else {
-                let default_action = guard.rules.default_action();
-                let action = guard
-                    .rules
-                    .action_for_domain(&domain)
-                    .unwrap_or(default_action);
-                match action {
-                    Action::Reject => Ok(Async::Ready(None)),
-                    Action::Direct => {
-                        let domain2 = domain.clone();
-                        debug!("direct, domain: {}", &domain2);
-                        self.lookup_future = Some(boxed_future(
-                            guard
-                                .async_resolver
-                                .lookup_ip(domain.as_str())
-                                .map(move |ips| {
-                                    let ip = ips.into_iter().next().unwrap();
-                                    debug!("resolve domain {}, ip: {}", &domain, ip);
-                                    Some(ip.to_string())
-                                })
-                                .map_err(move |e| {
-                                    error!("resolve domain {}: {}", domain2, e);
-                                    io::Error::new(
-                                        io::ErrorKind::Other,
-                                        "resolve domain error".to_string(),
-                                    )
-                                }),
-                        ));
-                        self.lookup_future.as_mut().unwrap().poll()
-                    }
-                    Action::Proxy => {
-                        let addr = guard.gen_ipaddr();
-                        debug!("resolve to tun, domain: {}, ip: {}", &domain, &addr);
+            return fut.poll();
+        }
 
-                        guard
-                            .cache
-                            .set(NEXT_IP.as_bytes(), &guard.next_ip.to_be_bytes())
-                            .unwrap();
-                        guard.cache.set(domain.as_bytes(), addr.as_bytes()).unwrap();
-                        guard.cache.set(addr.as_bytes(), domain.as_bytes()).unwrap();
-                        Ok(Async::Ready(Some(addr)))
-                    }
+        let mut guard = self.inner.lock().unwrap();
+        let domain = self.domain.trim_end_matches('.').to_string();
+        let default_action = guard.rules.default_action();
+
+        let action = guard
+            .rules
+            .action_for_domain(&domain)
+            .unwrap_or(default_action);
+        match action {
+            Action::Reject => Ok(Async::Ready(None)),
+            Action::Direct => {
+                let domain2 = domain.clone();
+                debug!("direct, domain: {}", &domain2);
+                self.lookup_future = Some(boxed_future(
+                    guard
+                        .async_resolver
+                        .lookup_ip(domain.as_str())
+                        .map(move |ips| {
+                            let ip = ips.into_iter().next().unwrap();
+                            debug!("resolve domain {}, ip: {}", &domain, ip);
+                            Some(ip.to_string())
+                        })
+                        .map_err(move |e| {
+                            error!("resolve domain {}: {}", domain2, e);
+                            io::Error::new(io::ErrorKind::Other, "resolve domain error".to_string())
+                        }),
+                ));
+                self.lookup_future.as_mut().unwrap().poll()
+            }
+            Action::Proxy => {
+                if let Some(addr) = guard.cache.get(&domain).expect("get domain") {
+                    let ip = String::from_utf8(addr.to_vec()).unwrap();
+                    debug!("resolve from cache, domain: {}, ip: {}", &domain, &ip);
+                } else {
+                    let ip = guard.gen_ipaddr();
+                    debug!("resolve to tun, domain: {}, ip: {}", &domain, &ip);
+
+                    guard
+                        .cache
+                        .set(NEXT_IP.as_bytes(), &guard.next_ip.to_be_bytes())
+                        .unwrap();
+                    guard.cache.set(domain.as_bytes(), ip.as_bytes()).unwrap();
+                    guard.cache.set(ip.as_bytes(), domain.as_bytes()).unwrap();
                 }
+                Ok(Async::Ready(Some(ip)))
             }
         }
     }
