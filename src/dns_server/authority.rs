@@ -158,9 +158,10 @@ impl Future for LookupIP {
                 self.lookup_future.as_mut().unwrap().poll()
             }
             Action::Proxy => {
-                if let Some(addr) = guard.cache.get(&domain).expect("get domain") {
+                let ip = if let Some(addr) = guard.cache.get(&domain).expect("get domain") {
                     let ip = String::from_utf8(addr.to_vec()).unwrap();
                     debug!("resolve from cache, domain: {}, ip: {}", &domain, &ip);
+                    ip
                 } else {
                     let ip = guard.gen_ipaddr();
                     debug!("resolve to tun, domain: {}, ip: {}", &domain, &ip);
@@ -171,7 +172,8 @@ impl Future for LookupIP {
                         .unwrap();
                     guard.cache.set(domain.as_bytes(), ip.as_bytes()).unwrap();
                     guard.cache.set(ip.as_bytes(), domain.as_bytes()).unwrap();
-                }
+                    ip
+                };
                 Ok(Async::Ready(Some(ip)))
             }
         }
