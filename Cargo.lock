@@ -675,6 +675,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 [[package]]
 name = "libproc"
 version = "0.4.1"
+source = "git+https://github.com/gfreezy/libproc-rs?rev=bffc2c4#bffc2c49e9ba8426363e58d62a5731eaad3c4f3e"
 dependencies = [
  "libc 0.2.59 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
@@ -1393,7 +1394,7 @@ dependencies = [
  "failure 0.1.5 (registry+https://github.com/rust-lang/crates.io-index)",
  "futures 0.1.28 (registry+https://github.com/rust-lang/crates.io-index)",
  "libc 0.2.59 (registry+https://github.com/rust-lang/crates.io-index)",
- "libproc 0.4.1",
+ "libproc 0.4.1 (git+https://github.com/gfreezy/libproc-rs?rev=bffc2c4)",
  "managed 0.7.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "mio 0.6.19 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde 1.0.99 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -2494,6 +2495,7 @@ dependencies = [
 "checksum kernel32-sys 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)" = "7507624b29483431c0ba2d82aece8ca6cdba9382bff4ddd0f7490560c056098d"
 "checksum lazy_static 1.3.0 (registry+https://github.com/rust-lang/crates.io-index)" = "bc5729f27f159ddd61f4df6228e827e86643d4d3e7c32183cb30a1c08f604a14"
 "checksum libc 0.2.59 (registry+https://github.com/rust-lang/crates.io-index)" = "3262021842bf00fe07dbd6cf34ff25c99d7a7ebef8deea84db72be3ea3bb0aff"
+"checksum libproc 0.4.1 (git+https://github.com/gfreezy/libproc-rs?rev=bffc2c4)" = "<none>"
 "checksum libsodium-ffi 0.1.17 (registry+https://github.com/rust-lang/crates.io-index)" = "90066fb2807840eb1d43973563deb842cf9e8a1a6e7593d98170d25327749e15"
 "checksum libsqlite3-sys 0.14.0 (registry+https://github.com/rust-lang/crates.io-index)" = "e310445ab028c374b9efaaed4b7a52a14e3b8ad5a1351b4bbd46dec03ffce717"
 "checksum linked-hash-map 0.5.2 (registry+https://github.com/rust-lang/crates.io-index)" = "ae91b68aebc4ddb91978b11a1b02ddd8602a05ec19002801c5666000e05e0f83"
