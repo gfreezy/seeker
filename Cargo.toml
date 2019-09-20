@@ -31,7 +31,7 @@ failure = "0.1.5"
 
 [dependencies.smoltcp]
 git = "https://github.com/gfreezy/smoltcp"
-rev = "10eff99"
+rev = "1ada3da"
 default-features = false
 features = [
 	"std", "log",
