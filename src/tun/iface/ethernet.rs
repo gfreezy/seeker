@@ -122,7 +122,7 @@ where
     /// be logged.
     pub fn poll(
         &mut self,
-        sockets: &mut SocketSet<'_, '_, 'static>,
+        sockets: &mut SocketSet<'static, 'static, 'static>,
         timestamp: Instant,
     ) -> Result<bool> {
         let mut readiness_may_have_changed = false;
@@ -141,7 +141,7 @@ where
 
     pub fn poll_read(
         &mut self,
-        sockets: &mut SocketSet<'_, '_, 'static>,
+        sockets: &mut SocketSet<'static, 'static, 'static>,
         timestamp: Instant,
     ) -> Result<bool> {
         let mut readiness_may_have_changed = false;
@@ -159,7 +159,7 @@ where
 
     pub fn poll_write(
         &mut self,
-        sockets: &mut SocketSet<'_, '_, 'static>,
+        sockets: &mut SocketSet<'static, 'static, 'static>,
         timestamp: Instant,
     ) -> Result<bool> {
         let mut readiness_may_have_changed = false;
@@ -212,7 +212,7 @@ where
 
     fn socket_ingress(
         &mut self,
-        sockets: &mut SocketSet<'_, '_, 'static>,
+        sockets: &mut SocketSet<'static, 'static, 'static>,
         timestamp: Instant,
     ) -> Result<bool> {
         let mut processed_any = false;
@@ -319,7 +319,7 @@ impl<'a> InterfaceInner<'a> {
 
     fn process_ipv4<'frame, T: AsRef<[u8]>>(
         &mut self,
-        sockets: &mut SocketSet<'_, '_, 'static>,
+        sockets: &mut SocketSet<'static, 'static, 'static>,
         timestamp: Instant,
         frame: &'frame T,
     ) -> Result<Packet<'frame>> {
@@ -432,7 +432,7 @@ impl<'a> InterfaceInner<'a> {
 
     fn try_new_tcp_socket(
         &self,
-        sockets: &mut SocketSet<'_, '_, 'static>,
+        sockets: &mut SocketSet<'static, 'static, 'static>,
         ip_repr: &IpRepr,
         tcp_repr: &TcpRepr,
     ) -> Result<SocketHandle> {
@@ -467,7 +467,7 @@ impl<'a> InterfaceInner<'a> {
 
     fn process_tcp<'frame>(
         &self,
-        sockets: &mut SocketSet<'_, '_, 'static>,
+        sockets: &mut SocketSet<'static, 'static, 'static>,
         timestamp: Instant,
         ip_repr: IpRepr,
         ip_payload: &'frame [u8],
