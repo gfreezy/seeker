@@ -1,4 +1,3 @@
-use smoltcp::wire::{IpAddress, IpCidr};
 use std::fs::OpenOptions;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::process::Command;
@@ -42,10 +41,9 @@ impl Drop for DNSSetup {
     }
 }
 
-pub fn setup_ip(tun_name: &str, ip: IpAddress, cidr: IpCidr) {
-    let ip_s = ip.to_string();
+pub fn setup_ip(tun_name: &str, ip: &str, cidr: &str) {
     let output = Command::new("ip")
-        .args(&["addr", "replace", &ip_s, "dev", tun_name])
+        .args(&["addr", "replace", ip, "dev", tun_name])
         .output()
         .expect("run ip addr");
     if !output.status.success() {
@@ -67,7 +65,7 @@ pub fn setup_ip(tun_name: &str, ip: IpAddress, cidr: IpCidr) {
         );
     }
     let output = Command::new("ip")
-        .args(&["route", "add", cidr.to_string().as_str(), "dev", tun_name])
+        .args(&["route", "add", cidr, "dev", tun_name])
         .output()
         .expect("add route");
     if !output.status.success() {

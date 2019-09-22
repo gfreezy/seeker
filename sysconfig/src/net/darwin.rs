@@ -1,4 +1,3 @@
-use smoltcp::wire::{IpAddress, IpCidr};
 use std::process::Command;
 use tracing::info;
 
@@ -39,10 +38,9 @@ impl Drop for DNSSetup {
     }
 }
 
-pub fn setup_ip(tun_name: &str, ip: IpAddress, cidr: IpCidr) {
-    let ip_s = ip.to_string();
+pub fn setup_ip(tun_name: &str, ip: &str, cidr: &str) {
     let output = Command::new("ifconfig")
-        .args(&[tun_name, &ip_s, &ip_s])
+        .args(&[tun_name, ip, ip])
         .output()
         .expect("run ifconfig");
     if !output.status.success() {
@@ -54,8 +52,8 @@ pub fn setup_ip(tun_name: &str, ip: IpAddress, cidr: IpCidr) {
     }
     let output = Command::new("route")
         .arg("add")
-        .arg(cidr.to_string())
-        .arg(ip_s)
+        .arg(cidr)
+        .arg(ip)
         .output()
         .expect("add route");
     if !output.status.success() {

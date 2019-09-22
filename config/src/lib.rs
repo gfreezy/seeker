@@ -1,11 +1,9 @@
 pub mod rule;
 
-use crate::config::rule::Rule;
-use rule::ProxyRules;
+use rule::{ProxyRules, Rule};
 use serde::Deserialize;
 use shadowsocks::crypto::CipherType;
 use shadowsocks::{ServerAddr, ServerConfig};
-use smoltcp::wire::{IpAddress, IpCidr};
 use std::fs::File;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::str::FromStr;
@@ -18,8 +16,8 @@ pub struct Config {
     pub dns_start_ip: Ipv4Addr,
     pub dns_server: SocketAddr,
     pub tun_name: String,
-    pub tun_ip: IpAddress,
-    pub tun_cidr: IpCidr,
+    pub tun_ip: Ipv4Addr,
+    pub tun_cidr: String,
     pub rules: ProxyRules,
 }
 
@@ -66,7 +64,7 @@ impl Config {
             dns_server: conf.dns_server.parse().unwrap(),
             tun_name: conf.tun_name,
             tun_ip: conf.tun_ip.parse().unwrap(),
-            tun_cidr: ip_cidr_from_str(&conf.tun_cidr),
+            tun_cidr: check_cidr(conf.tun_cidr),
             rules: ProxyRules::new(
                 conf.rules
                     .iter()
@@ -77,10 +75,11 @@ impl Config {
     }
 }
 
-fn ip_cidr_from_str(s: &str) -> IpCidr {
+fn check_cidr(s: String) -> String {
     let segments = s.splitn(2, '/').collect::<Vec<&str>>();
     let addr = segments[0];
     let len = segments[1];
-    let ipaddr: Ipv4Addr = addr.parse().unwrap();
-    IpCidr::new(ipaddr.into(), len.parse().unwrap())
+    let _: Ipv4Addr = addr.parse().unwrap();
+    let _: u16 = len.parse().unwrap();
+    s
 }

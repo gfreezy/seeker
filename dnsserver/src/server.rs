@@ -1,5 +1,5 @@
+use crate::authority::LocalAuthority;
 use crate::config::rule::ProxyRules;
-use crate::dns_server::authority::LocalAuthority;
 use std::net::{Ipv4Addr, SocketAddr};
 use tokio::net::UdpSocket;
 use tracing::info;
