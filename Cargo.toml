@@ -28,8 +28,8 @@ tracing-futures = "0.0.1-alpha.1"
 tracing-fmt = "0.0.1-alpha.3"
 failure = "0.1.5"
 
-[target.'cfg(macos)'.dependencies]
-libproc = { git = "https://github.com/gfreezy/libproc-rs", rev = "bffc2c4", optional = true }
+[target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
+libproc = { git = "https://github.com/gfreezy/libproc-rs", rev = "bffc2c4" }
 
 [dependencies.smoltcp]
 git = "https://github.com/gfreezy/smoltcp"
