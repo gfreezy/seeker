@@ -22,6 +22,11 @@ OPENSSL_STATIC=yes SODIUM_STATIC=yes SODIUM_BUILD_STATIC=yes cargo build --relea
 
 ## Config
 
+* `seeker` 直接使用的 clash 的规则。目前支持 `DOMAIN` `DOMAIN-KEYWORD` `DOMAIN-SUFFIX` `MATCH` 规则，
+不支持 `IP` 相关的规则。
+* 确保系统没有重复的 `tun_name` 
+* 确保 TUN 的网络 `tun_ip` 和 `tun_cidr` 与当前所处网络环境不在一个网段
+   
 ```yaml
 server_config:
   addr: domain-or-ip-to-ss-server:port
