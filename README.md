@@ -1,15 +1,12 @@
 # Dump-cat [![Build Status](https://travis-ci.com/gfreezy/seeker.svg?branch=master)](https://travis-ci.com/gfreezy/seeker)[![Gitter](https://badges.gitter.im/AllSundays/seeker.svg)](https://gitter.im/AllSundays/seeker?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge)
 使用 Tun 实现 ss 透明代理（支持 Mac & Linux 系统）
 
-## Build
+## Download
+访问 https://github.com/gfreezy/seeker/releases 下载最新 release
+
 ```bash
-git clone https://github.com/gfreezy/seeker.git
-cd seeker
-OPENSSL_STATIC=yes SODIUM_STATIC=yes SODIUM_BUILD_STATIC=yes cargo build --release
+chmod +x seeker-osx  # or  chmod+x seeker-linux
 ```
-
-编译完成后，程序在 `target/release/seeker`。
-
 ## Usage
 
 1. 启动 `seeker`
@@ -53,6 +50,15 @@ rules:
 ```bash
 rm -rf dns.db
 ``` 
+
+## Build
+```bash
+git clone https://github.com/gfreezy/seeker.git
+cd seeker
+OPENSSL_STATIC=yes SODIUM_STATIC=yes SODIUM_BUILD_STATIC=yes cargo build --release
+```
+
+编译完成后，程序在 `target/release/seeker`。
 
 ## License
 
