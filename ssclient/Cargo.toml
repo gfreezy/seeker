@@ -6,4 +6,42 @@ edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+
+[features]
+default = ["sodium", "rc4", "aes-cfb", "aes-ctr"]
+sodium = ["libsodium-ffi"]
+rc4 = ["openssl"]
+aes-cfb = ["openssl"]
+aes-ctr = ["openssl"]
+camellia-cfb = ["openssl"]
+single-threaded = []
+
 [dependencies]
+log = "0.4"
+rand = "0.7"
+time = "0.1"
+env_logger = "0.6"
+openssl = { version = "0.10", optional = true }
+libc = "0.2"
+tokio = "0.2.0-alpha.2"
+tokio-process = "0.3.0-alpha.2"
+futures-preview = { version = "0.3.0-alpha.2", features = ["async-await", "nightly"] }
+json5 = "0.2"
+base64 = "0.10"
+bytes = "0.4"
+byteorder = "1"
+md-5 = "0.8"
+digest = "0.8"
+typenum = "1.10"
+url = "2.0"
+byte_string = "1.0"
+libsodium-ffi = { version = "0.1", optional = true }
+miscreant = { version = "0.4", optional = true }
+lru-cache = "0.1"
+spin = { version = "0.5", default-features = false }
+
+[target.'cfg(unix)'.dependencies]
+tokio-signal = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+tokio-signal = "0.2"

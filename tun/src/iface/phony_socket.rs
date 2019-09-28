@@ -2,28 +2,27 @@ use smoltcp::phy;
 use smoltcp::phy::{Device, DeviceCapabilities};
 use smoltcp::storage::RingBuffer;
 use smoltcp::time::Instant;
-use std::cell::{RefCell, RefMut};
-use std::rc::Rc;
+use std::sync::{Arc, Mutex, MutexGuard};
 use tracing::debug;
 
 const MAX_PACKETS: usize = 102_400;
 
 #[derive(Debug)]
 pub struct PhonySocket {
-    lower: Rc<RefCell<Lower>>,
+    lower: Arc<Mutex<Lower>>,
     mtu: usize,
 }
 
 impl PhonySocket {
     pub fn new(mtu: usize) -> Self {
         PhonySocket {
-            lower: Rc::new(RefCell::new(Lower::new(mtu))),
+            lower: Arc::new(Mutex::new(Lower::new(mtu))),
             mtu,
         }
     }
 
-    pub fn lower(&self) -> RefMut<Lower> {
-        self.lower.borrow_mut()
+    pub fn lower(&self) -> MutexGuard<Lower> {
+        self.lower.lock().unwrap()
     }
 }
 
@@ -54,7 +53,7 @@ impl<'a> Device<'a> for PhonySocket {
     type TxToken = TxToken;
 
     fn receive(&'a mut self) -> Option<(Self::RxToken, Self::TxToken)> {
-        let mut lower = self.lower.borrow_mut();
+        let mut lower = self.lower.try_lock().unwrap();
         if lower.rx.is_empty() {
             return None;
         }
@@ -99,7 +98,7 @@ impl phy::RxToken for RxToken {
 
 #[doc(hidden)]
 pub struct TxToken {
-    lower: Rc<RefCell<Lower>>,
+    lower: Arc<Mutex<Lower>>,
 }
 
 impl phy::TxToken for TxToken {
@@ -107,7 +106,7 @@ impl phy::TxToken for TxToken {
     where
         F: FnOnce(&mut [u8]) -> smoltcp::Result<R>,
     {
-        let mut lower = self.lower.borrow_mut();
+        let mut lower = self.lower.try_lock().unwrap();
         let buf = lower.tx.enqueue_one()?;
         buf.resize(len, 0);
         let ret = f(buf);

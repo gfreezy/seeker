@@ -1,23 +1,12 @@
 // Copyright (c) 2019 Cloudflare, Inc. All rights reserved.
 // SPDX-License-Identifier: BSD-3-Clause
-#![allow(dead_code)]
-use crate::tun::phy::Error;
 use libc::*;
 use std::io;
+use std::io::{Error, Read, Result, Write};
 use std::mem::size_of;
 use std::mem::size_of_val;
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::ptr::null_mut;
-
-pub fn errno_str() -> String {
-    let strerr = unsafe { libc::strerror(*libc::__error()) };
-    let c_str = unsafe { std::ffi::CStr::from_ptr(strerr) };
-    c_str.to_string_lossy().into_owned()
-}
-
-pub fn errno() -> i32 {
-    unsafe { *__error() }
-}
 
 const CTRL_NAME: &[u8] = b"com.apple.net.utun_control";
 
@@ -60,7 +49,7 @@ const SIOCGIFMTU: u64 = 0x0000_0000_c020_6933;
 
 #[derive(Default, Debug)]
 pub struct TunSocket {
-    fd: RawFd,
+    pub fd: RawFd,
 }
 
 impl Drop for TunSocket {
@@ -76,9 +65,9 @@ impl AsRawFd for TunSocket {
 }
 
 // On Darwin tunnel can only be named utunXXX
-pub fn parse_utun_name(name: &str) -> Result<u32, Error> {
+pub fn parse_utun_name(name: &str) -> Result<u32> {
     if !name.starts_with("utun") {
-        return Err(Error::InvalidTunnelName);
+        return Err(io::ErrorKind::NotFound.into());
     }
 
     match name.get(4..) {
@@ -89,18 +78,18 @@ pub fn parse_utun_name(name: &str) -> Result<u32, Error> {
         Some(idx) => {
             // Everything past utun should represent an integer index
             idx.parse::<u32>()
-                .map_err(|_| Error::InvalidTunnelName)
+                .map_err(|_| io::ErrorKind::NotFound.into())
                 .map(|x| x + 1)
         }
     }
 }
 
 impl TunSocket {
-    pub fn new(name: &str) -> Result<TunSocket, Error> {
+    pub fn new(name: &str) -> Result<TunSocket> {
         let idx = parse_utun_name(name)?;
 
         let fd = match unsafe { socket(PF_SYSTEM, SOCK_DGRAM, SYSPROTO_CONTROL) } {
-            -1 => return Err(Error::Socket(errno_str())),
+            -1 => return Err(Error::last_os_error()),
             fd => fd,
         };
 
@@ -112,7 +101,7 @@ impl TunSocket {
 
         if unsafe { ioctl(fd, CTLIOCGINFO, &mut info as *mut ctl_info) } < 0 {
             unsafe { close(fd) };
-            return Err(Error::IOCtl(errno_str()));
+            return Err(Error::last_os_error());
         }
 
         let addr = sockaddr_ctl {
@@ -133,16 +122,14 @@ impl TunSocket {
         } < 0
         {
             unsafe { close(fd) };
-            let mut err_string = errno_str();
-            err_string.push_str("(did you run with sudo?)");
-            return Err(Error::Connect(err_string));
+            return Err(Error::last_os_error());
         }
 
         let socket = TunSocket { fd };
         socket.set_non_blocking()
     }
 
-    pub fn name(&self) -> Result<String, Error> {
+    pub fn name(&self) -> Result<String> {
         let mut tunnel_name = [0u8; 256];
         let mut tunnel_name_len: socklen_t = tunnel_name.len() as u32;
         if unsafe {
@@ -156,26 +143,26 @@ impl TunSocket {
         } < 0
             || tunnel_name_len == 0
         {
-            return Err(Error::GetSockOpt(errno_str()));
+            return Err(Error::last_os_error());
         }
 
         Ok(String::from_utf8_lossy(&tunnel_name[..(tunnel_name_len - 1) as usize]).to_string())
     }
 
-    pub fn set_non_blocking(self) -> Result<TunSocket, Error> {
+    pub fn set_non_blocking(self) -> Result<TunSocket> {
         match unsafe { fcntl(self.fd, F_GETFL) } {
-            -1 => Err(Error::FCntl(errno_str())),
+            -1 => Err(Error::last_os_error()),
             flags => match unsafe { fcntl(self.fd, F_SETFL, flags | O_NONBLOCK) } {
-                -1 => Err(Error::FCntl(errno_str())),
+                -1 => Err(Error::last_os_error()),
                 _ => Ok(self),
             },
         }
     }
 
     /// Get the current MTU value
-    pub fn mtu(&self) -> Result<usize, Error> {
+    pub fn mtu(&self) -> Result<usize> {
         let fd = match unsafe { socket(AF_INET, SOCK_STREAM, IPPROTO_IP) } {
-            -1 => return Err(Error::Socket(errno_str())),
+            -1 => return Err(Error::last_os_error()),
             fd => fd,
         };
 
@@ -189,7 +176,7 @@ impl TunSocket {
         ifr.ifr_name[..iface_name.len()].copy_from_slice(iface_name);
 
         if unsafe { ioctl(fd, SIOCGIFMTU, &ifr) } < 0 {
-            return Err(Error::IOCtl(errno_str()));
+            return Err(Error::last_os_error());
         }
 
         unsafe { close(fd) };
@@ -197,7 +184,7 @@ impl TunSocket {
         Ok(unsafe { ifr.ifr_ifru.ifru_mtu } as _)
     }
 
-    fn write(&self, src: &[u8], af: u8) -> io::Result<usize> {
+    fn af_write(&self, src: &[u8], af: u8) -> Result<usize> {
         let mut hdr = [0u8, 0u8, 0u8, af as u8];
         let mut iov = [
             iovec {
@@ -226,16 +213,14 @@ impl TunSocket {
         }
     }
 
-    pub fn write4(&self, src: &[u8]) -> io::Result<usize> {
-        self.write(src, AF_INET as u8)
-    }
-
     #[allow(dead_code)]
-    pub fn write6(&self, src: &[u8]) -> io::Result<usize> {
-        self.write(src, AF_INET6 as u8)
+    pub fn write6(&self, src: &[u8]) -> Result<usize> {
+        self.af_write(src, AF_INET6 as u8)
     }
+}
 
-    pub fn read<'a>(&self, dst: &'a mut [u8]) -> io::Result<&'a mut [u8]> {
+impl Read for TunSocket {
+    fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
         let mut hdr = [0u8; 4];
 
         let mut iov = [
@@ -244,8 +229,8 @@ impl TunSocket {
                 iov_len: hdr.len(),
             },
             iovec {
-                iov_base: dst.as_mut_ptr() as _,
-                iov_len: dst.len(),
+                iov_base: buf.as_mut_ptr() as _,
+                iov_len: buf.len(),
             },
         ];
 
@@ -261,8 +246,61 @@ impl TunSocket {
 
         match unsafe { recvmsg(self.fd, &mut msg_hdr, 0) } {
             -1 => Err(io::Error::last_os_error()),
-            0..=4 => Ok(&mut dst[..0]),
-            n => Ok(&mut dst[..(n - 4) as usize]),
+            0..=4 => Ok(0),
+            n => Ok((n - 4) as usize),
         }
+    }
+}
+
+impl Write for TunSocket {
+    fn write(&mut self, buf: &[u8]) -> Result<usize> {
+        self.af_write(buf, AF_INET as u8)
+    }
+
+    fn flush(&mut self) -> Result<()> {
+        Ok(())
+    }
+}
+
+impl Read for &TunSocket {
+    fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
+        let mut hdr = [0u8; 4];
+
+        let mut iov = [
+            iovec {
+                iov_base: hdr.as_mut_ptr() as _,
+                iov_len: hdr.len(),
+            },
+            iovec {
+                iov_base: buf.as_mut_ptr() as _,
+                iov_len: buf.len(),
+            },
+        ];
+
+        let mut msg_hdr = msghdr {
+            msg_name: null_mut(),
+            msg_namelen: 0,
+            msg_iov: &mut iov[0],
+            msg_iovlen: iov.len() as _,
+            msg_control: null_mut(),
+            msg_controllen: 0,
+            msg_flags: 0,
+        };
+
+        match unsafe { recvmsg(self.fd, &mut msg_hdr, 0) } {
+            -1 => Err(io::Error::last_os_error()),
+            0..=4 => Ok(0),
+            n => Ok((n - 4) as usize),
+        }
+    }
+}
+
+impl Write for &TunSocket {
+    fn write(&mut self, buf: &[u8]) -> Result<usize> {
+        self.af_write(buf, AF_INET as u8)
+    }
+
+    fn flush(&mut self) -> Result<()> {
+        Ok(())
     }
 }
