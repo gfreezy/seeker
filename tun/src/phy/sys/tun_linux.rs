@@ -1,7 +1,7 @@
 // Copyright (c) 2019 Cloudflare, Inc. All rights reserved.
 // SPDX-License-Identifier: BSD-3-Clause
 #![allow(dead_code)]
-use crate::tun::phy::Error;
+use failure::Error;
 use libc::*;
 use std::io;
 use std::os::unix::io::{AsRawFd, RawFd};
@@ -55,12 +55,6 @@ pub struct TunSocket {
 impl Drop for TunSocket {
     fn drop(&mut self) {
         unsafe { close(self.fd) };
-    }
-}
-
-impl AsRawFd for TunSocket {
-    fn as_raw_fd(&self) -> RawFd {
-        self.fd
     }
 }
 

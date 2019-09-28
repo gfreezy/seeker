@@ -27,18 +27,18 @@ pub enum TunSocket {
 }
 
 impl TunSocket {
-    pub fn new_tcp_socket(handle: SocketHandle) -> TunSocket {
+    pub unsafe fn new_tcp_socket(handle: SocketHandle) -> TunSocket {
         TunSocket::Tcp(TunTcpSocket::new(handle))
     }
 
-    pub fn new_udp_socket(handle: SocketHandle) -> TunSocket {
+    pub unsafe fn new_udp_socket(handle: SocketHandle) -> TunSocket {
         TunSocket::Udp(TunUdpSocket::new(handle))
     }
 
     pub fn handle(&self) -> SocketHandle {
         match self {
-            TunSocket::Tcp(s) => s.handle,
-            TunSocket::Udp(s) => s.handle,
+            TunSocket::Tcp(s) => s.handle(),
+            TunSocket::Udp(s) => s.handle(),
         }
     }
 

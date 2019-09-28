@@ -1,59 +1,17 @@
-use crate::tun::phy::error;
-use mio::unix::EventedFd;
-use mio::{Evented, Poll, PollOpt, Ready, Token};
-use std::io;
-use std::io::{Read, Write};
-use std::os::unix::io::{AsRawFd, RawFd};
-
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 #[path = "tun_darwin.rs"]
 pub mod tun;
+//
+//#[cfg(target_os = "linux")]
+//#[path = "tun_linux.rs"]
+//pub mod tun;
 
-#[cfg(target_os = "linux")]
-#[path = "tun_linux.rs"]
-pub mod tun;
+pub use self::tun::TunSocket;
 
-pub(crate) struct TunSocket {
-    tun: tun::TunSocket,
-}
-
-impl TunSocket {
-    pub fn new(name: &str) -> Result<TunSocket, error::Error> {
-        Ok(TunSocket {
-            tun: tun::TunSocket::new(name)?,
-        })
-    }
-
-    /// Get the current MTU value
-    pub fn mtu(&self) -> Result<usize, error::Error> {
-        self.tun.mtu()
-    }
-}
-
-impl Read for TunSocket {
-    fn read(&mut self, buf: &mut [u8]) -> Result<usize, io::Error> {
-        match self.tun.read(buf) {
-            Ok(filled_buf) => Ok(filled_buf.len()),
-            Err(err) => Err(err),
-        }
-    }
-}
-
-impl Write for TunSocket {
-    fn write(&mut self, buf: &[u8]) -> Result<usize, io::Error> {
-        self.tun.write4(buf)
-    }
-
-    fn flush(&mut self) -> Result<(), io::Error> {
-        Ok(())
-    }
-}
-
-impl AsRawFd for TunSocket {
-    fn as_raw_fd(&self) -> RawFd {
-        self.tun.as_raw_fd()
-    }
-}
+use mio::unix::EventedFd;
+use mio::{Evented, Poll, PollOpt, Ready, Token};
+use std::io;
+use std::os::unix::io::AsRawFd;
 
 impl Evented for TunSocket {
     fn register(
@@ -63,7 +21,7 @@ impl Evented for TunSocket {
         interest: Ready,
         opts: PollOpt,
     ) -> io::Result<()> {
-        EventedFd(&self.tun.as_raw_fd()).register(poll, token, interest, opts)
+        EventedFd(&self.as_raw_fd()).register(poll, token, interest, opts)
     }
 
     fn reregister(
@@ -73,10 +31,10 @@ impl Evented for TunSocket {
         interest: Ready,
         opts: PollOpt,
     ) -> io::Result<()> {
-        EventedFd(&self.tun.as_raw_fd()).reregister(poll, token, interest, opts)
+        EventedFd(&self.as_raw_fd()).reregister(poll, token, interest, opts)
     }
 
     fn deregister(&self, poll: &Poll) -> io::Result<()> {
-        EventedFd(&self.tun.as_raw_fd()).deregister(poll)
+        EventedFd(&self.as_raw_fd()).deregister(poll)
     }
 }

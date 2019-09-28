@@ -1,4 +1,5 @@
 pub mod ahead;
+pub mod crypto;
 mod crypto_io;
 pub mod stream;
 pub mod tcp;
