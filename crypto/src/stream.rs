@@ -5,8 +5,8 @@ use crate::crypto::openssl;
 #[cfg(feature = "rc4")]
 use crate::crypto::rc4_md5;
 #[cfg(feature = "sodium")]
-use crate::crypto::sodium;
-use crate::crypto::{
+use crate::sodium;
+use crate::{
     cipher::{CipherCategory, CipherResult, CipherType},
     dummy, table, CryptoMode,
 };

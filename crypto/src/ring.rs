@@ -7,7 +7,7 @@ use ring::aead::{
     CHACHA20_POLY1305,
 };
 
-use crate::crypto::{
+use crate::{
     aead::{increase_nonce, make_skey},
     cipher::Error,
     AeadDecryptor, AeadEncryptor, CipherResult, CipherType,
@@ -15,7 +15,7 @@ use crate::crypto::{
 
 use byte_string::ByteStr;
 use bytes::{BufMut, Bytes, BytesMut};
-use log::error;
+use tracing::error;
 
 /// AEAD ciphers provided by Ring
 pub enum RingAeadCryptoVariant {

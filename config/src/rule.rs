@@ -1,4 +1,5 @@
-use crate::check_cidr;
+use crate::parse_cidr;
+use smoltcp::wire::IpCidr;
 use std::net::Ipv4Addr;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -8,7 +9,7 @@ pub enum Rule {
     Domain(String, Action),
     DomainSuffix(String, Action),
     DomainKeyword(String, Action),
-    IpCidr(String, Action),
+    IpCidr(IpCidr, Action),
     Match(Action),
 }
 
@@ -97,7 +98,7 @@ impl FromStr for Rule {
                 Rule::DomainKeyword(criteria.to_string(), Action::from_str(action).unwrap())
             }
             "IP-CIDR" => Rule::IpCidr(
-                check_cidr(criteria.to_string()),
+                parse_cidr(criteria.to_string()),
                 Action::from_str(action).unwrap(),
             ),
             "MATCH" => Rule::Match(Action::from_str(action).unwrap()),

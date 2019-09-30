@@ -1,2 +1,2 @@
-pub mod authority;
+pub mod resolver;
 pub mod server;

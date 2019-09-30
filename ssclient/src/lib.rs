@@ -1,235 +1,158 @@
-pub mod ahead;
-pub mod crypto;
-mod crypto_io;
-pub mod stream;
-pub mod tcp;
-pub mod udp;
+const MAX_PACKET_SIZE: usize = 0x3FFF;
 
-const BUFFER_SIZE: usize = 8 * 1024; // 8K buffer
+mod ahead;
 
-use crate::tun::socket::{TunTcpSocket, TunUdpSocket};
-use crypto_io::{decrypt_payload, encrypt_payload};
-use futures::stream::SplitSink;
-use shadowsocks::relay::boxed_future;
-use shadowsocks::relay::socks5::Address;
-use shadowsocks::relay::tcprelay::{
-    proxy_server_handshake, tunnel, DecryptedRead, EncryptedWrite, TimeoutFuture,
-};
-use shadowsocks::{ServerAddr, ServerConfig};
-use std::collections::HashMap;
+use crate::ahead::{ahead_decrypted_read, ahead_encrypted_write};
+use async_std::future::try_join;
+use async_std::net::TcpStream;
+use bytes::Bytes;
+use config::{ServerAddr, ServerConfig};
+use crypto::CipherCategory;
+use futures::io::ErrorKind;
+use futures::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use hermesdns::{DnsClient, DnsNetworkClient, QueryType};
+use smoltcp::wire::IpAddress;
 use std::io;
-use std::io::{Cursor, Read};
-use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
-use tcp::connect_proxy_server;
-use tokio::codec::BytesCodec;
-use tokio::io::{ReadHalf, WriteHalf};
-use tokio::net::{UdpFramed, UdpSocket};
-use tokio::prelude::{Future, FutureExt, Sink, Stream};
-use tokio::runtime::current_thread::spawn;
-use tracing::{debug, debug_span, error, info, info_span};
-use tracing_futures::Instrument;
-use trust_dns_resolver::AsyncResolver;
-use udp::PacketStream;
+use std::io::{Error, Result};
+use std::net::{IpAddr, SocketAddr};
+use std::sync::Arc;
+use tracing::trace;
 
-pub struct SSClient {
+pub struct SSClient<'a> {
     srv_cfg: Arc<ServerConfig>,
-    async_resolver: AsyncResolver,
-    remote_udp_map: Arc<Mutex<HashMap<(SocketAddr, u16), SplitSink<UdpFramed<BytesCodec>>>>>,
+    dns_server: (&'a str, u16),
+    resolver: DnsNetworkClient,
 }
 
-impl SSClient {
-    pub fn new(server_config: Arc<ServerConfig>, async_resolver: AsyncResolver) -> Self {
+impl<'a> SSClient<'a> {
+    pub async fn new(server_config: Arc<ServerConfig>, dns_server: (&'a str, u16)) -> SSClient<'a> {
         SSClient {
             srv_cfg: server_config,
-            async_resolver,
-            remote_udp_map: Arc::new(Mutex::new(HashMap::new())),
+            resolver: DnsNetworkClient::new(0).await,
+            dns_server,
         }
     }
 
-    pub fn handle_connect(
+    pub async fn handle_connect<T: AsyncRead + AsyncWrite + Clone + Unpin>(
         &self,
-        (r, w): (ReadHalf<TunTcpSocket>, WriteHalf<TunTcpSocket>),
-        addr: Address,
-    ) -> impl Future<Item = (), Error = io::Error> + Send {
-        let cfg = self.srv_cfg.clone();
-        let timeout = Some(Duration::from_secs(30));
-        connect_proxy_server(self.srv_cfg.clone(), &self.async_resolver)
-            .instrument(info_span!("connect_proxy_server"))
-            .and_then(move |stream| {
-                debug!("connected remote stream");
-                proxy_server_handshake(stream, cfg, addr)
-                    .instrument(debug_span!("proxy_server_handshake"))
-            })
-            .and_then(move |(srv_r, srv_w)| {
-                info!("proxy server handshake successfully");
-                let rhalf = srv_r
-                    .and_then(move |svr_r| {
-                        svr_r
-                            .copy_timeout_opt(w, timeout)
-                            .instrument(debug_span!("copy_srv_to_local"))
-                    })
-                    .map_err(|e| {
-                        debug!("copy srv to local: {:#?}", e);
-                        e
-                    });
-                let whalf = srv_w
-                    .and_then(move |svr_w| {
-                        svr_w
-                            .copy_timeout_opt(r, timeout)
-                            .instrument(debug_span!("copy_local_to_srv"))
-                    })
-                    .map_err(|e| {
-                        debug!("copy local to srv: {:#?}", e);
-                        e
-                    });
-                tunnel(whalf, rhalf).then(|s| {
-                    info!("finish connection");
-                    s
-                })
-            })
+        mut socket: T,
+        addr: IpAddress,
+    ) -> Result<()> {
+        let ssserver =
+            get_remote_ssserver_addr(&self.resolver, self.srv_cfg.clone(), self.dns_server).await?;
+        let conn = TcpStream::connect(ssserver).await?;
+        let iv = proxy_handshake(&conn, self.srv_cfg.clone()).await?;
+
+        let mut socket_read = socket.clone();
+        let cipher_type = self.srv_cfg.method();
+        let key = self.srv_cfg.key();
+        let a = async {
+            let mut buf = vec![0; MAX_PACKET_SIZE];
+            let mut dst = vec![0; MAX_PACKET_SIZE];
+            let mut cipher = crypto::new_aead_encryptor(cipher_type, key, &iv);
+            let size = ahead_encrypted_write(&mut cipher, &buf, &mut dst, cipher_type).await?;
+            (&conn).write_all(&dst[..size]).await?;
+
+            let addr_bytes = addr.as_bytes();
+            let mut offset = addr_bytes.len();
+            buf[..offset].copy_from_slice(addr_bytes);
+            loop {
+                let size = socket.read(&mut buf[offset..]).await?;
+                if size == 0 {
+                    break;
+                }
+                let s = ahead_encrypted_write(
+                    &mut cipher,
+                    &buf[..offset + size],
+                    &mut dst,
+                    cipher_type,
+                )
+                .await?;
+                (&conn).write_all(&dst[..s]).await?;
+                offset = 0;
+            }
+            Ok(())
+        };
+
+        let b = async {
+            let mut buf = vec![0; MAX_PACKET_SIZE];
+            let mut output = vec![0; MAX_PACKET_SIZE];
+            let mut cipher = crypto::new_aead_decryptor(cipher_type, key, &iv);
+
+            loop {
+                let size =
+                    ahead_decrypted_read(&mut cipher, &conn, &mut buf, &mut output, cipher_type)
+                        .await?;
+                if size == 0 {
+                    break;
+                }
+                socket_read.write_all(&output[..size]).await?;
+            }
+            Ok(())
+        };
+
+        let _: Result<((), ())> = try_join!(a, b).await;
+
+        Ok(())
     }
+}
 
-    pub fn handle_packets(
-        &self,
-        socket: TunUdpSocket,
-        addr: Address,
-    ) -> impl Future<Item = (), Error = io::Error> + Send {
-        let svr_cfg = self.srv_cfg.clone();
-        let svr_cfg2 = svr_cfg.clone();
-        let map = self.remote_udp_map.clone();
+async fn proxy_handshake(mut conn: &TcpStream, srv_cfg: Arc<ServerConfig>) -> Result<Bytes> {
+    let method = srv_cfg.method();
+    let iv = match method.category() {
+        CipherCategory::Stream => {
+            let local_iv = method.gen_init_vec();
+            trace!("Going to send initialize vector: {:?}", local_iv);
+            local_iv
+        }
+        CipherCategory::Aead => {
+            let local_salt = method.gen_salt();
+            trace!("Going to send salt: {:?}", local_salt);
+            local_salt
+        }
+    };
 
-        resolve_remote_server(&self.async_resolver, svr_cfg2).and_then(move |remote_addr| {
-            PacketStream::new(socket.clone()).for_each(move |(pkt, src)| {
-                let addr = addr.clone();
-                let svr_cfg_cloned = svr_cfg.clone();
-                let svr_cfg_cloned_cloned = svr_cfg.clone();
-                let socket = socket.clone();
-                let timeout = *svr_cfg.udp_timeout();
+    conn.write_all(&iv).await?;
+    Ok(iv)
+}
 
-                const DEFAULT_TIMEOUT: Duration = Duration::from_secs(5);
-                let svr_cfg = svr_cfg_cloned_cloned;
-                let mut buf = vec![];
-                addr.write_to_buf(&mut buf);
-                buf.extend_from_slice(&pkt);
-                let payload = encrypt_payload(svr_cfg.method(), svr_cfg.key(), &buf).unwrap();
-                debug!(
-                    "UDP ASSOCIATE {} -> {}, payload length {} bytes",
-                    src,
-                    addr,
-                    payload.len()
-                );
-                let to = timeout.unwrap_or(DEFAULT_TIMEOUT);
-                let mut locked_map = map.try_lock().unwrap();
-                let key = (src, remote_addr.port());
-                let remote_udp = if let Some(udp) = locked_map.remove(&key) {
-                    udp
-                } else {
-                    let local_addr = "0.0.0.0:0".parse().unwrap();
-                    let remote_udp = UdpSocket::bind(&local_addr).unwrap();
-                    let udp_framed = UdpFramed::new(remote_udp, BytesCodec::new());
-                    let (sink, source) = udp_framed.split();
-
-                    spawn(
-                        source
-                            .for_each(move |(buf, _remote_src)| {
-                                let socket = socket.clone();
-                                let svr_cfg = svr_cfg_cloned.clone();
-                                let payload =
-                                    decrypt_payload(svr_cfg.method(), svr_cfg.key(), &buf).unwrap();
-                                Address::read_from(Cursor::new(payload))
-                                    .map_err(|_| io::ErrorKind::Other.into())
-                                    .and_then(move |(mut cur, addr)| {
-                                        let payload_len =
-                                            cur.get_ref().len() - cur.position() as usize;
-                                        debug!(
-                                            "UDP ASSOCIATE {} <- {}, payload length {} bytes",
-                                            src, addr, payload_len
-                                        );
-                                        let mut data = vec![];
-                                        let size = cur.read_to_end(&mut data).unwrap();
-                                        debug!("UDP payload size: {}", size);
-                                        data.truncate(size);
-                                        socket.clone().send_dgram(data, src)
-                                    })
-                                    .map(|_| ())
-                            })
-                            .map(|_| ())
-                            .map_err(|_| ()),
-                    );
-                    debug!("new tokio udp socket");
-                    sink
-                };
-
-                let map2 = map.clone();
-                let rel = remote_udp
-                    .send((payload.into(), remote_addr))
-                    .timeout(to)
-                    .map_err(move |err| match err.into_inner() {
-                        Some(e) => e,
-                        None => {
-                            error!(
-                                "Udp associate sending datagram {} -> {} timed out in {:?}",
-                                src, addr, to
-                            );
-                            io::Error::new(io::ErrorKind::TimedOut, "udp send timed out")
-                        }
-                    })
-                    .map(move |sink| {
-                        let mut m = map2.try_lock().unwrap();
-                        m.insert(key, sink);
-                    });
-
-                spawn(rel.map_err(|err| {
-                    error!("Error occurs in UDP relay: {}", err);
-                }));
-
-                Ok(())
-            })
+async fn resolve_domain<T: DnsClient>(
+    resolver: &T,
+    server: (&str, u16),
+    domain: &str,
+) -> Result<Option<IpAddr>> {
+    let packet = resolver
+        .send_query(domain, QueryType::A, server, true)
+        .await?;
+    packet
+        .get_random_a()
+        .map(|ip| {
+            ip.parse::<IpAddr>()
+                .map_err(|e| io::Error::new(ErrorKind::Other, e))
         })
-    }
+        .transpose()
 }
 
-/// Resolve address to IP
-pub fn resolve_remote_server(
-    async_resolver: &AsyncResolver,
-    svr_cfg: Arc<ServerConfig>,
-) -> impl Future<Item = SocketAddr, Error = io::Error> + Send {
-    let svr_addr = svr_cfg.addr();
-    match svr_addr {
-        ServerAddr::SocketAddr(addr) => boxed_future(futures::finished(*addr)),
+async fn get_remote_ssserver_addr(
+    resolver: &impl DnsClient,
+    cfg: Arc<ServerConfig>,
+    dns_server: (&str, u16),
+) -> Result<SocketAddr> {
+    let addr = match cfg.addr() {
+        ServerAddr::SocketAddr(addr) => *addr,
         ServerAddr::DomainName(domain, port) => {
-            let port = *port;
-            let fut = async_resolver
-                .lookup_ip(domain.as_str())
-                .map_err(|e| {
-                    debug!("resolve error: {}", e);
-                    e.into()
-                })
-                .map(move |ips| {
-                    let ip = ips.into_iter().next().unwrap();
-                    info!("resolve ss server: {}", ip);
-                    SocketAddr::new(ip, port)
-                });
-            boxed_future(try_timeout(fut, svr_cfg.timeout()))
+            let ip = resolve_domain(resolver, (&dns_server.0, dns_server.1), &domain).await?;
+            let ip = match ip {
+                Some(i) => i,
+                None => {
+                    return Err(Error::new(
+                        ErrorKind::NotFound,
+                        "Domain can not be resolved",
+                    ))
+                }
+            };
+            SocketAddr::new(ip, *port)
         }
-    }
-    .instrument(info_span!("resolve_remote_server"))
-}
-
-pub fn try_timeout<T, F>(
-    fut: F,
-    dur: Option<Duration>,
-) -> impl Future<Item = T, Error = io::Error> + Send
-where
-    F: Future<Item = T, Error = io::Error> + Send + 'static,
-    T: 'static,
-{
-    use tokio::prelude::*;
-
-    match dur {
-        Some(dur) => TimeoutFuture::Wait(fut.timeout(dur)),
-        _ => TimeoutFuture::Direct(fut),
-    }
+    };
+    Ok(addr)
 }
