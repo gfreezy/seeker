@@ -19,7 +19,6 @@ trust-dns-resolver = "0.11.1"
 trust-dns-server = "0.16.1"
 mio = "0.6.19"
 managed = "0.7.1"
-shadowsocks-rust = {version = "1.7.0", features = ["sodium"], default-features = false}
 sled = "0.24.1"
 serde = { version = "1.0.99", features = ["derive"] }
 serde_yaml = "0.8.9"

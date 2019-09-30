@@ -1,9 +1,12 @@
 pub mod rule;
+mod server_config;
 
+pub use server_config::{ServerAddr, ServerConfig};
+
+use crypto::CipherType;
 use rule::{ProxyRules, Rule};
 use serde::Deserialize;
-use shadowsocks::crypto::CipherType;
-use shadowsocks::{ServerAddr, ServerConfig};
+use smoltcp::wire::{IpAddress, IpCidr};
 use std::fs::File;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::str::FromStr;
@@ -17,7 +20,7 @@ pub struct Config {
     pub dns_server: SocketAddr,
     pub tun_name: String,
     pub tun_ip: Ipv4Addr,
-    pub tun_cidr: String,
+    pub tun_cidr: IpCidr,
     pub rules: ProxyRules,
 }
 
@@ -56,7 +59,6 @@ impl Config {
             yaml_server_config
                 .timeout
                 .map(|t| Duration::from_secs(u64::from(t))),
-            None,
         );
         Config {
             server_config: Arc::new(server_config),
@@ -64,7 +66,7 @@ impl Config {
             dns_server: conf.dns_server.parse().unwrap(),
             tun_name: conf.tun_name,
             tun_ip: conf.tun_ip.parse().unwrap(),
-            tun_cidr: check_cidr(conf.tun_cidr),
+            tun_cidr: parse_cidr(conf.tun_cidr),
             rules: ProxyRules::new(
                 conf.rules
                     .iter()
@@ -75,11 +77,11 @@ impl Config {
     }
 }
 
-fn check_cidr(s: String) -> String {
+fn parse_cidr(s: String) -> IpCidr {
     let segments = s.splitn(2, '/').collect::<Vec<&str>>();
     let addr = segments[0];
     let len = segments[1];
-    let _: Ipv4Addr = addr.parse().unwrap();
-    let _: u16 = len.parse().unwrap();
-    s
+    let addr: Ipv4Addr = addr.parse().unwrap();
+    let prefix = len.parse().unwrap();
+    IpCidr::new(IpAddress::from(addr), prefix)
 }

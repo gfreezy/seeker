@@ -12,7 +12,7 @@ tracing-futures = { git = "https://github.com/tokio-rs/tracing", default-feature
 tracing-fmt = "0.1"
 libc = "0.2.62"
 failure = "0.1.5"
-async-std = { git = "https://github.com/gfreezy/async-std", rev = "6aa3f55"}
+async-std = { git = "https://github.com/gfreezy/async-std", rev = "6d39151"}
 sysconfig = { path = "../sysconfig" }
 futures-preview = "0.3.0-alpha.18"
 lazy_static = "1.4.0"
@@ -31,5 +31,6 @@ features = [
 	"socket-tcp",
 	"phy-raw_socket",
 ]
+
 [dev-dependencies]
 insta = "0.11.0"

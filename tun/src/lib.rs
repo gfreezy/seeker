@@ -336,7 +336,7 @@ mod tests {
                 match stream.next().await {
                     Some(Ok(TunSocket::Tcp(mut s))) => {
                         assert_eq!(s.local_addr(), "10.0.0.2:80".parse::<SocketAddr>().unwrap());
-                        let mut buf = vec![0;1024];
+                        let mut buf = vec![0; 1024];
                         let size = s.read(&mut buf).await.unwrap();
                         assert_eq!(size, 5);
                         assert_eq!(&buf[..size], "hello".as_bytes());

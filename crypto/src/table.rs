@@ -2,7 +2,7 @@
 
 use std::io::Cursor;
 
-use crate::crypto::{
+use crate::{
     digest::{self, Digest, DigestType},
     CipherResult, CryptoMode, StreamCipher,
 };
