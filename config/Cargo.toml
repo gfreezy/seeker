@@ -13,6 +13,7 @@ bytes = "0.4.12"
 tracing = "0.1"
 crypto = { path = "../crypto" }
 ring = "0.14"
+byteorder = "1.3.2"
 
 [dependencies.smoltcp]
 git = "https://github.com/gfreezy/smoltcp"

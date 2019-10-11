@@ -1,7 +1,8 @@
 pub mod rule;
 mod server_config;
-
+mod socks5;
 pub use server_config::{ServerAddr, ServerConfig};
+pub use socks5::Address;
 
 use crypto::CipherType;
 use rule::{ProxyRules, Rule};

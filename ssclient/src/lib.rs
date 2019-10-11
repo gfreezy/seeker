@@ -2,12 +2,12 @@ const MAX_PACKET_SIZE: usize = 0x3FFF;
 
 mod ahead;
 
-use crate::ahead::{ahead_decrypted_read, ahead_encrypted_write};
+use crate::ahead::{aead_decrypted_read, aead_encrypted_write};
 use async_std::future::try_join;
 use async_std::net::TcpStream;
-use bytes::Bytes;
-use config::{ServerAddr, ServerConfig};
-use crypto::CipherCategory;
+use bytes::{Bytes, BytesMut};
+use config::{Address, ServerAddr, ServerConfig};
+use crypto::{CipherCategory, CryptoMode};
 use futures::io::ErrorKind;
 use futures::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use hermesdns::{DnsClient, DnsNetworkClient, QueryType};
@@ -34,39 +34,32 @@ impl SSClient {
         }
     }
 
-    pub async fn handle_connect<T: AsyncRead + AsyncWrite + Clone + Unpin>(
+    async fn handle_aead<T: AsyncRead + AsyncWrite + Clone + Unpin>(
         &self,
+        conn: TcpStream,
         mut socket: T,
-        addr: String,
+        addr: Address,
     ) -> Result<()> {
-        let ssserver = get_remote_ssserver_addr(
-            &*self.resolver,
-            self.srv_cfg.clone(),
-            (&self.dns_server.0, self.dns_server.1),
-        )
-        .await?;
-        let conn = TcpStream::connect(ssserver).await?;
-        let iv = proxy_handshake(&conn, self.srv_cfg.clone()).await?;
-
         let mut socket_read = socket.clone();
         let cipher_type = self.srv_cfg.method();
         let key = self.srv_cfg.key();
         let a = async {
             let mut buf = vec![0; MAX_PACKET_SIZE];
             let mut dst = vec![0; MAX_PACKET_SIZE];
-            let mut cipher = crypto::new_aead_encryptor(cipher_type, key, &iv);
-            let size = ahead_encrypted_write(&mut cipher, &buf, &mut dst, cipher_type)?;
-            (&conn).write_all(&dst[..size]).await?;
 
-            let addr_bytes = addr.as_bytes();
+            let iv = send_iv(&conn, self.srv_cfg.clone()).await?;
+            let mut cipher = crypto::new_aead_encryptor(cipher_type, key, &iv);
+
+            let mut addr_bytes = BytesMut::with_capacity(100);
+            addr.write_to_buf(&mut addr_bytes);
             let mut offset = addr_bytes.len();
-            buf[..offset].copy_from_slice(addr_bytes);
+            buf[..offset].copy_from_slice(&addr_bytes);
             loop {
                 let size = socket.read(&mut buf[offset..]).await?;
                 if size == 0 {
                     break;
                 }
-                let s = ahead_encrypted_write(
+                let s = aead_encrypted_write(
                     &mut cipher,
                     &buf[..offset + size],
                     &mut dst,
@@ -81,11 +74,12 @@ impl SSClient {
         let b = async {
             let mut buf = vec![0; MAX_PACKET_SIZE];
             let mut output = vec![0; MAX_PACKET_SIZE];
+            let iv = recv_iv(&conn, self.srv_cfg.clone()).await?;
             let mut cipher = crypto::new_aead_decryptor(cipher_type, key, &iv);
 
             loop {
                 let size =
-                    ahead_decrypted_read(&mut cipher, &conn, &mut buf, &mut output, cipher_type)
+                    aead_decrypted_read(&mut cipher, &conn, &mut buf, &mut output, cipher_type)
                         .await?;
                 if size == 0 {
                     break;
@@ -100,12 +94,95 @@ impl SSClient {
         Ok(())
     }
 
-    pub async fn handle_packets(&self, _socket: TunUdpSocket, _addr: String) -> Result<()> {
+    async fn handle_stream<T: AsyncRead + AsyncWrite + Clone + Unpin>(
+        &self,
+        conn: TcpStream,
+        mut socket: T,
+        addr: Address,
+    ) -> Result<()> {
+        let mut socket_read = socket.clone();
+        let cipher_type = self.srv_cfg.method();
+        let key = self.srv_cfg.key();
+        let a = async {
+            let mut buf = vec![0; MAX_PACKET_SIZE];
+            let mut dst = BytesMut::with_capacity(MAX_PACKET_SIZE);
+
+            let iv = send_iv(&conn, self.srv_cfg.clone()).await?;
+            let mut cipher = crypto::new_stream(cipher_type, key, &iv, CryptoMode::Encrypt);
+
+            let mut addr_bytes = BytesMut::with_capacity(100);
+            addr.write_to_buf(&mut addr_bytes);
+            let mut offset = addr_bytes.len();
+            buf[..offset].copy_from_slice(&addr_bytes);
+            loop {
+                let size = socket.read(&mut buf[offset..]).await?;
+                if size == 0 {
+                    break;
+                }
+                dst.clear();
+                dst.reserve(cipher.buffer_size(&buf[..offset + size]));
+
+                cipher.update(&buf[..offset + size], &mut dst)?;
+                (&conn).write_all(&dst).await?;
+                offset = 0;
+            }
+            Ok(())
+        };
+
+        let b = async {
+            let mut buf = vec![0; MAX_PACKET_SIZE];
+            let mut output = BytesMut::with_capacity(MAX_PACKET_SIZE);
+            let iv = recv_iv(&conn, self.srv_cfg.clone()).await?;
+            let mut cipher = crypto::new_stream(cipher_type, key, &iv, CryptoMode::Decrypt);
+
+            loop {
+                let size = (&conn).read(&mut buf).await?;
+                let buffer_size = cipher.buffer_size(&buf[..size]);
+                output.clear();
+                output.reserve(buffer_size);
+
+                if size > 0 {
+                    cipher.update(&mut buf[..size], &mut output)?;
+                    socket_read.write_all(&output).await?;
+                } else {
+                    cipher.finalize(&mut output)?;
+                    socket_read.write_all(&output).await?;
+                    break;
+                }
+            }
+            Ok(())
+        };
+
+        let _: Result<((), ())> = try_join!(a, b).await;
+
+        Ok(())
+    }
+
+    pub async fn handle_connect<T: AsyncRead + AsyncWrite + Clone + Unpin>(
+        &self,
+        socket: T,
+        addr: Address,
+    ) -> Result<()> {
+        let ssserver = get_remote_ssserver_addr(
+            &*self.resolver,
+            self.srv_cfg.clone(),
+            (&self.dns_server.0, self.dns_server.1),
+        )
+        .await?;
+        let conn = TcpStream::connect(ssserver).await?;
+
+        match self.srv_cfg.method().category() {
+            CipherCategory::Stream => self.handle_stream(conn, socket, addr).await,
+            CipherCategory::Aead => self.handle_aead(conn, socket, addr).await,
+        }
+    }
+
+    pub async fn handle_packets(&self, _socket: TunUdpSocket, _addr: Address) -> Result<()> {
         Ok(())
     }
 }
 
-async fn proxy_handshake(mut conn: &TcpStream, srv_cfg: Arc<ServerConfig>) -> Result<Bytes> {
+async fn send_iv(mut conn: &TcpStream, srv_cfg: Arc<ServerConfig>) -> Result<Bytes> {
     let method = srv_cfg.method();
     let iv = match method.category() {
         CipherCategory::Stream => {
@@ -121,6 +198,18 @@ async fn proxy_handshake(mut conn: &TcpStream, srv_cfg: Arc<ServerConfig>) -> Re
     };
 
     conn.write_all(&iv).await?;
+    Ok(iv)
+}
+
+async fn recv_iv(mut conn: &TcpStream, srv_cfg: Arc<ServerConfig>) -> Result<Vec<u8>> {
+    let method = srv_cfg.method();
+    let iv_size = match method.category() {
+        CipherCategory::Stream => method.iv_size(),
+        CipherCategory::Aead => method.salt_size(),
+    };
+
+    let mut iv = vec![0; iv_size];
+    conn.read_exact(&mut iv).await?;
     Ok(iv)
 }
 
@@ -163,4 +252,41 @@ async fn get_remote_ssserver_addr(
         }
     };
     Ok(addr)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use async_std::task;
+    use crypto::CipherType;
+
+    #[test]
+    fn test_get_remote_ssserver_domain() {
+        task::block_on(async {
+            let dns_client = DnsNetworkClient::new(0).await;
+            let cfg = Arc::new(ServerConfig::new(
+                ServerAddr::DomainName("localtest.me".to_string(), 7789),
+                "pass".to_string(),
+                CipherType::ChaCha20Ietf,
+                None,
+            ));
+            let addr = get_remote_ssserver_addr(&dns_client, cfg, ("114.114.114.114", 53)).await;
+            assert_eq!(addr.unwrap(), "127.0.0.1:7789".parse().unwrap());
+        })
+    }
+
+    #[test]
+    fn test_get_remote_ssserver_ip() {
+        task::block_on(async {
+            let dns_client = DnsNetworkClient::new(0).await;
+            let cfg = Arc::new(ServerConfig::new(
+                ServerAddr::SocketAddr("1.2.3.4:7789".parse().unwrap()),
+                "pass".to_string(),
+                CipherType::ChaCha20Ietf,
+                None,
+            ));
+            let addr = get_remote_ssserver_addr(&dns_client, cfg, ("114.114.114.114", 53)).await;
+            assert_eq!(addr.unwrap(), "1.2.3.4:7789".parse().unwrap());
+        })
+    }
 }

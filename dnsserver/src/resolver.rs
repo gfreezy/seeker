@@ -5,7 +5,7 @@ use hermesdns::{
     DnsClient, DnsNetworkClient, DnsPacket, DnsRecord, DnsResolver, QueryType, TransientTtl,
 };
 use sled::Db;
-use std::io::{Result};
+use std::io::Result;
 use std::net::Ipv4Addr;
 use std::path::Path;
 use std::sync::Arc;
@@ -105,14 +105,8 @@ impl Inner {
             Action::Reject => DnsPacket::new(),
             Action::Direct => {
                 debug!("direct, domain: {}", domain);
-                self
-                    .dns_client
-                    .send_query(
-                        domain,
-                        QueryType::A,
-                        (&self.server.0, self.server.1),
-                        true,
-                    )
+                self.dns_client
+                    .send_query(domain, QueryType::A, (&self.server.0, self.server.1), true)
                     .await?
             }
             Action::Proxy => {
@@ -124,8 +118,7 @@ impl Inner {
                     let ip = self.gen_ipaddr();
                     debug!("resolve to tun, domain: {}, ip: {}", domain, &ip);
 
-                    self
-                        .db
+                    self.db
                         .insert(NEXT_IP.as_bytes(), &self.next_ip.to_be_bytes())
                         .unwrap();
                     self.db.insert(domain.as_bytes(), ip.as_bytes()).unwrap();
@@ -143,7 +136,6 @@ impl Inner {
         };
 
         Ok(resp)
-
     }
 }
 
@@ -163,8 +155,8 @@ impl DnsResolver for RuleBasedDnsResolver {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use config::rule::{Rule, Action};
     use async_std::task;
+    use config::rule::{Action, Rule};
 
     #[test]
     fn test_inner_resolve_ip_and_lookup_host() {
@@ -181,9 +173,18 @@ mod tests {
         task::block_on(async {
             let mut inner = Inner::new(dir.path(), server, rules, n).await;
             println!("server");
-            assert_eq!(inner.resolve("baidu.com").await.unwrap().get_random_a(), Some("10.0.0.1".to_string()));
-            assert_eq!(inner.resolve("to-deny.com").await.unwrap().get_random_a(), None);
-            assert_eq!(inner.resolve("www.ali.com").await.unwrap().get_random_a(), Some("10.0.0.2".to_string()));
+            assert_eq!(
+                inner.resolve("baidu.com").await.unwrap().get_random_a(),
+                Some("10.0.0.1".to_string())
+            );
+            assert_eq!(
+                inner.resolve("to-deny.com").await.unwrap().get_random_a(),
+                None
+            );
+            assert_eq!(
+                inner.resolve("www.ali.com").await.unwrap().get_random_a(),
+                Some("10.0.0.2".to_string())
+            );
             assert!(inner.resolve("www.taobao.com").await.unwrap().answers.len() > 0);
             assert_eq!(inner.lookup_host("10.0.0.1"), Some("baidu.com".to_string()));
             assert_eq!(inner.lookup_host("10.1.0.1"), None);

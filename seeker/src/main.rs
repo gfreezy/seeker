@@ -2,16 +2,18 @@ use std::error::Error;
 
 use async_std::task::{block_on, spawn};
 use clap::{App, Arg};
-use config::Config;
+use config::{Address, Config};
 use dnsserver::create_dns_server;
 use futures::StreamExt;
 use ssclient::SSClient;
 use sysconfig::DNSSetup;
 use tun::socket::TunSocket;
 use tun::Tun;
+use tracing::{debug, info};
+use tracing_core::Level;
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let my_subscriber = tracing_fmt::FmtSubscriber::new();
+    let my_subscriber = tracing_fmt::FmtSubscriber::builder().with_max_level(Level::DEBUG).finish();
     tracing::subscriber::set_global_default(my_subscriber).expect("setting tracing default failed");
 
     let matches = App::new("Seeker")
@@ -45,9 +47,13 @@ fn main() -> Result<(), Box<dyn Error>> {
             config.rules,
         )
         .await;
+        info!("spawn dns server");
         spawn(dns_server.run_server());
         let client = SSClient::new(config.server_config, dns_server_addr).await;
+        debug!("spawn tun bg send");
         spawn(Tun::bg_send());
+
+        debug!("run");
 
         while let Some(socket) = Tun::listen().next().await {
             let socket = socket.expect("socket error");
@@ -57,10 +63,12 @@ fn main() -> Result<(), Box<dyn Error>> {
                 let remote_addr = socket.local_addr();
 
                 let host = resolver_clone
-                    .lookup_host(&remote_addr.to_string())
+                    .lookup_host(&remote_addr.ip().to_string())
                     .await
-                    .unwrap_or_else(|| remote_addr.to_string());
+                    .map(|s| Address::DomainNameAddress(s, remote_addr.port()))
+                    .unwrap_or_else(|| Address::SocketAddress(remote_addr));
 
+                info!("Receive {:?}", host);
                 match socket {
                     TunSocket::Tcp(socket) => client_clone.handle_connect(socket, host).await,
                     TunSocket::Udp(socket) => client_clone.handle_packets(socket, host).await,
