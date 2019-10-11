@@ -174,7 +174,7 @@ impl AeadDecryptor for RingAeadCipher {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::crypto::CipherType;
+    use crate::CipherType;
 
     fn test_ring_aead(ct: CipherType) {
         let key = ct.bytes_to_key(b"PassWORD");

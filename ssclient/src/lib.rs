@@ -11,24 +11,25 @@ use crypto::CipherCategory;
 use futures::io::ErrorKind;
 use futures::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use hermesdns::{DnsClient, DnsNetworkClient, QueryType};
-use smoltcp::wire::IpAddress;
 use std::io;
 use std::io::{Error, Result};
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use tracing::trace;
+use tun::socket::TunUdpSocket;
 
-pub struct SSClient<'a> {
+#[derive(Clone)]
+pub struct SSClient {
     srv_cfg: Arc<ServerConfig>,
-    dns_server: (&'a str, u16),
-    resolver: DnsNetworkClient,
+    dns_server: (String, u16),
+    resolver: Arc<DnsNetworkClient>,
 }
 
-impl<'a> SSClient<'a> {
-    pub async fn new(server_config: Arc<ServerConfig>, dns_server: (&'a str, u16)) -> SSClient<'a> {
+impl SSClient {
+    pub async fn new(server_config: Arc<ServerConfig>, dns_server: (String, u16)) -> SSClient {
         SSClient {
             srv_cfg: server_config,
-            resolver: DnsNetworkClient::new(0).await,
+            resolver: Arc::new(DnsNetworkClient::new(0).await),
             dns_server,
         }
     }
@@ -36,10 +37,14 @@ impl<'a> SSClient<'a> {
     pub async fn handle_connect<T: AsyncRead + AsyncWrite + Clone + Unpin>(
         &self,
         mut socket: T,
-        addr: IpAddress,
+        addr: String,
     ) -> Result<()> {
-        let ssserver =
-            get_remote_ssserver_addr(&self.resolver, self.srv_cfg.clone(), self.dns_server).await?;
+        let ssserver = get_remote_ssserver_addr(
+            &*self.resolver,
+            self.srv_cfg.clone(),
+            (&self.dns_server.0, self.dns_server.1),
+        )
+        .await?;
         let conn = TcpStream::connect(ssserver).await?;
         let iv = proxy_handshake(&conn, self.srv_cfg.clone()).await?;
 
@@ -50,7 +55,7 @@ impl<'a> SSClient<'a> {
             let mut buf = vec![0; MAX_PACKET_SIZE];
             let mut dst = vec![0; MAX_PACKET_SIZE];
             let mut cipher = crypto::new_aead_encryptor(cipher_type, key, &iv);
-            let size = ahead_encrypted_write(&mut cipher, &buf, &mut dst, cipher_type).await?;
+            let size = ahead_encrypted_write(&mut cipher, &buf, &mut dst, cipher_type)?;
             (&conn).write_all(&dst[..size]).await?;
 
             let addr_bytes = addr.as_bytes();
@@ -66,8 +71,7 @@ impl<'a> SSClient<'a> {
                     &buf[..offset + size],
                     &mut dst,
                     cipher_type,
-                )
-                .await?;
+                )?;
                 (&conn).write_all(&dst[..s]).await?;
                 offset = 0;
             }
@@ -93,6 +97,10 @@ impl<'a> SSClient<'a> {
 
         let _: Result<((), ())> = try_join!(a, b).await;
 
+        Ok(())
+    }
+
+    pub async fn handle_packets(&self, _socket: TunUdpSocket, _addr: String) -> Result<()> {
         Ok(())
     }
 }

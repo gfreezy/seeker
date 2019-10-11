@@ -9,3 +9,4 @@ edition = "2018"
 failure = "0.1.5"
 libproc = { git = "https://github.com/gfreezy/libproc-rs", rev = "bffc2c4" }
 tracing = "0.1"
+libc = "0.2.62"

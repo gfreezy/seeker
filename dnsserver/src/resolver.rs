@@ -5,9 +5,10 @@ use hermesdns::{
     DnsClient, DnsNetworkClient, DnsPacket, DnsRecord, DnsResolver, QueryType, TransientTtl,
 };
 use sled::Db;
-use std::io::{Error, ErrorKind, Result};
+use std::io::{Result};
 use std::net::Ipv4Addr;
 use std::path::Path;
+use std::sync::Arc;
 use tracing::debug;
 
 const NEXT_IP: &str = "next_ip";
@@ -15,8 +16,9 @@ const NEXT_IP: &str = "next_ip";
 /// A Forwarding DNS Resolver
 ///
 /// This resolver uses an external DNS server to service a query
+#[derive(Clone)]
 pub struct RuleBasedDnsResolver {
-    inner: Mutex<Inner>,
+    inner: Arc<Mutex<Inner>>,
 }
 
 impl RuleBasedDnsResolver {
@@ -27,8 +29,12 @@ impl RuleBasedDnsResolver {
         next_ip: u32,
     ) -> Self {
         RuleBasedDnsResolver {
-            inner: Mutex::new(Inner::new(path, server, rules, next_ip).await),
+            inner: Arc::new(Mutex::new(Inner::new(path, server, rules, next_ip).await)),
         }
+    }
+
+    pub async fn lookup_host(&self, addr: &str) -> Option<String> {
+        self.inner.lock().await.lookup_host(addr)
     }
 }
 
@@ -41,7 +47,7 @@ struct Inner {
 }
 
 impl Inner {
-    pub async fn new<P: AsRef<Path>>(
+    async fn new<P: AsRef<Path>>(
         path: P,
         server: (String, u16),
         rules: ProxyRules,
@@ -70,14 +76,12 @@ impl Inner {
         }
     }
 
-    #[allow(dead_code)]
-    pub async fn lookup_host(&self, addr: &str) -> Result<String> {
+    fn lookup_host(&self, addr: &str) -> Option<String> {
         debug!("lookup host: {}", addr);
-        if let Some(host) = self.db.get(addr.as_bytes()).unwrap() {
-            Ok(String::from_utf8(host.to_vec()).unwrap())
-        } else {
-            Err(Error::new(ErrorKind::Other, "no host found".to_string()))
-        }
+        self.db
+            .get(addr.as_bytes())
+            .unwrap()
+            .map(|host| String::from_utf8(host.to_vec()).unwrap())
     }
 
     fn gen_ipaddr(&mut self) -> String {
@@ -88,20 +92,11 @@ impl Inner {
         debug!("Resolver.gen_ipaddr: {}", addr);
         addr.to_string()
     }
-}
 
-#[async_trait]
-impl DnsResolver for RuleBasedDnsResolver {
-    async fn resolve(
-        &self,
-        domain: &str,
-        _qtype: QueryType,
-        _recursive: bool,
-    ) -> Result<DnsPacket> {
-        let mut guard = self.inner.lock().await;
-        let default_action = guard.rules.default_action();
+    async fn resolve(&mut self, domain: &str) -> Result<DnsPacket> {
+        let default_action = self.rules.default_action();
 
-        let action = guard
+        let action = self
             .rules
             .action_for_domain(domain)
             .unwrap_or(default_action);
@@ -110,31 +105,31 @@ impl DnsResolver for RuleBasedDnsResolver {
             Action::Reject => DnsPacket::new(),
             Action::Direct => {
                 debug!("direct, domain: {}", domain);
-                guard
+                self
                     .dns_client
                     .send_query(
                         domain,
                         QueryType::A,
-                        (&guard.server.0, guard.server.1),
+                        (&self.server.0, self.server.1),
                         true,
                     )
                     .await?
             }
             Action::Proxy => {
-                let ip = if let Some(addr) = guard.db.get(domain).expect("get domain") {
+                let ip = if let Some(addr) = self.db.get(domain).expect("get domain") {
                     let ip = String::from_utf8(addr.to_vec()).unwrap();
                     debug!("resolve from cache, domain: {}, ip: {}", domain, &ip);
                     ip
                 } else {
-                    let ip = guard.gen_ipaddr();
+                    let ip = self.gen_ipaddr();
                     debug!("resolve to tun, domain: {}, ip: {}", domain, &ip);
 
-                    guard
+                    self
                         .db
-                        .insert(NEXT_IP.as_bytes(), &guard.next_ip.to_be_bytes())
+                        .insert(NEXT_IP.as_bytes(), &self.next_ip.to_be_bytes())
                         .unwrap();
-                    guard.db.insert(domain.as_bytes(), ip.as_bytes()).unwrap();
-                    guard.db.insert(ip.as_bytes(), domain.as_bytes()).unwrap();
+                    self.db.insert(domain.as_bytes(), ip.as_bytes()).unwrap();
+                    self.db.insert(ip.as_bytes(), domain.as_bytes()).unwrap();
                     ip
                 };
                 let mut packet = DnsPacket::new();
@@ -148,5 +143,50 @@ impl DnsResolver for RuleBasedDnsResolver {
         };
 
         Ok(resp)
+
+    }
+}
+
+#[async_trait]
+impl DnsResolver for RuleBasedDnsResolver {
+    async fn resolve(
+        &self,
+        domain: &str,
+        _qtype: QueryType,
+        _recursive: bool,
+    ) -> Result<DnsPacket> {
+        let mut guard = self.inner.lock().await;
+        guard.resolve(domain).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use config::rule::{Rule, Action};
+    use async_std::task;
+
+    #[test]
+    fn test_inner_resolve_ip_and_lookup_host() {
+        let dir = tempfile::tempdir().unwrap();
+        let server = ("114.114.114.114".to_string(), 53);
+        let rules = ProxyRules::new(vec![
+            Rule::Domain("baidu.com".to_string(), Action::Proxy),
+            Rule::Domain("to-deny.com".to_string(), Action::Reject),
+            Rule::DomainKeyword("ali".to_string(), Action::Proxy),
+            Rule::DomainKeyword("www.taobao.com".to_string(), Action::Direct),
+        ]);
+        let start_ip = "10.0.0.1".parse::<Ipv4Addr>().unwrap();
+        let n = u32::from_be_bytes(start_ip.octets());
+        task::block_on(async {
+            let mut inner = Inner::new(dir.path(), server, rules, n).await;
+            println!("server");
+            assert_eq!(inner.resolve("baidu.com").await.unwrap().get_random_a(), Some("10.0.0.1".to_string()));
+            assert_eq!(inner.resolve("to-deny.com").await.unwrap().get_random_a(), None);
+            assert_eq!(inner.resolve("www.ali.com").await.unwrap().get_random_a(), Some("10.0.0.2".to_string()));
+            assert!(inner.resolve("www.taobao.com").await.unwrap().answers.len() > 0);
+            assert_eq!(inner.lookup_host("10.0.0.1"), Some("baidu.com".to_string()));
+            assert_eq!(inner.lookup_host("10.1.0.1"), None);
+        });
     }
 }

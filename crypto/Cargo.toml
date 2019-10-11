@@ -16,3 +16,15 @@ typenum = "1.11.2"
 byte_string = "1.0.0"
 tracing = "0.1"
 byteorder = "1"
+openssl = { version = "0.10", optional = true }
+libsodium-ffi = { version = "0.1", optional = true }
+libc = "0.2.62"
+
+[features]
+default = ["sodium", "rc4", "aes-cfb", "aes-ctr"]
+sodium = ["libsodium-ffi"]
+rc4 = ["openssl"]
+aes-cfb = ["openssl"]
+aes-ctr = ["openssl"]
+camellia-cfb = ["openssl"]
+single-threaded = []
