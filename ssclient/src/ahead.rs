@@ -10,7 +10,7 @@ fn buffer_size(tag_size: usize, data: &[u8]) -> usize {
         + data.len() + tag_size // data and data_tag
 }
 
-pub(crate) async fn ahead_encrypted_write(
+pub(crate) fn ahead_encrypted_write(
     cipher: &mut BoxAeadEncryptor,
     buf: &[u8],
     dst: &mut [u8],
@@ -102,4 +102,44 @@ fn decrypt_payload_aead(
     cipher.decrypt(data, &mut output[..data_length])?;
 
     Ok(data_length)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use async_std::task;
+
+    #[test]
+    fn test_encrypt_and_decrypt_payload() {
+        let cipher_type = CipherType::Aes256Gcm;
+        let key = cipher_type.bytes_to_key("key".as_bytes());
+        let payload = "payload".as_bytes();
+        let mut output = [0; MAX_PACKET_SIZE];
+        let mut output2 = [0; MAX_PACKET_SIZE];
+        let size = encrypt_payload_aead(cipher_type, &key, payload, &mut output).unwrap();
+        let size2 = decrypt_payload_aead(cipher_type, &key, &output[..size], &mut output2).unwrap();
+        assert_eq!(&output2[..size2], payload);
+    }
+
+    #[test]
+    fn test_encrypt_and_decrypt_stream() {
+        let cipher_type = CipherType::Aes256Gcm;
+        let key = cipher_type.bytes_to_key("keasdfsdfy".as_bytes());
+        let iv = cipher_type.gen_salt();
+        let mut encrypter_cipher = crypto::new_aead_encryptor(cipher_type, &key, &iv);
+        let mut decrypter_cipher = crypto::new_aead_decryptor(cipher_type, &key, &iv);
+
+        let buf = "hello".as_bytes();
+        let mut dst = [0; MAX_PACKET_SIZE];
+        let mut tmp_buf = [0; MAX_PACKET_SIZE];
+        let mut output = [0; MAX_PACKET_SIZE];
+
+        let size = ahead_encrypted_write(&mut encrypter_cipher, &buf, &mut dst, cipher_type).unwrap();
+        dbg!(size);
+
+        task::block_on(async move {
+            let s = ahead_decrypted_read(&mut decrypter_cipher, &dst[..size], &mut tmp_buf, &mut output, cipher_type).await.unwrap();
+            assert_eq!(&output[..size], buf);
+        })
+    }
 }

@@ -5,19 +5,19 @@ pub mod phy;
 pub mod socket;
 
 use crate::socket::TunSocket;
-use async_std::prelude::*;
-use futures::ready;
+use futures::{ready, AsyncRead, AsyncWrite, Stream};
 use iface::ethernet::{Interface, InterfaceBuilder};
 use iface::phony_socket::PhonySocket;
 use lazy_static::lazy_static;
 use parking_lot::Mutex;
 use smoltcp::socket::{Socket, SocketHandle, SocketSet};
 use smoltcp::time::Instant;
-use smoltcp::wire::{IpAddress, IpCidr};
+use smoltcp::wire::IpCidr;
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::io;
 use std::io::Result;
+use std::net::Ipv4Addr;
 use std::pin::Pin;
 use std::task::{Context, Poll, Waker};
 use std::time::Duration;
@@ -39,7 +39,7 @@ pub struct Tun {
 }
 
 impl Tun {
-    pub fn setup(tun_name: String, tun_ip: IpAddress, tun_cidr: IpCidr) {
+    pub fn setup(tun_name: String, tun_ip: Ipv4Addr, tun_cidr: IpCidr) {
         let tun = phy::TunSocket::new(tun_name.as_str());
         let tun_name = tun.name().unwrap();
         setup_ip(
@@ -318,13 +318,15 @@ mod tests {
     use super::*;
     use async_std::net::TcpStream;
     use async_std::task;
+    use futures::{StreamExt, AsyncReadExt, AsyncWriteExt};
     use std::net::SocketAddr;
+    use smoltcp::wire::IpAddress;
 
     #[test]
     fn test_accept_tcp() {
         Tun::setup(
             "utun4".to_string(),
-            IpAddress::v4(10, 0, 0, 1),
+            Ipv4Addr::new(10, 0, 0, 1),
             IpCidr::new(IpAddress::v4(10, 0, 0, 0), 24),
         );
 

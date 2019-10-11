@@ -11,7 +11,7 @@ use libsodium_ffi::{
     crypto_stream_salsa20_xor_ic, crypto_stream_xsalsa20_xor_ic, sodium_init,
 };
 
-use crate::crypto::{
+use crate::{
     aead::{increase_nonce, make_skey},
     cipher::Error,
     AeadDecryptor, AeadEncryptor, CipherResult, CipherType, StreamCipher,
@@ -258,7 +258,7 @@ impl AeadDecryptor for SodiumAeadCipher {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::crypto::{CipherType, StreamCipher};
+    use crate::{CipherType, StreamCipher};
 
     fn test_sodium(ct: CipherType) {
         let key = ct.bytes_to_key(b"PassWORD");

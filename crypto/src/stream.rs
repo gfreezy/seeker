@@ -1,9 +1,9 @@
 //! Stream ciphers
 
 #[cfg(feature = "openssl")]
-use crate::crypto::openssl;
+use crate::openssl;
 #[cfg(feature = "rc4")]
-use crate::crypto::rc4_md5;
+use crate::rc4_md5;
 #[cfg(feature = "sodium")]
 use crate::sodium;
 use crate::{

@@ -4,7 +4,7 @@ use std::ptr;
 
 use miscreant::aead::{Aead, Aes128PmacSivAead, Aes256PmacSivAead};
 
-use crate::crypto::{
+use crate::{
     aead::{increase_nonce, make_skey},
     cipher::Error,
     AeadDecryptor, AeadEncryptor, CipherResult, CipherType,

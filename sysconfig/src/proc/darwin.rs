@@ -67,6 +67,8 @@ fn list_sockaddr(pid: i32) -> Fallible<Vec<SocketAddrV4>> {
 #[cfg(test)]
 mod test {
     use super::*;
+    use libc;
+
     #[test]
     fn test_list_system_proc_socks() {
         assert!(list_system_proc_socks().unwrap().len() > 1);
