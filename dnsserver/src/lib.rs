@@ -1,8 +1,8 @@
 pub mod resolver;
 
-use resolver::RuleBasedDnsResolver;
 use config::rule::ProxyRules;
 use hermesdns::DnsUdpServer;
+use resolver::RuleBasedDnsResolver;
 use std::net::Ipv4Addr;
 use std::path::Path;
 
@@ -18,16 +18,18 @@ pub async fn create_dns_server<P: AsRef<Path>>(
     (server, resolver)
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use config::rule::{Rule, Action};
     use async_std::task;
-    use hermesdns::{DnsNetworkClient, DnsClient, QueryType};
+    use config::rule::{Action, Rule};
+    use hermesdns::{DnsClient, DnsNetworkClient, QueryType};
 
     async fn get_ip(client: &DnsNetworkClient, host: &str) -> Option<String> {
-        let resp = client.send_query(host, QueryType::A, ("127.0.0.1", 53), true).await.unwrap();
+        let resp = client
+            .send_query(host, QueryType::A, ("127.0.0.1", 53), true)
+            .await
+            .unwrap();
         resp.get_random_a()
     }
 
@@ -41,13 +43,23 @@ mod tests {
             Rule::DomainKeyword("ali".to_string(), Action::Proxy),
         ]);
         task::block_on(async {
-            let (server, resolver) = create_dns_server(dir.path(), server, "10.0.0.1".parse().unwrap(), rules).await;
+            let (server, resolver) =
+                create_dns_server(dir.path(), server, "10.0.0.1".parse().unwrap(), rules).await;
             task::spawn(server.run_server());
             let client = DnsNetworkClient::new(0).await;
-            assert_eq!(get_ip(&client, "baidu.com").await, Some("10.0.0.1".to_string()));
+            assert_eq!(
+                get_ip(&client, "baidu.com").await,
+                Some("10.0.0.1".to_string())
+            );
             assert_eq!(get_ip(&client, "to-deny.com").await, None);
-            assert_eq!(get_ip(&client, "to.aliyun.com").await, Some("10.0.0.2".to_string()));
-            assert_eq!(resolver.lookup_host("10.0.0.2").await, Some("to.aliyun.com".to_string()))
+            assert_eq!(
+                get_ip(&client, "to.aliyun.com").await,
+                Some("10.0.0.2".to_string())
+            );
+            assert_eq!(
+                resolver.lookup_host("10.0.0.2").await,
+                Some("to.aliyun.com".to_string())
+            )
         });
     }
 }

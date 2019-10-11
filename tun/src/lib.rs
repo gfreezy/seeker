@@ -318,9 +318,9 @@ mod tests {
     use super::*;
     use async_std::net::TcpStream;
     use async_std::task;
-    use futures::{StreamExt, AsyncReadExt, AsyncWriteExt};
-    use std::net::SocketAddr;
+    use futures::{AsyncReadExt, AsyncWriteExt, StreamExt};
     use smoltcp::wire::IpAddress;
+    use std::net::SocketAddr;
 
     #[test]
     fn test_accept_tcp() {

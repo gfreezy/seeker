@@ -295,6 +295,7 @@ dependencies = [
 name = "config"
 version = "0.1.0"
 dependencies = [
+ "byteorder 1.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "bytes 0.4.12 (registry+https://github.com/rust-lang/crates.io-index)",
  "crypto 0.1.0",
  "ring 0.14.6 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1225,6 +1226,7 @@ dependencies = [
  "ssclient 0.1.0",
  "sysconfig 0.1.0",
  "tracing 0.1.9 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tracing-core 0.1.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "tracing-fmt 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "tun 0.1.0",
 ]

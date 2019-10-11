@@ -10,7 +10,7 @@ fn buffer_size(tag_size: usize, data: &[u8]) -> usize {
         + data.len() + tag_size // data and data_tag
 }
 
-pub(crate) fn ahead_encrypted_write(
+pub(crate) fn aead_encrypted_write(
     cipher: &mut BoxAeadEncryptor,
     buf: &[u8],
     dst: &mut [u8],
@@ -35,7 +35,7 @@ pub(crate) fn ahead_encrypted_write(
     Ok(output_length)
 }
 
-pub(crate) async fn ahead_decrypted_read<T: AsyncRead + Unpin>(
+pub(crate) async fn aead_decrypted_read<T: AsyncRead + Unpin>(
     cipher: &mut BoxAeadDecryptor,
     mut src: T,
     tmp_buf: &mut [u8],
@@ -134,12 +134,20 @@ mod tests {
         let mut tmp_buf = [0; MAX_PACKET_SIZE];
         let mut output = [0; MAX_PACKET_SIZE];
 
-        let size = ahead_encrypted_write(&mut encrypter_cipher, &buf, &mut dst, cipher_type).unwrap();
-        dbg!(size);
+        let size =
+            aead_encrypted_write(&mut encrypter_cipher, &buf, &mut dst, cipher_type).unwrap();
 
-        task::block_on(async move {
-            let s = ahead_decrypted_read(&mut decrypter_cipher, &dst[..size], &mut tmp_buf, &mut output, cipher_type).await.unwrap();
-            assert_eq!(&output[..size], buf);
+        task::block_on(async {
+            let s = aead_decrypted_read(
+                &mut decrypter_cipher,
+                &dst[..size],
+                &mut tmp_buf,
+                &mut output,
+                cipher_type,
+            )
+            .await
+            .unwrap();
+            assert_eq!(&output[..s], buf);
         })
     }
 }
