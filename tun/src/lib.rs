@@ -291,7 +291,7 @@ impl Future for TunWrite {
                                 .unwrap();
                         assert_eq!(size, buf.len());
                         debug!("write {} bytes to tun.", size);
-                        return Poll::Ready(Ok(()));
+                        continue;
                     }
                     Err(smoltcp::Error::Exhausted) => {}
                     Err(err) => {

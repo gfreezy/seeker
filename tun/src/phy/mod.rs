@@ -86,10 +86,14 @@ impl AsyncWrite for &TunSocket {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use async_std::io::timeout;
     use async_std::net::UdpSocket;
+    use async_std::task;
     use async_std::task::block_on;
-    use futures::AsyncReadExt;
-    use insta::assert_debug_snapshot;
+    use futures::{AsyncReadExt, AsyncWriteExt};
+    use smoltcp::phy::ChecksumCapabilities;
+    use smoltcp::wire::*;
+    use std::time::Duration;
     use sysconfig::setup_ip;
 
     #[test]
@@ -106,7 +110,56 @@ mod tests {
             let mut buf = vec![0; 1024];
             let size = tun_socket.read(&mut buf).await.unwrap();
 
-            assert_debug_snapshot!(&buf[(size - data.len())..size]);
+            assert_eq!(&buf[(size - data.len())..size], &data);
+        })
+    }
+
+    #[test]
+    fn test_send_packets_to_tun() {
+        let tun_name = "utun5";
+        let mut tun_socket = TunSocket::new(tun_name);
+        setup_ip(tun_name, "10.0.2.1", "10.0.2.0/24");
+
+        let data = "hello".as_bytes();
+
+        block_on(async move {
+            let socket = UdpSocket::bind("0.0.0.0:1234").await.unwrap();
+            let handle = task::spawn(async move {
+                let mut buf = vec![0; 1000];
+                timeout(Duration::from_secs(10), socket.recv_from(&mut buf)).await
+            });
+            let _ = timeout(Duration::from_secs(1), async { Ok(()) }).await;
+
+            let src_addr = Ipv4Address::new(10, 0, 2, 10);
+            let dst_addr = Ipv4Address::new(10, 0, 2, 1);
+            let udp_repr = UdpRepr {
+                src_port: 1234,
+                dst_port: 1234,
+                payload: &data,
+            };
+            let mut udp_buf = vec![0; udp_repr.buffer_len()];
+            let mut udp_packet = UdpPacket::new_unchecked(&mut udp_buf);
+            udp_repr.emit(
+                &mut udp_packet,
+                &src_addr.into(),
+                &dst_addr.into(),
+                &ChecksumCapabilities::default(),
+            );
+            let ip_repr = Ipv4Repr {
+                src_addr,
+                dst_addr,
+                protocol: IpProtocol::Udp,
+                payload_len: udp_packet.len() as usize,
+                hop_limit: 64,
+            };
+            let mut ip_buf = vec![0; ip_repr.buffer_len() + ip_repr.payload_len];
+            let mut ip_packet = Ipv4Packet::new_unchecked(&mut ip_buf);
+            ip_repr.emit(&mut ip_packet, &ChecksumCapabilities::default());
+            ip_buf[ip_repr.buffer_len()..].copy_from_slice(&udp_buf);
+            let size = tun_socket.write(&ip_buf).await.unwrap();
+            assert_eq!(size, ip_buf.len());
+            let (s, _src) = handle.await.unwrap();
+            assert_eq!(data.len(), s);
         })
     }
 }
