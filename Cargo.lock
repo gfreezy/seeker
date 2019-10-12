@@ -617,7 +617,7 @@ dependencies = [
 [[package]]
 name = "hermesdns"
 version = "0.1.0"
-source = "git+https://github.com/gfreezy/hermes?rev=36c75dd#36c75ddcc96d37c62fbee89dcf404293d79ff8ec"
+source = "git+https://github.com/gfreezy/hermes?rev=a494239#a49423967069619c32ecb8944ee3b6847eef3d62"
 dependencies = [
  "async-std 0.99.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "async-trait",
