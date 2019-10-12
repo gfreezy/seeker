@@ -5,6 +5,7 @@ use std::io::{Cursor, Write};
 use std::net::{SocketAddr, SocketAddrV4, SocketAddrV6, ToSocketAddrs};
 use std::{fmt, io, vec};
 
+#[allow(dead_code)]
 #[rustfmt::skip]
 mod consts {
     pub const SOCKS5_VERSION:                          u8 = 0x05;

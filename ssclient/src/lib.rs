@@ -145,7 +145,7 @@ impl SSClient {
             output.reserve(buffer_size);
 
             if size > 0 {
-                cipher.update(&mut buf[..size], &mut output)?;
+                cipher.update(&buf[..size], &mut output)?;
                 timeout(Duration::from_secs(1), socket.write_all(&output)).await?;
             } else {
                 cipher.finalize(&mut output)?;

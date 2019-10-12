@@ -5,6 +5,12 @@ pub struct DNSSetup;
 
 impl DNSSetup {
     pub fn new() -> Self {
+        DNSSetup::default()
+    }
+}
+
+impl Default for DNSSetup {
+    fn default() -> Self {
         info!("setup dns");
         let output = Command::new("networksetup")
             .args(&["-setdnsservers", "Wi-Fi", "127.0.0.1"])
