@@ -7,13 +7,15 @@ use dnsserver::create_dns_server;
 use futures::StreamExt;
 use ssclient::SSClient;
 use sysconfig::DNSSetup;
+use tracing::{debug, info};
+use tracing_subscriber::{EnvFilter, FmtSubscriber};
 use tun::socket::TunSocket;
 use tun::Tun;
-use tracing::{debug, info};
-use tracing_core::Level;
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let my_subscriber = tracing_fmt::FmtSubscriber::builder().with_max_level(Level::DEBUG).finish();
+    let my_subscriber = FmtSubscriber::builder()
+        .with_env_filter(EnvFilter::from_default_env())
+        .finish();
     tracing::subscriber::set_global_default(my_subscriber).expect("setting tracing default failed");
 
     let matches = App::new("Seeker")
@@ -47,15 +49,14 @@ fn main() -> Result<(), Box<dyn Error>> {
             config.rules,
         )
         .await;
-        info!("spawn dns server");
+        info!("Spawn dns server");
         spawn(dns_server.run_server());
         let client = SSClient::new(config.server_config, dns_server_addr).await;
-        debug!("spawn tun bg send");
+        debug!("Spawn tun bg send");
         spawn(Tun::bg_send());
 
-        debug!("run");
-
-        while let Some(socket) = Tun::listen().next().await {
+        let mut stream = Tun::listen();
+        while let Some(socket) = stream.next().await {
             let socket = socket.expect("socket error");
             let resolver_clone = resolver.clone();
             let client_clone = client.clone();
@@ -68,7 +69,6 @@ fn main() -> Result<(), Box<dyn Error>> {
                     .map(|s| Address::DomainNameAddress(s, remote_addr.port()))
                     .unwrap_or_else(|| Address::SocketAddress(remote_addr));
 
-                info!("Receive {:?}", host);
                 match socket {
                     TunSocket::Tcp(socket) => client_clone.handle_connect(socket, host).await,
                     TunSocket::Udp(socket) => client_clone.handle_packets(socket, host).await,

@@ -3,7 +3,8 @@ const MAX_PACKET_SIZE: usize = 0x3FFF;
 mod ahead;
 
 use crate::ahead::{aead_decrypted_read, aead_encrypted_write};
-use async_std::future::try_join;
+use async_std::future;
+use async_std::io::timeout;
 use async_std::net::TcpStream;
 use bytes::{Bytes, BytesMut};
 use config::{Address, ServerAddr, ServerConfig};
@@ -15,7 +16,8 @@ use std::io;
 use std::io::{Error, Result};
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
-use tracing::trace;
+use std::time::Duration;
+use tracing::debug;
 use tun::socket::TunUdpSocket;
 
 #[derive(Clone)]
@@ -34,127 +36,123 @@ impl SSClient {
         }
     }
 
-    async fn handle_aead<T: AsyncRead + AsyncWrite + Clone + Unpin>(
+    async fn handle_aead_recv<T: AsyncRead + Clone + Unpin>(
         &self,
-        conn: TcpStream,
+        mut conn: &TcpStream,
         mut socket: T,
         addr: Address,
     ) -> Result<()> {
-        let mut socket_read = socket.clone();
         let cipher_type = self.srv_cfg.method();
         let key = self.srv_cfg.key();
-        let a = async {
-            let mut buf = vec![0; MAX_PACKET_SIZE];
-            let mut dst = vec![0; MAX_PACKET_SIZE];
+        let mut buf = vec![0; MAX_PACKET_SIZE];
+        let mut dst = vec![0; MAX_PACKET_SIZE];
 
-            let iv = send_iv(&conn, self.srv_cfg.clone()).await?;
-            let mut cipher = crypto::new_aead_encryptor(cipher_type, key, &iv);
+        let iv = send_iv(conn, self.srv_cfg.clone()).await?;
+        let mut cipher = crypto::new_aead_encryptor(cipher_type, key, &iv);
 
-            let mut addr_bytes = BytesMut::with_capacity(100);
-            addr.write_to_buf(&mut addr_bytes);
-            let mut offset = addr_bytes.len();
-            buf[..offset].copy_from_slice(&addr_bytes);
-            loop {
-                let size = socket.read(&mut buf[offset..]).await?;
-                if size == 0 {
-                    break;
-                }
-                let s = aead_encrypted_write(
-                    &mut cipher,
-                    &buf[..offset + size],
-                    &mut dst,
-                    cipher_type,
-                )?;
-                (&conn).write_all(&dst[..s]).await?;
-                offset = 0;
+        let mut addr_bytes = BytesMut::with_capacity(100);
+        addr.write_to_buf(&mut addr_bytes);
+        let mut offset = addr_bytes.len();
+        buf[..offset].copy_from_slice(&addr_bytes);
+        loop {
+            let size = socket.read(&mut buf[offset..]).await?;
+            if size == 0 {
+                break;
             }
-            Ok(())
-        };
-
-        let b = async {
-            let mut buf = vec![0; MAX_PACKET_SIZE];
-            let mut output = vec![0; MAX_PACKET_SIZE];
-            let iv = recv_iv(&conn, self.srv_cfg.clone()).await?;
-            let mut cipher = crypto::new_aead_decryptor(cipher_type, key, &iv);
-
-            loop {
-                let size =
-                    aead_decrypted_read(&mut cipher, &conn, &mut buf, &mut output, cipher_type)
-                        .await?;
-                if size == 0 {
-                    break;
-                }
-                socket_read.write_all(&output[..size]).await?;
-            }
-            Ok(())
-        };
-
-        let _: Result<((), ())> = try_join!(a, b).await;
-
+            let s =
+                aead_encrypted_write(&mut cipher, &buf[..offset + size], &mut dst, cipher_type)?;
+            conn.write_all(&dst[..s]).await?;
+            offset = 0;
+        }
         Ok(())
     }
 
-    async fn handle_stream<T: AsyncRead + AsyncWrite + Clone + Unpin>(
+    async fn handle_aead_send<T: AsyncWrite + Clone + Unpin>(
         &self,
-        conn: TcpStream,
+        conn: &TcpStream,
+        mut socket: T,
+        _addr: Address,
+    ) -> Result<()> {
+        let cipher_type = self.srv_cfg.method();
+        let key = self.srv_cfg.key();
+
+        let mut buf = vec![0; MAX_PACKET_SIZE];
+        let mut output = vec![0; MAX_PACKET_SIZE];
+        let iv = recv_iv(conn, self.srv_cfg.clone()).await?;
+        let mut cipher = crypto::new_aead_decryptor(cipher_type, key, &iv);
+
+        loop {
+            let size =
+                aead_decrypted_read(&mut cipher, conn, &mut buf, &mut output, cipher_type).await?;
+            if size == 0 {
+                break;
+            }
+            socket.write_all(&output[..size]).await?;
+        }
+        Ok(())
+    }
+
+    async fn handle_stream_send<T: AsyncRead + Clone + Unpin>(
+        &self,
+        mut conn: &TcpStream,
         mut socket: T,
         addr: Address,
     ) -> Result<()> {
-        let mut socket_read = socket.clone();
         let cipher_type = self.srv_cfg.method();
         let key = self.srv_cfg.key();
-        let a = async {
-            let mut buf = vec![0; MAX_PACKET_SIZE];
-            let mut dst = BytesMut::with_capacity(MAX_PACKET_SIZE);
+        let mut buf = vec![0; MAX_PACKET_SIZE];
+        let mut dst = BytesMut::with_capacity(MAX_PACKET_SIZE);
 
-            let iv = send_iv(&conn, self.srv_cfg.clone()).await?;
-            let mut cipher = crypto::new_stream(cipher_type, key, &iv, CryptoMode::Encrypt);
+        let iv = send_iv(conn, self.srv_cfg.clone()).await?;
+        let mut cipher = crypto::new_stream(cipher_type, key, &iv, CryptoMode::Encrypt);
 
-            let mut addr_bytes = BytesMut::with_capacity(100);
-            addr.write_to_buf(&mut addr_bytes);
-            let mut offset = addr_bytes.len();
-            buf[..offset].copy_from_slice(&addr_bytes);
-            loop {
-                let size = socket.read(&mut buf[offset..]).await?;
-                if size == 0 {
-                    break;
-                }
-                dst.clear();
-                dst.reserve(cipher.buffer_size(&buf[..offset + size]));
-
-                cipher.update(&buf[..offset + size], &mut dst)?;
-                (&conn).write_all(&dst).await?;
-                offset = 0;
+        let mut addr_bytes = BytesMut::with_capacity(100);
+        addr.write_to_buf(&mut addr_bytes);
+        let mut offset = addr_bytes.len();
+        buf[..offset].copy_from_slice(&addr_bytes);
+        loop {
+            let size = timeout(Duration::from_secs(1), socket.read(&mut buf[offset..])).await?;
+            if size == 0 {
+                break;
             }
-            Ok(())
-        };
+            dst.clear();
+            dst.reserve(cipher.buffer_size(&buf[..offset + size]));
 
-        let b = async {
-            let mut buf = vec![0; MAX_PACKET_SIZE];
-            let mut output = BytesMut::with_capacity(MAX_PACKET_SIZE);
-            let iv = recv_iv(&conn, self.srv_cfg.clone()).await?;
-            let mut cipher = crypto::new_stream(cipher_type, key, &iv, CryptoMode::Decrypt);
+            cipher.update(&buf[..offset + size], &mut dst)?;
+            timeout(Duration::from_secs(1), conn.write_all(&dst)).await?;
+            offset = 0;
+        }
+        Ok(())
+    }
 
-            loop {
-                let size = (&conn).read(&mut buf).await?;
-                let buffer_size = cipher.buffer_size(&buf[..size]);
-                output.clear();
-                output.reserve(buffer_size);
+    async fn handle_stream_recv<T: AsyncWrite + Clone + Unpin>(
+        &self,
+        mut conn: &TcpStream,
+        mut socket: T,
+        _addr: Address,
+    ) -> Result<()> {
+        let cipher_type = self.srv_cfg.method();
+        let key = self.srv_cfg.key();
+        let mut buf = vec![0; MAX_PACKET_SIZE];
+        let mut output = BytesMut::with_capacity(MAX_PACKET_SIZE);
+        let iv = recv_iv(conn, self.srv_cfg.clone()).await?;
+        let mut cipher = crypto::new_stream(cipher_type, key, &iv, CryptoMode::Decrypt);
 
-                if size > 0 {
-                    cipher.update(&mut buf[..size], &mut output)?;
-                    socket_read.write_all(&output).await?;
-                } else {
-                    cipher.finalize(&mut output)?;
-                    socket_read.write_all(&output).await?;
-                    break;
-                }
+        loop {
+            let size = timeout(Duration::from_secs(1), conn.read(&mut buf)).await?;
+            let buffer_size = cipher.buffer_size(&buf[..size]);
+            output.clear();
+            output.reserve(buffer_size);
+
+            if size > 0 {
+                cipher.update(&mut buf[..size], &mut output)?;
+                timeout(Duration::from_secs(1), socket.write_all(&output)).await?;
+            } else {
+                cipher.finalize(&mut output)?;
+                timeout(Duration::from_secs(1), socket.write_all(&output)).await?;
+                break;
             }
-            Ok(())
-        };
-
-        let _: Result<((), ())> = try_join!(a, b).await;
-
+        }
         Ok(())
     }
 
@@ -170,11 +168,19 @@ impl SSClient {
         )
         .await?;
         let conn = TcpStream::connect(ssserver).await?;
-
         match self.srv_cfg.method().category() {
-            CipherCategory::Stream => self.handle_stream(conn, socket, addr).await,
-            CipherCategory::Aead => self.handle_aead(conn, socket, addr).await,
+            CipherCategory::Stream => {
+                let send = self.handle_stream_send(&conn, socket.clone(), addr.clone());
+                let recv = self.handle_stream_recv(&conn, socket.clone(), addr);
+                let _ = future::join!(send, recv).await;
+            }
+            CipherCategory::Aead => {
+                let send = self.handle_aead_send(&conn, socket.clone(), addr.clone());
+                let recv = self.handle_aead_recv(&conn, socket.clone(), addr);
+                let _ = future::join!(send, recv).await;
+            }
         }
+        Ok(())
     }
 
     pub async fn handle_packets(&self, _socket: TunUdpSocket, _addr: Address) -> Result<()> {
@@ -187,17 +193,18 @@ async fn send_iv(mut conn: &TcpStream, srv_cfg: Arc<ServerConfig>) -> Result<Byt
     let iv = match method.category() {
         CipherCategory::Stream => {
             let local_iv = method.gen_init_vec();
-            trace!("Going to send initialize vector: {:?}", local_iv);
+            debug!("Going to send initialize vector: {:?}", local_iv);
             local_iv
         }
         CipherCategory::Aead => {
             let local_salt = method.gen_salt();
-            trace!("Going to send salt: {:?}", local_salt);
+            debug!("Going to send salt: {:?}", local_salt);
             local_salt
         }
     };
 
-    conn.write_all(&iv).await?;
+    timeout(Duration::from_secs(1), conn.write_all(&iv)).await?;
+
     Ok(iv)
 }
 
@@ -209,7 +216,8 @@ async fn recv_iv(mut conn: &TcpStream, srv_cfg: Arc<ServerConfig>) -> Result<Vec
     };
 
     let mut iv = vec![0; iv_size];
-    conn.read_exact(&mut iv).await?;
+    timeout(Duration::from_secs(1), conn.read_exact(&mut iv)).await?;
+    debug!("Recv initialize vector: {:?}", &iv);
     Ok(iv)
 }
 
@@ -218,9 +226,11 @@ async fn resolve_domain<T: DnsClient>(
     server: (&str, u16),
     domain: &str,
 ) -> Result<Option<IpAddr>> {
-    let packet = resolver
-        .send_query(domain, QueryType::A, server, true)
-        .await?;
+    let packet = timeout(
+        Duration::from_secs(1),
+        resolver.send_query(domain, QueryType::A, server, true),
+    )
+    .await?;
     packet
         .get_random_a()
         .map(|ip| {
@@ -245,7 +255,7 @@ async fn get_remote_ssserver_addr(
                     return Err(Error::new(
                         ErrorKind::NotFound,
                         "Domain can not be resolved",
-                    ))
+                    ));
                 }
             };
             SocketAddr::new(ip, *port)

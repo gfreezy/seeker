@@ -1,7 +1,0 @@
----
-source: tun/src/lib.rs
-expression: "&s.local_addr()"
----
-V4(
-    10.0.0.2:80,
-)
