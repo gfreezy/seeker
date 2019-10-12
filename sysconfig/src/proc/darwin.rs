@@ -31,33 +31,26 @@ pub fn list_user_proc_socks(uid: u32) -> Fallible<HashMap<i32, Vec<SocketAddrV4>
 fn list_sockaddr(pid: i32) -> Fallible<Vec<SocketAddrV4>> {
     let mut addrs = vec![];
     for fd in listpidinfo::<ListFDs>(pid, 4000)? {
-        match fd.proc_fdtype.into() {
-            ProcFDType::Socket => {
-                if let Ok(socket) = pidfdinfo::<SocketFDInfo>(pid, fd.proc_fd) {
-                    match socket.psi.soi_kind.into() {
-                        SocketInfoKind::Tcp => {
-                            // access to the member of `soi_proto` is unsafe becasuse of union type.
-                            let info = unsafe { socket.psi.soi_proto.pri_tcp };
+        if let ProcFDType::Socket = fd.proc_fdtype.into() {
+            if let Ok(socket) = pidfdinfo::<SocketFDInfo>(pid, fd.proc_fd) {
+                if let SocketInfoKind::Tcp = socket.psi.soi_kind.into() {
+                    // access to the member of `soi_proto` is unsafe becasuse of union type.
+                    let info = unsafe { socket.psi.soi_proto.pri_tcp };
 
-                            // change endian and cut off because insi_lport is network endian and 16bit witdh.
-                            let mut port = 0;
-                            port |= info.tcpsi_ini.insi_lport >> 8 & 0x00ff;
-                            port |= info.tcpsi_ini.insi_lport << 8 & 0xff00;
+                    // change endian and cut off because insi_lport is network endian and 16bit witdh.
+                    let mut port = 0;
+                    port |= info.tcpsi_ini.insi_lport >> 8 & 0x00ff;
+                    port |= info.tcpsi_ini.insi_lport << 8 & 0xff00;
 
-                            // access to the member of `insi_laddr` is unsafe becasuse of union type.
-                            let s_addr =
-                                unsafe { info.tcpsi_ini.insi_laddr.ina_46.i46a_addr4.s_addr };
+                    // access to the member of `insi_laddr` is unsafe becasuse of union type.
+                    let s_addr = unsafe { info.tcpsi_ini.insi_laddr.ina_46.i46a_addr4.s_addr };
 
-                            // s_addr is in bit endian, and Ipv4Addr::from needs small endian.
-                            let ip = Ipv4Addr::from(s_addr.swap_bytes());
-                            let sock = SocketAddrV4::new(ip, port as u16);
-                            addrs.push(sock);
-                        }
-                        _ => (),
-                    }
+                    // s_addr is in bit endian, and Ipv4Addr::from needs small endian.
+                    let ip = Ipv4Addr::from(s_addr.swap_bytes());
+                    let sock = SocketAddrV4::new(ip, port as u16);
+                    addrs.push(sock);
                 }
             }
-            _ => (),
         }
     }
 
