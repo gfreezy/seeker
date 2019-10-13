@@ -1,20 +1,9 @@
 // Copyright (c) 2019 Cloudflare, Inc. All rights reserved.
 // SPDX-License-Identifier: BSD-3-Clause
 #![allow(dead_code)]
-use failure::Error;
 use libc::*;
-use std::io;
+use std::io::{Error, ErrorKind, Read, Result, Write};
 use std::os::unix::io::{AsRawFd, RawFd};
-
-pub fn errno() -> i32 {
-    unsafe { *__errno_location() }
-}
-
-pub fn errno_str() -> String {
-    let strerr = unsafe { strerror(*__errno_location()) };
-    let c_str = unsafe { std::ffi::CStr::from_ptr(strerr) };
-    c_str.to_string_lossy().into_owned()
-}
 
 const TUNSETIFF: u64 = 0x4004_54ca;
 
@@ -58,10 +47,16 @@ impl Drop for TunSocket {
     }
 }
 
+impl AsRawFd for TunSocket {
+    fn as_raw_fd(&self) -> RawFd {
+        self.fd
+    }
+}
+
 impl TunSocket {
-    pub fn new(name: &str) -> Result<TunSocket, Error> {
+    pub fn new(name: &str) -> Result<TunSocket> {
         let fd = match unsafe { open(b"/dev/net/tun\0".as_ptr() as _, O_RDWR) } {
-            -1 => return Err(Error::Socket(errno_str())),
+            -1 => return Err(Error::last_os_error()),
             fd @ _ => fd,
         };
 
@@ -74,13 +69,13 @@ impl TunSocket {
         };
 
         if iface_name.len() >= ifr.ifr_name.len() {
-            return Err(Error::InvalidTunnelName);
+            return Err(Error::new(ErrorKind::Other, "Invalid tun name"));
         }
 
         ifr.ifr_name[..iface_name.len()].copy_from_slice(iface_name);
 
         if unsafe { ioctl(fd, TUNSETIFF as _, &ifr) } < 0 {
-            return Err(Error::IOCtl(errno_str()));
+            return Err(Error::last_os_error());
         }
 
         let name = name.to_string();
@@ -89,24 +84,24 @@ impl TunSocket {
         socket.set_non_blocking()
     }
 
-    pub fn name(&self) -> Result<String, Error> {
+    pub fn name(&self) -> Result<String> {
         Ok(self.name.clone())
     }
 
-    pub fn set_non_blocking(self) -> Result<TunSocket, Error> {
+    pub fn set_non_blocking(self) -> Result<TunSocket> {
         match unsafe { fcntl(self.fd, F_GETFL) } {
-            -1 => Err(Error::FCntl(errno_str())),
+            -1 => Err(Error::last_os_error()),
             flags @ _ => match unsafe { fcntl(self.fd, F_SETFL, flags | O_NONBLOCK) } {
-                -1 => Err(Error::FCntl(errno_str())),
+                -1 => Err(Error::last_os_error()),
                 _ => Ok(self),
             },
         }
     }
 
     /// Get the current MTU value
-    pub fn mtu(&self) -> Result<usize, Error> {
+    pub fn mtu(&self) -> Result<usize> {
         let fd = match unsafe { socket(AF_INET, SOCK_STREAM, IPPROTO_IP) } {
-            -1 => return Err(Error::Socket(errno_str())),
+            -1 => return Err(Error::last_os_error()),
             fd @ _ => fd,
         };
 
@@ -120,33 +115,55 @@ impl TunSocket {
         ifr.ifr_name[..iface_name.len()].copy_from_slice(iface_name);
 
         if unsafe { ioctl(fd, SIOCGIFMTU as _, &ifr) } < 0 {
-            return Err(Error::IOCtl(errno_str()));
+            return Err(Error::last_os_error());
         }
 
         unsafe { close(fd) };
 
         Ok(unsafe { ifr.ifr_ifru.ifru_mtu } as _)
     }
+}
 
-    pub fn write4(&self, src: &[u8]) -> io::Result<usize> {
-        self.write(src)
+impl Read for TunSocket {
+    fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
+        match unsafe { read(self.fd, buf.as_mut_ptr() as _, buf.len()) } {
+            -1 => Err(io::Error::last_os_error()),
+            n @ _ => Ok(n as usize),
+        }
     }
+}
 
-    pub fn write6(&self, src: &[u8]) -> io::Result<usize> {
-        self.write(src)
-    }
-
-    fn write(&self, buf: &[u8]) -> io::Result<usize> {
+impl Write for TunSocket {
+    fn write(&mut self, buf: &[u8]) -> Result<usize> {
         match unsafe { write(self.fd, buf.as_ptr() as _, buf.len() as _) } {
             -1 => Ok(0),
             n => Ok(n as usize),
         }
     }
 
-    pub fn read<'a>(&self, dst: &'a mut [u8]) -> io::Result<&'a mut [u8]> {
-        match unsafe { read(self.fd, dst.as_mut_ptr() as _, dst.len()) } {
+    fn flush(&mut self) -> Result<()> {
+        Ok(())
+    }
+}
+
+impl Read for &TunSocket {
+    fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
+        match unsafe { read(self.fd, buf.as_mut_ptr() as _, buf.len()) } {
             -1 => Err(io::Error::last_os_error()),
-            n @ _ => Ok(&mut dst[..n as usize]),
+            n @ _ => Ok(n as usize),
         }
+    }
+}
+
+impl Write for &TunSocket {
+    fn write(&mut self, buf: &[u8]) -> Result<usize> {
+        match unsafe { write(self.fd, buf.as_ptr() as _, buf.len() as _) } {
+            -1 => Ok(0),
+            n => Ok(n as usize),
+        }
+    }
+
+    fn flush(&mut self) -> Result<()> {
+        Ok(())
     }
 }

@@ -6,13 +6,13 @@ use config::{Address, Config};
 use dnsserver::create_dns_server;
 use futures::StreamExt;
 use ssclient::SSClient;
+use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 use sysconfig::DNSSetup;
 use tracing::{debug, info};
 use tracing_subscriber::{EnvFilter, FmtSubscriber};
 use tun::socket::TunSocket;
 use tun::Tun;
-use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let my_subscriber = FmtSubscriber::builder()
@@ -41,7 +41,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     signal_hook::flag::register(signal_hook::SIGINT, Arc::clone(&term))?;
     signal_hook::flag::register(signal_hook::SIGTERM, Arc::clone(&term))?;
 
-    Tun::setup(config.tun_name.clone(), config.tun_ip, config.tun_cidr, term.clone());
+    Tun::setup(
+        config.tun_name.clone(),
+        config.tun_ip,
+        config.tun_cidr,
+        term.clone(),
+    );
 
     let _dns_setup = DNSSetup::new();
 
@@ -51,6 +56,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         let (dns_server, resolver) = create_dns_server(
             "dns.db",
             dns_server_addr.clone(),
+            53,
             config.dns_start_ip,
             config.rules,
         )

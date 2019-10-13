@@ -15,27 +15,31 @@ use hermesdns::{DnsClient, DnsNetworkClient, QueryType};
 use std::io;
 use std::io::{Error, Result};
 use std::net::{IpAddr, SocketAddr};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tracing::debug;
 use tun::socket::TunUdpSocket;
-use std::sync::atomic::{AtomicBool, Ordering};
 
 #[derive(Clone)]
 pub struct SSClient {
     srv_cfg: Arc<ServerConfig>,
     dns_server: (String, u16),
     resolver: Arc<DnsNetworkClient>,
-    to_terminate: Arc<AtomicBool>
+    to_terminate: Arc<AtomicBool>,
 }
 
 impl SSClient {
-    pub async fn new(server_config: Arc<ServerConfig>, dns_server: (String, u16), to_terminate: Arc<AtomicBool>) -> SSClient {
+    pub async fn new(
+        server_config: Arc<ServerConfig>,
+        dns_server: (String, u16),
+        to_terminate: Arc<AtomicBool>,
+    ) -> SSClient {
         SSClient {
             srv_cfg: server_config,
             resolver: Arc::new(DnsNetworkClient::new(0).await),
             dns_server,
-            to_terminate
+            to_terminate,
         }
     }
 
@@ -57,7 +61,7 @@ impl SSClient {
         addr.write_to_buf(&mut addr_bytes);
         let mut offset = addr_bytes.len();
         buf[..offset].copy_from_slice(&addr_bytes);
-        while !self.to_terminate.load(Ordering::Relaxed)  {
+        while !self.to_terminate.load(Ordering::Relaxed) {
             let size = socket.read(&mut buf[offset..]).await?;
             if size == 0 {
                 break;
@@ -84,7 +88,7 @@ impl SSClient {
         let iv = recv_iv(conn, self.srv_cfg.clone()).await?;
         let mut cipher = crypto::new_aead_decryptor(cipher_type, key, &iv);
 
-        while !self.to_terminate.load(Ordering::Relaxed)  {
+        while !self.to_terminate.load(Ordering::Relaxed) {
             let size =
                 aead_decrypted_read(&mut cipher, conn, &mut buf, &mut output, cipher_type).await?;
             if size == 0 {
@@ -114,7 +118,8 @@ impl SSClient {
         let mut offset = addr_bytes.len();
         buf[..offset].copy_from_slice(&addr_bytes);
         while !self.to_terminate.load(Ordering::Relaxed) {
-            let size = timeout(self.srv_cfg.read_timeout(), socket.read(&mut buf[offset..])).await?;
+            let size =
+                timeout(self.srv_cfg.read_timeout(), socket.read(&mut buf[offset..])).await?;
             if size == 0 {
                 break;
             }
@@ -141,7 +146,7 @@ impl SSClient {
         let iv = recv_iv(conn, self.srv_cfg.clone()).await?;
         let mut cipher = crypto::new_stream(cipher_type, key, &iv, CryptoMode::Decrypt);
 
-        while !self.to_terminate.load(Ordering::Relaxed)  {
+        while !self.to_terminate.load(Ordering::Relaxed) {
             let size = timeout(self.srv_cfg.read_timeout(), conn.read(&mut buf)).await?;
             let buffer_size = cipher.buffer_size(&buf[..size]);
             output.clear();
@@ -170,7 +175,7 @@ impl SSClient {
             (&self.dns_server.0, self.dns_server.1),
         )
         .await?;
-         let conn = timeout(self.srv_cfg.connect_timeout(), TcpStream::connect(ssserver)).await?;
+        let conn = timeout(self.srv_cfg.connect_timeout(), TcpStream::connect(ssserver)).await?;
         match self.srv_cfg.method().category() {
             CipherCategory::Stream => {
                 let send = self.handle_stream_send(&conn, socket.clone(), addr.clone());
@@ -230,11 +235,7 @@ async fn resolve_domain<T: DnsClient>(
     domain: &str,
     t: Duration,
 ) -> Result<Option<IpAddr>> {
-    let packet = timeout(
-        t,
-        resolver.send_query(domain, QueryType::A, server, true),
-    )
-    .await?;
+    let packet = timeout(t, resolver.send_query(domain, QueryType::A, server, true)).await?;
     packet
         .get_random_a()
         .map(|ip| {
@@ -252,7 +253,13 @@ async fn get_remote_ssserver_addr(
     let addr = match cfg.addr() {
         ServerAddr::SocketAddr(addr) => *addr,
         ServerAddr::DomainName(domain, port) => {
-            let ip = resolve_domain(resolver, (&dns_server.0, dns_server.1), &domain, cfg.read_timeout()).await?;
+            let ip = resolve_domain(
+                resolver,
+                (&dns_server.0, dns_server.1),
+                &domain,
+                cfg.read_timeout(),
+            )
+            .await?;
             let ip = match ip {
                 Some(i) => i,
                 None => {
@@ -284,7 +291,7 @@ mod tests {
                 CipherType::ChaCha20Ietf,
                 Duration::from_secs(3),
                 Duration::from_secs(30),
-                Duration::from_secs(30)
+                Duration::from_secs(30),
             ));
             let addr = get_remote_ssserver_addr(&dns_client, cfg, ("114.114.114.114", 53)).await;
             assert_eq!(addr.unwrap(), "127.0.0.1:7789".parse().unwrap());
@@ -301,7 +308,7 @@ mod tests {
                 CipherType::ChaCha20Ietf,
                 Duration::from_secs(3),
                 Duration::from_secs(30),
-                Duration::from_secs(30)
+                Duration::from_secs(30),
             ));
             let addr = get_remote_ssserver_addr(&dns_client, cfg, ("114.114.114.114", 53)).await;
             assert_eq!(addr.unwrap(), "1.2.3.4:7789".parse().unwrap());

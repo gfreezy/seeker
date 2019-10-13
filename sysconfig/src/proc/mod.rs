@@ -1,4 +1,4 @@
-#[cfg(any(target_os = "macos", target_os = "ios"))]
+#[cfg(target_os = "macos")]
 #[path = "darwin.rs"]
 pub mod sys;
 
