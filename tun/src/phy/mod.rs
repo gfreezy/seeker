@@ -102,15 +102,26 @@ mod tests {
         let mut tun_socket = TunSocket::new(tun_name);
         setup_ip(tun_name, "10.0.1.1", "10.0.1.0/24");
 
-        let data = [1, 2, 3, 4, 5, 6, 7, 8, 9, 19];
+        const DATA: &[u8] = &[1, 2, 3, 4,5,6,7,8];
 
         block_on(async move {
-            let socket = UdpSocket::bind("0.0.0.0:0").await.unwrap();
-            socket.send_to(&data, "10.0.1.2:80").await.unwrap();
+            task::spawn(async {
+                task::sleep(Duration::from_secs(3)).await;
+                let socket = UdpSocket::bind("0.0.0.0:0").await.unwrap();
+                socket.send_to(&DATA, "10.0.1.2:80").await.unwrap();
+            });
+
             let mut buf = vec![0; 1024];
             let size = tun_socket.read(&mut buf).await.unwrap();
 
-            assert_eq!(&buf[(size - data.len())..size], &data);
+            println!("{}, {:?}", size, &buf[..size]);
+            let ipv4_packet = Ipv4Packet::new_unchecked(&buf[..size]);
+            let ipv4_repr = Ipv4Repr::parse(&ipv4_packet, &ChecksumCapabilities::default()).unwrap();
+            assert_eq!(ipv4_repr.protocol, IpProtocol::Udp);
+            let udp_packet = UdpPacket::new_unchecked(&buf[ipv4_repr.buffer_len()..size]);
+            let udp_repr = UdpRepr::parse(&udp_packet, &ipv4_repr.src_addr.into(), &ipv4_repr.dst_addr.into(), &ChecksumCapabilities::default()).unwrap();
+            assert_eq!(udp_repr.dst_port, 80);
+            assert_eq!(udp_repr.payload, DATA);
         })
     }
 

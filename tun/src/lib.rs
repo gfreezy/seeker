@@ -19,12 +19,12 @@ use std::io;
 use std::io::Result;
 use std::net::Ipv4Addr;
 use std::pin::Pin;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::task::{Context, Poll, Waker};
 use std::time::Duration;
 use sysconfig::setup_ip;
 use tracing::{debug, error};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
 
 lazy_static! {
     static ref TUN: Mutex<Option<Tun>> = Mutex::new(None);
@@ -42,7 +42,12 @@ pub struct Tun {
 }
 
 impl Tun {
-    pub fn setup(tun_name: String, tun_ip: Ipv4Addr, tun_cidr: IpCidr, to_terminate: Arc<AtomicBool>) {
+    pub fn setup(
+        tun_name: String,
+        tun_ip: Ipv4Addr,
+        tun_cidr: IpCidr,
+        to_terminate: Arc<AtomicBool>,
+    ) {
         let tun = phy::TunSocket::new(tun_name.as_str());
         let tun_name = tun.name().unwrap();
         setup_ip(
@@ -339,7 +344,7 @@ mod tests {
             "utun4".to_string(),
             Ipv4Addr::new(10, 0, 0, 1),
             IpCidr::new(IpAddress::v4(10, 0, 0, 0), 24),
-            to_terminate.clone()
+            to_terminate.clone(),
         );
 
         task::block_on(async move {
