@@ -9,7 +9,9 @@
 //!     "server_port": 1080,
 //!     "local_port": 8388,
 //!     "password": "the-password",
-//!     "timeout": 300,
+//!     "connect_timeout": 30,
+//!     "write_timeout": 30,
+//!     "read_timeout": 30,
 //!     "method": "aes-256-cfb",
 //!     "local_address": "127.0.0.1"
 //! }
@@ -44,7 +46,6 @@
 use std::{
     fmt::{self, Debug, Display, Formatter},
     net::SocketAddr,
-    option::Option,
     str::FromStr,
     string::ToString,
     time::Duration,
@@ -133,11 +134,13 @@ pub struct ServerConfig {
     /// Encryption type (method)
     method: CipherType,
     /// Connection timeout
-    timeout: Option<Duration>,
+    connect_timeout: Duration,
+    /// Read timeout
+    read_timeout: Duration,
+    /// Write timeout
+    write_timeout: Duration,
     /// Encryption key
     enc_key: Bytes,
-    /// UDP timeout
-    udp_timeout: Option<Duration>,
 }
 
 impl ServerConfig {
@@ -146,7 +149,9 @@ impl ServerConfig {
         addr: ServerAddr,
         pwd: String,
         method: CipherType,
-        timeout: Option<Duration>,
+        connect_timeout: Duration,
+        read_timeout: Duration,
+        write_timeout: Duration,
     ) -> ServerConfig {
         let enc_key = method.bytes_to_key(pwd.as_bytes());
         trace!("Initialize config with pwd: {:?}, key: {:?}", pwd, enc_key);
@@ -154,15 +159,23 @@ impl ServerConfig {
             addr,
             password: pwd,
             method,
-            timeout,
+            connect_timeout,
             enc_key,
-            udp_timeout: None,
+            read_timeout,
+            write_timeout,
         }
     }
 
     /// Create a basic config
     pub fn basic(addr: SocketAddr, password: String, method: CipherType) -> ServerConfig {
-        ServerConfig::new(ServerAddr::SocketAddr(addr), password, method, None)
+        ServerConfig::new(
+            ServerAddr::SocketAddr(addr),
+            password,
+            method,
+            Duration::from_secs(30),
+            Duration::from_secs(30),
+            Duration::from_secs(30),
+        )
     }
 
     /// Set encryption method
@@ -197,13 +210,18 @@ impl ServerConfig {
         self.method
     }
 
-    /// Get timeout
-    pub fn timeout(&self) -> Option<Duration> {
-        self.timeout
+    /// Get connect timeout
+    pub fn connect_timeout(&self) -> Duration {
+        self.connect_timeout
     }
 
-    /// Get UDP timeout
-    pub fn udp_timeout(&self) -> &Option<Duration> {
-        &self.udp_timeout
+    /// Get read timeout
+    pub fn read_timeout(&self) -> Duration {
+        self.read_timeout
+    }
+
+    /// Get write timeout
+    pub fn write_timeout(&self) -> Duration {
+        self.write_timeout
     }
 }
