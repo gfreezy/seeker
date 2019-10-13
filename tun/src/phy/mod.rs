@@ -128,7 +128,7 @@ mod tests {
                 let mut buf = vec![0; 1000];
                 timeout(Duration::from_secs(10), socket.recv_from(&mut buf)).await
             });
-            let _ = timeout(Duration::from_secs(1), async { Ok(()) }).await;
+            task::sleep(Duration::from_secs(1)).await;
 
             let src_addr = Ipv4Address::new(10, 0, 2, 10);
             let dst_addr = Ipv4Address::new(10, 0, 2, 1);

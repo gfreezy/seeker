@@ -34,7 +34,11 @@ struct YamlServerConfig {
     /// Encryption type (method)
     method: String,
     /// Connection timeout
-    timeout: Option<u32>,
+    connect_timeout: u64,
+    /// Connection timeout
+    read_timeout: u64,
+    /// Connection timeout
+    write_timeout: u64,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -57,9 +61,9 @@ impl Config {
             ServerAddr::from_str(&yaml_server_config.addr).unwrap(),
             yaml_server_config.password,
             CipherType::from_str(&yaml_server_config.method).unwrap(),
-            yaml_server_config
-                .timeout
-                .map(|t| Duration::from_secs(u64::from(t))),
+            Duration::from_secs(yaml_server_config.connect_timeout),
+            Duration::from_secs(yaml_server_config.read_timeout),
+            Duration::from_secs(yaml_server_config.write_timeout),
         );
         Config {
             server_config: Arc::new(server_config),

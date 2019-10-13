@@ -25,6 +25,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "arc-swap"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f1a1eca3195b729bbd64e292ef2f5fff6b1c28504fed762ce2b1013dde4d8e92"
+
+[[package]]
 name = "arrayvec"
 version = "0.4.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1149,6 +1155,7 @@ dependencies = [
  "config",
  "dnsserver",
  "futures-preview",
+ "signal-hook",
  "smoltcp",
  "ssclient",
  "sysconfig",
@@ -1212,6 +1219,26 @@ dependencies = [
  "linked-hash-map",
  "serde",
  "yaml-rust",
+]
+
+[[package]]
+name = "signal-hook"
+version = "0.1.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4f61c4d59f3aaa9f61bba6450a9b80ba48362fd7d651689e7a10c453b1f6dc68"
+dependencies = [
+ "libc",
+ "signal-hook-registry",
+]
+
+[[package]]
+name = "signal-hook-registry"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1797d48f38f91643908bb14e35e79928f9f4b3cefb2420a564dde0991b4358dc"
+dependencies = [
+ "arc-swap",
+ "libc",
 ]
 
 [[package]]

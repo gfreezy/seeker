@@ -23,6 +23,8 @@ use std::task::{Context, Poll, Waker};
 use std::time::Duration;
 use sysconfig::setup_ip;
 use tracing::{debug, error};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 lazy_static! {
     static ref TUN: Mutex<Option<Tun>> = Mutex::new(None);
@@ -36,10 +38,11 @@ pub struct Tun {
     socket_read_tasks: HashMap<SocketHandle, Option<Waker>>,
     socket_write_tasks: HashMap<SocketHandle, Option<Waker>>,
     tun_write_task: Option<Waker>,
+    to_terminate: Arc<AtomicBool>,
 }
 
 impl Tun {
-    pub fn setup(tun_name: String, tun_ip: Ipv4Addr, tun_cidr: IpCidr) {
+    pub fn setup(tun_name: String, tun_ip: Ipv4Addr, tun_cidr: IpCidr, to_terminate: Arc<AtomicBool>) {
         let tun = phy::TunSocket::new(tun_name.as_str());
         let tun_name = tun.name().unwrap();
         setup_ip(
@@ -65,6 +68,7 @@ impl Tun {
             socket_read_tasks: HashMap::new(),
             socket_write_tasks: HashMap::new(),
             tun_write_task: None,
+            to_terminate,
         };
         let _ = TUN
             .try_lock_for(Duration::from_secs(1))
@@ -77,7 +81,7 @@ impl Tun {
     }
 
     pub fn bg_send() -> TunWrite {
-        TunWrite { buf: vec![0; 1530] }
+        TunWrite
     }
 }
 
@@ -123,6 +127,11 @@ impl Stream for TunListen {
         loop {
             let mut guard = TUN.try_lock_for(Duration::from_secs(1)).unwrap();
             let mut_tun = guard.as_mut().expect("no tun setup");
+
+            if mut_tun.to_terminate.load(Ordering::Relaxed) {
+                return Poll::Ready(None);
+            }
+
             debug!("TunListen.poll start loop");
             if let Some(s) = mut_tun.new_sockets.pop() {
                 debug!("new socket: {}", s);
@@ -211,9 +220,7 @@ impl Stream for TunListen {
     }
 }
 
-pub struct TunWrite {
-    buf: Vec<u8>,
-}
+pub struct TunWrite;
 
 impl TunWrite {
     fn poll_write_sockets_to_phoney_socket(
@@ -276,7 +283,6 @@ impl Future for TunWrite {
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         loop {
-            debug!("TunWrite.poll loop: self.buf: {}", self.buf.len());
             let mut guard = TUN.try_lock_for(Duration::from_secs(5)).unwrap();
             let mut_tun = guard.as_mut().expect("no tun setup");
             {
@@ -303,6 +309,10 @@ impl Future for TunWrite {
                 }
             }
 
+            if mut_tun.to_terminate.load(Ordering::Relaxed) {
+                return Poll::Ready(Ok(()));
+            }
+
             let ret = TunWrite::poll_write_sockets_to_phoney_socket(cx, mut_tun);
             match ret {
                 Poll::Pending => return Poll::Pending,
@@ -324,10 +334,12 @@ mod tests {
 
     #[test]
     fn test_accept_tcp() {
+        let to_terminate = Arc::new(AtomicBool::new(false));
         Tun::setup(
             "utun4".to_string(),
             Ipv4Addr::new(10, 0, 0, 1),
             IpCidr::new(IpAddress::v4(10, 0, 0, 0), 24),
+            to_terminate.clone()
         );
 
         task::block_on(async move {

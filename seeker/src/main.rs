@@ -11,6 +11,8 @@ use tracing::{debug, info};
 use tracing_subscriber::{EnvFilter, FmtSubscriber};
 use tun::socket::TunSocket;
 use tun::Tun;
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let my_subscriber = FmtSubscriber::builder()
@@ -35,7 +37,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     let path = matches.value_of("config").unwrap();
     let config = Config::from_config_file(path);
 
-    Tun::setup(config.tun_name.clone(), config.tun_ip, config.tun_cidr);
+    let term = Arc::new(AtomicBool::new(false));
+    signal_hook::flag::register(signal_hook::SIGINT, Arc::clone(&term))?;
+    signal_hook::flag::register(signal_hook::SIGTERM, Arc::clone(&term))?;
+
+    Tun::setup(config.tun_name.clone(), config.tun_ip, config.tun_cidr, term.clone());
 
     let _dns_setup = DNSSetup::new();
 
@@ -51,7 +57,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         .await;
         info!("Spawn dns server");
         spawn(dns_server.run_server());
-        let client = SSClient::new(config.server_config, dns_server_addr).await;
+        let client = SSClient::new(config.server_config, dns_server_addr, term.clone()).await;
         debug!("Spawn tun bg send");
         spawn(Tun::bg_send());
 
@@ -77,5 +83,6 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     });
 
+    info!("Stop server. Bye bye...");
     Ok(())
 }
