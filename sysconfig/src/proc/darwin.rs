@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use failure::Fallible;
 use libproc::libproc::proc_pid::{
     listpidinfo, listpids, pidfdinfo, ListFDs, ProcFDType, ProcType, SocketFDInfo, SocketInfoKind,
