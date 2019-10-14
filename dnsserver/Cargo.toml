@@ -8,7 +8,7 @@ edition = "2018"
 
 [dependencies]
 async-std = { git = "https://github.com/gfreezy/async-std", rev = "6d39151"}
-hermesdns = { git = "https://github.com/gfreezy/hermes", rev = "52e714d" }
+hermesdns = { git = "https://github.com/gfreezy/hermes", rev = "516e863" }
 config = { path = "../config" }
 sled = "0.28.0"
 async-trait = "0.1.13"
