@@ -400,7 +400,7 @@ dependencies = [
  "async-std 0.99.8 (git+https://github.com/gfreezy/async-std?rev=6d39151)",
  "async-trait",
  "config",
- "hermesdns 0.1.0 (git+https://github.com/gfreezy/hermes?rev=52e714d)",
+ "hermesdns",
  "sled",
  "tempfile",
  "tracing",
@@ -623,19 +623,7 @@ dependencies = [
 [[package]]
 name = "hermesdns"
 version = "0.1.0"
-source = "git+https://github.com/gfreezy/hermes?rev=52e714d#52e714dbe21295a157485b46b96a1aeec7b82aa8"
-dependencies = [
- "async-std 0.99.8 (registry+https://github.com/rust-lang/crates.io-index)",
- "async-trait",
- "chrono",
- "futures-preview",
- "rand",
-]
-
-[[package]]
-name = "hermesdns"
-version = "0.1.0"
-source = "git+https://github.com/gfreezy/hermes?rev=a494239#a49423967069619c32ecb8944ee3b6847eef3d62"
+source = "git+https://github.com/gfreezy/hermes?rev=516e863#516e863039ee31ab08526992281a014988cbfd6a"
 dependencies = [
  "async-std 0.99.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "async-trait",
@@ -1306,7 +1294,7 @@ dependencies = [
  "config",
  "crypto",
  "futures-preview",
- "hermesdns 0.1.0 (git+https://github.com/gfreezy/hermes?rev=a494239)",
+ "hermesdns",
  "lazy_static",
  "libc",
  "managed",
