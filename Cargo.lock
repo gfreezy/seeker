@@ -109,9 +109,9 @@ dependencies = [
 
 [[package]]
 name = "async-trait"
-version = "0.1.13"
+version = "0.1.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6f1418cdc602e31e3ffeea57d8481b8c5db895e733028c2552a06d5cf36beb91"
+checksum = "da45b2b9f909e61b3a29f54a7ac15afa8cb513ad23c7bcf98b806b145262b6cc"
 dependencies = [
  "proc-macro2 1.0.4",
  "quote 1.0.2",
@@ -1151,6 +1151,7 @@ name = "seeker"
 version = "0.1.0"
 dependencies = [
  "async-std 0.99.8 (git+https://github.com/gfreezy/async-std?rev=6d39151)",
+ "async-trait",
  "clap",
  "config",
  "dnsserver",

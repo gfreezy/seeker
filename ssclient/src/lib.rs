@@ -164,7 +164,7 @@ impl SSClient {
         Ok(())
     }
 
-    pub async fn handle_connect<T: AsyncRead + AsyncWrite + Clone + Unpin>(
+    pub async fn handle_tcp_connection<T: AsyncRead + AsyncWrite + Clone + Unpin>(
         &self,
         socket: T,
         addr: Address,
@@ -191,7 +191,7 @@ impl SSClient {
         Ok(())
     }
 
-    pub async fn handle_packets(&self, _socket: TunUdpSocket, _addr: Address) -> Result<()> {
+    pub async fn handle_udp_connection(&self, _socket: TunUdpSocket, _addr: Address) -> Result<()> {
         Ok(())
     }
 }
@@ -307,8 +307,8 @@ mod tests {
                 "pass".to_string(),
                 CipherType::ChaCha20Ietf,
                 Duration::from_secs(3),
-                Duration::from_secs(30),
-                Duration::from_secs(30),
+                Duration::from_secs(3),
+                Duration::from_secs(3),
             ));
             let addr = get_remote_ssserver_addr(&dns_client, cfg, ("114.114.114.114", 53)).await;
             assert_eq!(addr.unwrap(), "1.2.3.4:7789".parse().unwrap());
