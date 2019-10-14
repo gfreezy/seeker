@@ -1,5 +1,5 @@
 #![allow(dead_code)]
-use failure::Fallible;
+use anyhow::Result;
 use libproc::libproc::proc_pid::{
     listpidinfo, listpids, pidfdinfo, ListFDs, ProcFDType, ProcType, SocketFDInfo, SocketInfoKind,
 };
@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::convert::TryInto;
 use std::net::{Ipv4Addr, SocketAddrV4};
 
-pub fn list_system_proc_socks() -> Fallible<HashMap<i32, Vec<SocketAddrV4>>> {
+pub fn list_system_proc_socks() -> Result<HashMap<i32, Vec<SocketAddrV4>>> {
     let pids = listpids(ProcType::ProcAllPIDS, 0)?;
     let mut pid_sockaddr_map = HashMap::new();
     for pid in pids {
@@ -18,7 +18,7 @@ pub fn list_system_proc_socks() -> Fallible<HashMap<i32, Vec<SocketAddrV4>>> {
     Ok(pid_sockaddr_map)
 }
 
-pub fn list_user_proc_socks(uid: u32) -> Fallible<HashMap<i32, Vec<SocketAddrV4>>> {
+pub fn list_user_proc_socks(uid: u32) -> Result<HashMap<i32, Vec<SocketAddrV4>>> {
     let pids = listpids(ProcType::ProcUIDOnly, uid)?;
     let mut pid_sockaddr_map = HashMap::new();
     for pid in pids {
@@ -29,7 +29,7 @@ pub fn list_user_proc_socks(uid: u32) -> Fallible<HashMap<i32, Vec<SocketAddrV4>
     Ok(pid_sockaddr_map)
 }
 
-fn list_sockaddr(pid: i32) -> Fallible<Vec<SocketAddrV4>> {
+fn list_sockaddr(pid: i32) -> Result<Vec<SocketAddrV4>> {
     let mut addrs = vec![];
     for fd in listpidinfo::<ListFDs>(pid, 4000)? {
         if let ProcFDType::Socket = fd.proc_fdtype.into() {
