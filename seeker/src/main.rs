@@ -1,5 +1,8 @@
+mod client;
+
 use std::error::Error;
 
+use crate::client::Client;
 use async_std::task::{block_on, spawn};
 use clap::{App, Arg};
 use config::{Address, Config};
@@ -9,10 +12,46 @@ use ssclient::SSClient;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use sysconfig::DNSSetup;
-use tracing::{debug, info};
 use tracing_subscriber::{EnvFilter, FmtSubscriber};
 use tun::socket::TunSocket;
 use tun::Tun;
+
+async fn handle_connection<T: Client + Clone + Send + Sync + 'static>(client: T, config: Config) {
+    let dns = config.dns_server;
+    let dns_server_addr = (dns.ip().to_string(), dns.port());
+    let (dns_server, resolver) = create_dns_server(
+        "dns.db",
+        dns_server_addr.clone(),
+        "127.0.0.1:53".to_string(),
+        config.dns_start_ip,
+        config.rules,
+    )
+    .await;
+    println!("Spawn DNS server");
+    spawn(dns_server.run_server());
+    spawn(Tun::bg_send());
+
+    let mut stream = Tun::listen();
+    while let Some(socket) = stream.next().await {
+        let socket = socket.expect("socket error");
+        let resolver_clone = resolver.clone();
+        let client_clone = client.clone();
+        spawn(async move {
+            let remote_addr = socket.local_addr();
+
+            let host = resolver_clone
+                .lookup_host(&remote_addr.ip().to_string())
+                .await
+                .map(|s| Address::DomainNameAddress(s, remote_addr.port()))
+                .unwrap_or_else(|| Address::SocketAddress(remote_addr));
+
+            match socket {
+                TunSocket::Tcp(socket) => client_clone.handle_tcp(socket, host).await,
+                TunSocket::Udp(socket) => client_clone.handle_udp(socket, host).await,
+            }
+        });
+    }
+}
 
 fn main() -> Result<(), Box<dyn Error>> {
     let my_subscriber = FmtSubscriber::builder()
@@ -53,42 +92,17 @@ fn main() -> Result<(), Box<dyn Error>> {
     block_on(async {
         let dns = config.dns_server;
         let dns_server_addr = (dns.ip().to_string(), dns.port());
-        let (dns_server, resolver) = create_dns_server(
-            "dns.db",
+
+        let client = SSClient::new(
+            config.server_config.clone(),
             dns_server_addr.clone(),
-            "127.0.0.1:53".to_string(),
-            config.dns_start_ip,
-            config.rules,
+            term.clone(),
         )
         .await;
-        info!("Spawn dns server");
-        spawn(dns_server.run_server());
-        let client = SSClient::new(config.server_config, dns_server_addr, term.clone()).await;
-        debug!("Spawn tun bg send");
-        spawn(Tun::bg_send());
 
-        let mut stream = Tun::listen();
-        while let Some(socket) = stream.next().await {
-            let socket = socket.expect("socket error");
-            let resolver_clone = resolver.clone();
-            let client_clone = client.clone();
-            spawn(async move {
-                let remote_addr = socket.local_addr();
-
-                let host = resolver_clone
-                    .lookup_host(&remote_addr.ip().to_string())
-                    .await
-                    .map(|s| Address::DomainNameAddress(s, remote_addr.port()))
-                    .unwrap_or_else(|| Address::SocketAddress(remote_addr));
-
-                match socket {
-                    TunSocket::Tcp(socket) => client_clone.handle_connect(socket, host).await,
-                    TunSocket::Udp(socket) => client_clone.handle_packets(socket, host).await,
-                }
-            });
-        }
+        handle_connection(client, config).await;
     });
 
-    info!("Stop server. Bye bye...");
+    println!("Stop server. Bye bye...");
     Ok(())
 }
