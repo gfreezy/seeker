@@ -1,0 +1,18 @@
+[package]
+name = "dnsserver"
+version = "0.1.0"
+authors = ["gfreezy <gfreezy@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+async-std = { git = "https://github.com/gfreezy/async-std", rev = "6d39151"}
+hermesdns = { git = "https://github.com/gfreezy/hermes", rev = "516e863" }
+config = { path = "../config" }
+sled = "0.28.0"
+async-trait = "0.1.13"
+tracing = "0.1.9"
+
+[dev-dependencies]
+tempfile = "3.1.0"
