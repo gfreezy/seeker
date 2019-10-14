@@ -29,6 +29,9 @@ server_config:
   addr: domain-or-ip-to-ss-server:port
   method: chacha20-ietf
   password: password
+  connect_timeout: 5
+  read_timeout: 30
+  write_timeout: 30
 dns_start_ip: 10.0.0.10
 dns_server: 223.5.5.5:53
 tun_name: utun4
@@ -51,7 +54,7 @@ rules:
 rm -rf dns.db
 ``` 
 
-## Build
+## Build (rust >= 1.39)
 ```bash
 git clone https://github.com/gfreezy/seeker.git
 cd seeker
