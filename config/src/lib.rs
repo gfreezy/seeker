@@ -7,7 +7,7 @@ pub use socks5::Address;
 use crypto::CipherType;
 use rule::{ProxyRules, Rule};
 use serde::Deserialize;
-use smoltcp::wire::{IpAddress, IpCidr};
+use smoltcp::wire::{Ipv4Address, Ipv4Cidr};
 use std::fs::File;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::str::FromStr;
@@ -21,7 +21,7 @@ pub struct Config {
     pub dns_server: SocketAddr,
     pub tun_name: String,
     pub tun_ip: Ipv4Addr,
-    pub tun_cidr: IpCidr,
+    pub tun_cidr: Ipv4Cidr,
     pub rules: ProxyRules,
 }
 
@@ -82,11 +82,11 @@ impl Config {
     }
 }
 
-fn parse_cidr(s: String) -> IpCidr {
+fn parse_cidr(s: String) -> Ipv4Cidr {
     let segments = s.splitn(2, '/').collect::<Vec<&str>>();
     let addr = segments[0];
     let len = segments[1];
     let addr: Ipv4Addr = addr.parse().unwrap();
     let prefix = len.parse().unwrap();
-    IpCidr::new(IpAddress::from(addr), prefix)
+    Ipv4Cidr::new(Ipv4Address::from(addr), prefix)
 }

@@ -9,7 +9,7 @@ use smoltcp::socket::{PollAt, Socket, SocketSet, UdpSocket};
 use smoltcp::socket::{SocketHandle, TcpSocket};
 use smoltcp::time::{Duration, Instant};
 use smoltcp::wire::{
-    EthernetFrame, IpAddress, IpCidr, IpEndpoint, IpProtocol, IpRepr, Ipv4Address, Ipv4Packet,
+    EthernetFrame, IpAddress, IpCidr, IpEndpoint, IpRepr, IpVersion, Ipv4Address, Ipv4Packet,
     Ipv4Repr, PrettyPrinter, TcpControl, TcpPacket, TcpRepr, UdpPacket, UdpRepr,
 };
 use smoltcp::{Error, Result};

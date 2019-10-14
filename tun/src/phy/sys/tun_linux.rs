@@ -14,7 +14,7 @@ union IfrIfru {
     ifru_addr_v6: sockaddr_in,
     ifru_dstaddr: sockaddr,
     ifru_broadaddr: sockaddr,
-    ifru_flags: c_int,
+    ifru_flags: c_short,
     ifru_metric: c_int,
     ifru_mtu: c_int,
     ifru_phys: c_int,
@@ -57,14 +57,14 @@ impl TunSocket {
     pub fn new(name: &str) -> Result<TunSocket> {
         let fd = match unsafe { open(b"/dev/net/tun\0".as_ptr() as _, O_RDWR) } {
             -1 => return Err(Error::last_os_error()),
-            fd @ _ => fd,
+            fd => fd,
         };
 
         let iface_name = name.as_bytes();
         let mut ifr = ifreq {
             ifr_name: [0; IFNAMSIZ],
             ifr_ifru: IfrIfru {
-                ifru_flags: IFF_TUN | IFF_NO_PI | IFF_MULTI_QUEUE,
+                ifru_flags: (IFF_TUN | IFF_NO_PI) as _,
             },
         };
 
@@ -91,7 +91,7 @@ impl TunSocket {
     pub fn set_non_blocking(self) -> Result<TunSocket> {
         match unsafe { fcntl(self.fd, F_GETFL) } {
             -1 => Err(Error::last_os_error()),
-            flags @ _ => match unsafe { fcntl(self.fd, F_SETFL, flags | O_NONBLOCK) } {
+            flags => match unsafe { fcntl(self.fd, F_SETFL, flags | O_NONBLOCK) } {
                 -1 => Err(Error::last_os_error()),
                 _ => Ok(self),
             },
@@ -127,8 +127,8 @@ impl TunSocket {
 impl Read for TunSocket {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
         match unsafe { read(self.fd, buf.as_mut_ptr() as _, buf.len()) } {
-            -1 => Err(io::Error::last_os_error()),
-            n @ _ => Ok(n as usize),
+            -1 => Err(Error::last_os_error()),
+            n => Ok(n as usize),
         }
     }
 }
@@ -149,8 +149,8 @@ impl Write for TunSocket {
 impl Read for &TunSocket {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
         match unsafe { read(self.fd, buf.as_mut_ptr() as _, buf.len()) } {
-            -1 => Err(io::Error::last_os_error()),
-            n @ _ => Ok(n as usize),
+            -1 => Err(Error::last_os_error()),
+            n => Ok(n as usize),
         }
     }
 }

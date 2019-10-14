@@ -1,5 +1,5 @@
 use crate::parse_cidr;
-use smoltcp::wire::IpCidr;
+use smoltcp::wire::Ipv4Cidr;
 use std::net::Ipv4Addr;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -9,7 +9,7 @@ pub enum Rule {
     Domain(String, Action),
     DomainSuffix(String, Action),
     DomainKeyword(String, Action),
-    IpCidr(IpCidr, Action),
+    IpCidr(Ipv4Cidr, Action),
     Match(Action),
 }
 
