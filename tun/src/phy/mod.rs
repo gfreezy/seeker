@@ -17,6 +17,7 @@ impl TunSocket {
             watcher: Watcher::new(sys::TunSocket::new(name).expect("TunSocket::new")),
         }
     }
+
     pub fn name(&self) -> io::Result<String> {
         self.watcher.get_ref().name()
     }
@@ -98,38 +99,57 @@ mod tests {
 
     #[test]
     fn test_recv_packets_from_tun() {
-        let tun_name = "utun3";
+        let tun_name = "utun5";
         let mut tun_socket = TunSocket::new(tun_name);
-        setup_ip(tun_name, "10.0.1.1", "10.0.1.0/24");
+        if cfg!(target_os = "macos") {
+            setup_ip(tun_name, "10.0.1.1", "10.0.1.0/24");
+        } else {
+            setup_ip(tun_name, "10.0.1.1/24", "10.0.1.0/24");
+        }
 
-        const DATA: &[u8] = &[1, 2, 3, 4,5,6,7,8];
+        const DATA: &[u8] = &[1, 2, 3, 4, 5, 6, 7, 8];
 
         block_on(async move {
             task::spawn(async {
-                task::sleep(Duration::from_secs(3)).await;
+                task::sleep(Duration::from_secs(1)).await;
                 let socket = UdpSocket::bind("0.0.0.0:0").await.unwrap();
-                socket.send_to(&DATA, "10.0.1.2:80").await.unwrap();
+                socket.send_to(&DATA, ("10.0.1.2", 9090)).await.unwrap();
             });
 
-            let mut buf = vec![0; 1024];
-            let size = tun_socket.read(&mut buf).await.unwrap();
-
-            println!("{}, {:?}", size, &buf[..size]);
+            let (buf, size) = loop {
+                let mut buf = vec![0; 1024];
+                let size = tun_socket.read(&mut buf).await.unwrap();
+                // process ipv4 only
+                if size > 0 && IpVersion::of_packet(&buf[..size]).unwrap() == IpVersion::Ipv4 {
+                    break (buf, size);
+                }
+            };
             let ipv4_packet = Ipv4Packet::new_unchecked(&buf[..size]);
-            let ipv4_repr = Ipv4Repr::parse(&ipv4_packet, &ChecksumCapabilities::default()).unwrap();
+            let ipv4_repr =
+                Ipv4Repr::parse(&ipv4_packet, &ChecksumCapabilities::default()).unwrap();
             assert_eq!(ipv4_repr.protocol, IpProtocol::Udp);
             let udp_packet = UdpPacket::new_unchecked(&buf[ipv4_repr.buffer_len()..size]);
-            let udp_repr = UdpRepr::parse(&udp_packet, &ipv4_repr.src_addr.into(), &ipv4_repr.dst_addr.into(), &ChecksumCapabilities::default()).unwrap();
-            assert_eq!(udp_repr.dst_port, 80);
+            let udp_repr = UdpRepr::parse(
+                &udp_packet,
+                &ipv4_repr.src_addr.into(),
+                &ipv4_repr.dst_addr.into(),
+                &ChecksumCapabilities::default(),
+            )
+            .unwrap();
+            assert_eq!(udp_repr.dst_port, 9090);
             assert_eq!(udp_repr.payload, DATA);
         })
     }
 
     #[test]
     fn test_send_packets_to_tun() {
-        let tun_name = "utun5";
+        let tun_name = "utun6";
         let mut tun_socket = TunSocket::new(tun_name);
-        setup_ip(tun_name, "10.0.2.1", "10.0.2.0/24");
+        if cfg!(target_os = "macos") {
+            setup_ip(tun_name, "10.0.2.1", "10.0.2.0/24");
+        } else {
+            setup_ip(tun_name, "10.0.2.1/24", "10.0.2.0/24");
+        }
 
         let data = "hello".as_bytes();
 

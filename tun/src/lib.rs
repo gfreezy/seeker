@@ -12,7 +12,7 @@ use lazy_static::lazy_static;
 use parking_lot::Mutex;
 use smoltcp::socket::{Socket, SocketHandle, SocketSet};
 use smoltcp::time::Instant;
-use smoltcp::wire::IpCidr;
+use smoltcp::wire::Ipv4Cidr;
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::io;
@@ -45,19 +45,28 @@ impl Tun {
     pub fn setup(
         tun_name: String,
         tun_ip: Ipv4Addr,
-        tun_cidr: IpCidr,
+        tun_cidr: Ipv4Cidr,
         to_terminate: Arc<AtomicBool>,
     ) {
         let tun = phy::TunSocket::new(tun_name.as_str());
         let tun_name = tun.name().unwrap();
-        setup_ip(
-            &tun_name,
-            tun_ip.to_string().as_str(),
-            tun_cidr.to_string().as_str(),
-        );
+        if cfg!(target_os = "macos") {
+            setup_ip(
+                &tun_name,
+                tun_ip.to_string().as_str(),
+                tun_cidr.to_string().as_str(),
+            );
+        } else {
+            let new_ip = Ipv4Cidr::from_netmask(tun_ip.into(), tun_cidr.netmask()).unwrap();
+            setup_ip(
+                &tun_name,
+                new_ip.to_string().as_str(),
+                tun_cidr.to_string().as_str(),
+            );
+        }
 
         let device = PhonySocket::new(tun.mtu().unwrap());
-        let ip_addrs = vec![tun_cidr];
+        let ip_addrs = vec![tun_cidr.into()];
         let iface = InterfaceBuilder::new(device)
             .ip_addrs(ip_addrs)
             .any_ip(true)
@@ -161,6 +170,7 @@ impl Stream for TunListen {
                 Ok(_) => {
                     debug!("tun.iface.poll_read success");
                 }
+                Err(smoltcp::Error::Malformed) | Err(smoltcp::Error::Dropped) => {}
                 Err(e) => {
                     error!("poll_read error: {}, poll again", e);
                 }
@@ -331,10 +341,11 @@ impl Future for TunWrite {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use async_std::io;
     use async_std::net::TcpStream;
     use async_std::task;
     use futures::{AsyncReadExt, AsyncWriteExt, StreamExt};
-    use smoltcp::wire::IpAddress;
+    use smoltcp::wire::Ipv4Address;
     use std::net::SocketAddr;
 
     #[test]
@@ -343,7 +354,7 @@ mod tests {
         Tun::setup(
             "utun4".to_string(),
             Ipv4Addr::new(10, 0, 0, 1),
-            IpCidr::new(IpAddress::v4(10, 0, 0, 0), 24),
+            Ipv4Cidr::new(Ipv4Address::new(10, 0, 0, 0), 24),
             to_terminate.clone(),
         );
 
@@ -364,7 +375,10 @@ mod tests {
                 }
             });
 
-            let mut stream = TcpStream::connect("10.0.0.2:80").await.unwrap();
+            task::sleep(Duration::from_secs(1)).await;
+            let mut stream = io::timeout(Duration::from_secs(1), TcpStream::connect("10.0.0.2:80"))
+                .await
+                .unwrap();
             stream.write_all("hello".as_bytes()).await.unwrap();
 
             task::sleep(Duration::from_secs(1)).await;

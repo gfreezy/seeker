@@ -56,7 +56,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         let (dns_server, resolver) = create_dns_server(
             "dns.db",
             dns_server_addr.clone(),
-            53,
+            "127.0.0.1:53".to_string(),
             config.dns_start_ip,
             config.rules,
         )

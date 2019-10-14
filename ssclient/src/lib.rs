@@ -290,8 +290,8 @@ mod tests {
                 "pass".to_string(),
                 CipherType::ChaCha20Ietf,
                 Duration::from_secs(3),
-                Duration::from_secs(30),
-                Duration::from_secs(30),
+                Duration::from_secs(3),
+                Duration::from_secs(3),
             ));
             let addr = get_remote_ssserver_addr(&dns_client, cfg, ("114.114.114.114", 53)).await;
             assert_eq!(addr.unwrap(), "127.0.0.1:7789".parse().unwrap());

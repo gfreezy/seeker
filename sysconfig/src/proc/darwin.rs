@@ -72,6 +72,5 @@ mod test {
         let uid = unsafe { libc::getuid() };
         let s = list_user_proc_socks(uid).unwrap();
         assert!(s.len() > 1);
-        dbg!(s);
     }
 }

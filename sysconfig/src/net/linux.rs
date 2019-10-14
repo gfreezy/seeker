@@ -41,9 +41,9 @@ impl Drop for DNSSetup {
     }
 }
 
-pub fn setup_ip(tun_name: &str, ip: &str, cidr: &str) {
+pub fn setup_ip(tun_name: &str, ip: &str, _cidr: &str) {
     let output = Command::new("ip")
-        .args(&["addr", "replace", ip, "dev", tun_name])
+        .args(&["addr", "add", ip, "dev", tun_name])
         .output()
         .expect("run ip addr");
     if !output.status.success() {
@@ -57,17 +57,6 @@ pub fn setup_ip(tun_name: &str, ip: &str, cidr: &str) {
         .args(&["link", "set", tun_name, "up"])
         .output()
         .expect("run ip addr");
-    if !output.status.success() {
-        panic!(
-            "stdout: {}\nstderr: {}",
-            std::str::from_utf8(&output.stdout).expect("utf8"),
-            std::str::from_utf8(&output.stderr).expect("utf8")
-        );
-    }
-    let output = Command::new("ip")
-        .args(&["route", "add", cidr, "dev", tun_name])
-        .output()
-        .expect("add route");
     if !output.status.success() {
         panic!(
             "stdout: {}\nstderr: {}",
