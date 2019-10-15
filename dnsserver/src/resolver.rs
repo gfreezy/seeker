@@ -1,8 +1,6 @@
 use async_std::sync::Mutex;
 use async_trait::async_trait;
-use hermesdns::{
-    DnsPacket, DnsRecord, DnsResolver, QueryType, TransientTtl,
-};
+use hermesdns::{DnsPacket, DnsRecord, DnsResolver, QueryType, TransientTtl};
 use sled::Db;
 use std::io::Result;
 use std::net::Ipv4Addr;
@@ -52,10 +50,7 @@ impl Inner {
             }
         };
 
-        Self {
-            db,
-            next_ip,
-        }
+        Self { db, next_ip }
     }
 
     fn lookup_host(&self, addr: &str) -> Option<String> {

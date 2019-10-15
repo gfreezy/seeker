@@ -1,17 +1,17 @@
-use config::{Address, Config};
-use ssclient::SSClient;
-use std::io::Result;
-use tun::socket::{TunTcpSocket, TunUdpSocket};
-use config::rule::{ProxyRules, Action};
-use futures::io::Error;
-use hermesdns::{DnsNetworkClient, DnsClient, QueryType};
-use std::net::SocketAddr;
-use async_std::net::TcpStream;
 use async_std::future;
-use std::io::ErrorKind;
 use async_std::io::copy;
+use async_std::net::TcpStream;
+use config::rule::{Action, ProxyRules};
+use config::{Address, Config};
+use futures::io::Error;
+use hermesdns::{DnsClient, DnsNetworkClient, QueryType};
+use ssclient::SSClient;
+use std::io::ErrorKind;
+use std::io::Result;
+use std::net::SocketAddr;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use tun::socket::{TunTcpSocket, TunUdpSocket};
 
 #[async_trait::async_trait]
 pub trait Client {
@@ -48,7 +48,10 @@ impl DirectClient {
     }
 
     async fn lookup_ip(&self, domain: &str) -> Result<Option<String>> {
-        let packet = self.resolver.send_query(domain, QueryType::A, self.dns_server(), true).await?;
+        let packet = self
+            .resolver
+            .send_query(domain, QueryType::A, self.dns_server(), true)
+            .await?;
         Ok(packet.get_random_a())
     }
 }
@@ -61,12 +64,15 @@ impl Client for DirectClient {
             Address::DomainNameAddress(domain, port) => {
                 let ip = self.lookup_ip(&domain).await?;
                 match ip {
-                    None => return Err(Error::new(ErrorKind::NotFound, format!("domain {} not found", &domain))),
-                    Some(ip) => {
-                        SocketAddr::new(ip.parse().expect("not valid ip addr"), port)
+                    None => {
+                        return Err(Error::new(
+                            ErrorKind::NotFound,
+                            format!("domain {} not found", &domain),
+                        ))
                     }
+                    Some(ip) => SocketAddr::new(ip.parse().expect("not valid ip addr"), port),
                 }
-            },
+            }
         };
         let conn = TcpStream::connect(sock_addr).await?;
         let mut socket_clone = socket.clone();
@@ -85,7 +91,6 @@ impl Client for DirectClient {
     }
 }
 
-
 #[derive(Clone)]
 pub struct RuledClient {
     rule: ProxyRules,
@@ -103,7 +108,7 @@ impl RuledClient {
             dns_server_addr.clone(),
             to_terminal,
         )
-            .await;
+        .await;
         let direct_client = DirectClient::new(dns_server_addr).await;
         RuledClient {
             rule: conf.rules.clone(),
@@ -118,13 +123,14 @@ impl Client for RuledClient {
     async fn handle_tcp(&self, socket: TunTcpSocket, addr: Address) -> Result<()> {
         let domain = match &addr {
             Address::SocketAddress(_) => unreachable!(),
-            Address::DomainNameAddress(domain, _port) => {
-                domain
-            },
+            Address::DomainNameAddress(domain, _port) => domain,
         };
-        let action = self.rule.action_for_domain(domain).unwrap_or_else(|| self.rule.default_action());
+        let action = self
+            .rule
+            .action_for_domain(domain)
+            .unwrap_or_else(|| self.rule.default_action());
         match action {
-            Action::Reject => return Ok(()),
+            Action::Reject => Ok(()),
             Action::Direct => self.direct_client.handle_tcp(socket, addr).await,
             Action::Proxy => self.ssclient.handle_tcp(socket, addr).await,
         }
