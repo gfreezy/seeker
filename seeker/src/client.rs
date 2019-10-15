@@ -6,11 +6,13 @@ use config::{Address, Config};
 use futures::io::Error;
 use hermesdns::{DnsClient, DnsNetworkClient, QueryType};
 use ssclient::SSClient;
+use std::collections::HashMap;
 use std::io::ErrorKind;
 use std::io::Result;
 use std::net::SocketAddr;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use sysconfig::{list_user_proc_socks, SocketInfo};
 use tun::socket::{TunTcpSocket, TunUdpSocket};
 
 #[async_trait::async_trait]
@@ -87,7 +89,7 @@ impl Client for DirectClient {
     }
 
     async fn handle_udp(&self, _socket: TunUdpSocket, _addr: Address) -> Result<()> {
-        unimplemented!()
+        Ok(())
     }
 }
 
@@ -96,10 +98,11 @@ pub struct RuledClient {
     rule: ProxyRules,
     ssclient: SSClient,
     direct_client: Arc<DirectClient>,
+    proxy_uid: Option<u32>,
 }
 
 impl RuledClient {
-    pub async fn new(conf: Config, to_terminal: Arc<AtomicBool>) -> Self {
+    pub async fn new(conf: Config, proxy_uid: Option<u32>, to_terminal: Arc<AtomicBool>) -> Self {
         let dns = conf.dns_server;
         let dns_server_addr = (dns.ip().to_string(), dns.port());
 
@@ -114,6 +117,7 @@ impl RuledClient {
             rule: conf.rules.clone(),
             ssclient,
             direct_client: Arc::new(direct_client),
+            proxy_uid,
         }
     }
 }
@@ -125,10 +129,19 @@ impl Client for RuledClient {
             Address::SocketAddress(_) => unreachable!(),
             Address::DomainNameAddress(domain, _port) => domain,
         };
-        let action = self
-            .rule
-            .action_for_domain(domain)
-            .unwrap_or_else(|| self.rule.default_action());
+        let mut pass_proxy = false;
+        if let Some(uid) = self.proxy_uid {
+            if !socket_addr_belong_to_user(socket.remote_addr(), uid)? {
+                pass_proxy = true;
+            }
+        }
+        let action = if pass_proxy {
+            Action::Direct
+        } else {
+            self.rule
+                .action_for_domain(domain)
+                .unwrap_or_else(|| self.rule.default_action())
+        };
         match action {
             Action::Reject => Ok(()),
             Action::Direct => self.direct_client.handle_tcp(socket, addr).await,
@@ -137,6 +150,24 @@ impl Client for RuledClient {
     }
 
     async fn handle_udp(&self, _socket: TunUdpSocket, _addr: Address) -> Result<()> {
-        unimplemented!()
+        Ok(())
+    }
+}
+
+fn socket_addr_belong_to_user(addr: SocketAddr, uid: u32) -> Result<bool> {
+    let user_socks: HashMap<i32, Vec<SocketInfo>> = list_user_proc_socks(uid)?;
+    Ok(user_socks
+        .values()
+        .any(|sockets| sockets.iter().any(|s| s.local == addr)))
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::client::socket_addr_belong_to_user;
+    use std::net::SocketAddr;
+
+    #[test]
+    fn test_socket_addr_belong_to_user() {
+        let socket = std::net::TcpListener::bind("0.0.0.0:8888").unwrap();
     }
 }

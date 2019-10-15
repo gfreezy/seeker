@@ -1,24 +1,18 @@
 #![allow(dead_code)]
-use anyhow::Result;
+use super::SocketInfo;
 use libproc::libproc::proc_pid::{
     listpidinfo, listpids, pidfdinfo, InSockInfo, ListFDs, ProcFDType, ProcType, SocketFDInfo,
     SocketInfoKind,
 };
 use std::collections::HashMap;
-use std::convert::TryInto;
+use std::io::Result;
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub struct SocketInfo {
-    pub local: SocketAddr,
-    pub remote: SocketAddr,
-}
 
 pub fn list_system_proc_socks() -> Result<HashMap<i32, Vec<SocketInfo>>> {
     let pids = listpids(ProcType::ProcAllPIDS, 0)?;
     let mut pid_sockaddr_map = HashMap::new();
     for pid in pids {
-        let pid = pid.try_into()?;
+        let pid = pid as i32;
         pid_sockaddr_map.insert(pid, list_sockaddr(pid)?);
     }
 
@@ -29,7 +23,7 @@ pub fn list_user_proc_socks(uid: u32) -> Result<HashMap<i32, Vec<SocketInfo>>> {
     let pids = listpids(ProcType::ProcUIDOnly, uid)?;
     let mut pid_sockaddr_map = HashMap::new();
     for pid in pids {
-        let pid = pid.try_into()?;
+        let pid = pid as i32;
         let socket_infos = list_sockaddr(pid)?;
         if !socket_infos.is_empty() {
             pid_sockaddr_map.insert(pid, socket_infos);
