@@ -18,6 +18,7 @@ tun = { path = "../tun" }
 async-std = { git = "https://github.com/gfreezy/async-std", rev = "6d39151"}
 futures-preview = "0.3.0-alpha"
 signal-hook = "0.1.10"
+async-trait = "0.1.14"
 
 [dependencies.smoltcp]
 git = "https://github.com/gfreezy/smoltcp"
