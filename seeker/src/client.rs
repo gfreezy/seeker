@@ -160,14 +160,3 @@ fn socket_addr_belong_to_user(addr: SocketAddr, uid: u32) -> Result<bool> {
         .values()
         .any(|sockets| sockets.iter().any(|s| s.local == addr)))
 }
-
-#[cfg(test)]
-mod tests {
-    use crate::client::socket_addr_belong_to_user;
-    use std::net::SocketAddr;
-
-    #[test]
-    fn test_socket_addr_belong_to_user() {
-        let socket = std::net::TcpListener::bind("0.0.0.0:8888").unwrap();
-    }
-}
