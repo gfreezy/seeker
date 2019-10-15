@@ -293,7 +293,7 @@ mod tests {
                 Duration::from_secs(3),
                 Duration::from_secs(3),
             ));
-            let addr = get_remote_ssserver_addr(&dns_client, cfg, ("114.114.114.114", 53)).await;
+            let addr = get_remote_ssserver_addr(&dns_client, cfg, ("208.67.222.222", 53)).await;
             assert_eq!(addr.unwrap(), "127.0.0.1:7789".parse().unwrap());
         })
     }
@@ -310,7 +310,7 @@ mod tests {
                 Duration::from_secs(3),
                 Duration::from_secs(3),
             ));
-            let addr = get_remote_ssserver_addr(&dns_client, cfg, ("114.114.114.114", 53)).await;
+            let addr = get_remote_ssserver_addr(&dns_client, cfg, ("208.67.222.222", 53)).await;
             assert_eq!(addr.unwrap(), "1.2.3.4:7789".parse().unwrap());
         })
     }
