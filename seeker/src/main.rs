@@ -2,13 +2,12 @@ mod client;
 
 use std::error::Error;
 
-use crate::client::Client;
+use crate::client::{Client, RuledClient};
 use async_std::task::{block_on, spawn};
 use clap::{App, Arg};
 use config::{Address, Config};
 use dnsserver::create_dns_server;
 use futures::StreamExt;
-use ssclient::SSClient;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use sysconfig::DNSSetup;
@@ -17,14 +16,10 @@ use tun::socket::TunSocket;
 use tun::Tun;
 
 async fn handle_connection<T: Client + Clone + Send + Sync + 'static>(client: T, config: Config) {
-    let dns = config.dns_server;
-    let dns_server_addr = (dns.ip().to_string(), dns.port());
     let (dns_server, resolver) = create_dns_server(
         "dns.db",
-        dns_server_addr.clone(),
         "127.0.0.1:53".to_string(),
         config.dns_start_ip,
-        config.rules,
     )
     .await;
     println!("Spawn DNS server");
@@ -90,15 +85,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let _dns_setup = DNSSetup::new();
 
     block_on(async {
-        let dns = config.dns_server;
-        let dns_server_addr = (dns.ip().to_string(), dns.port());
-
-        let client = SSClient::new(
-            config.server_config.clone(),
-            dns_server_addr.clone(),
-            term.clone(),
-        )
-        .await;
+        let client = RuledClient::new(config.clone(), term.clone()).await;
 
         handle_connection(client, config).await;
     });
