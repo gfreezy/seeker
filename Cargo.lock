@@ -1094,6 +1094,7 @@ dependencies = [
  "config",
  "dnsserver",
  "futures-preview",
+ "hermesdns",
  "signal-hook",
  "smoltcp",
  "ssclient",
