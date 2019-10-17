@@ -107,7 +107,7 @@ mod test {
     #[test]
     fn test_list_user_proc_socks() {
         let uid = unsafe { libc::getuid() };
-        let socket = std::net::TcpListener::bind("0.0.0.0:8888").unwrap();
+        let _socket = std::net::TcpListener::bind("0.0.0.0:8888").unwrap();
         let s = list_user_proc_socks(uid).unwrap();
         assert!(s
             .values()
