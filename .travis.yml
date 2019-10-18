@@ -37,5 +37,6 @@ deploy:
   overwrite: true
   file_glob: true
   file: artifacts/$BIN_NAME-*
+  name: $TRAVIS_COMMIT
   on:
     branch: master
