@@ -12,9 +12,27 @@ chmod +x seeker-osx  # or  chmod+x seeker-linux
 1. 启动 `seeker`
 
     ```bash
-    sudo seeker --config path/to/config.yml
+    Seeker 0.0.1
+    gfreezy <gfreezy@gmail.com>
+    Tun to Shadowsockets proxy. https://github.com/gfreezy/seeker
+    
+    USAGE:
+        seeker [OPTIONS] --config <FILE>
+    
+    FLAGS:
+        -h, --help       Prints help information
+        -V, --version    Prints version information
+    
+    OPTIONS:
+        -c, --config <FILE>    Sets config file. Sample config at
+                               https://github.com/gfreezy/seeker/blob/master/sample_config.yml
+        -u, --uid <UID>        User id to proxy.
     ```
    
+   ```bash
+   sudo seeker --config path/to/config.yml
+   ```
+      
 2. `seeker` 启动的时候会自动将本机 DNS 修改为 `127.0.0.1`，退出的时候将 DNS 设置为默认值
 
 ## Config
@@ -68,10 +86,10 @@ OPENSSL_STATIC=yes SODIUM_STATIC=yes SODIUM_BUILD_STATIC=yes cargo build --relea
 
 1. `seeker` 会在本地启动一个 DNS server，并自动将本机 DNS 修改为 `seeker` 的 DNS 服务器地址
 2. `seeker` 会创建一个 TUN 设备，并将 IP 设置为 `10.0.0.1`，系统路由表设置 `10.0.0.0/16` 网段都路由到 TUN 设备
-2. 有应用请求 DNS 的时候， `seeker` 会根据配置好的规则判断：
-    * 如果需要代理，则会为这个域名返回 `10.0.0.0/16` 网段内一个唯一的 IP
-    * 如果不需要代理，则请求设置的 DNS 服务器，返回正常 IP
-3. `seeker` 从 TUN 接受到 IP 包后，会在内部组装成 TCP/UDP 数据，然后将 TCP/UDP 数据转发到 SS 服务器，从 SS 接受到数据后，在返回给应用
+2. 有应用请求 DNS 的时候， `seeker` 会为这个域名返回 `10.0.0.0/16` 网段内一个唯一的 IP 
+3. `seeker` 从 TUN 接受到 IP 包后，会在内部组装成 TCP/UDP 数据
+4. `seeker` 会根据规则和网络连接的 uid 判断走代理还是直连
+5. 如果需要走代理，将 TCP/UDP 数据转发到 SS 服务器，从 SS 接受到数据后，在返回给应用；如果直连，则本地建立直接将数据发送到目标地址
 
 ## 使用限制
 
