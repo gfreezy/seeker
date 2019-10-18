@@ -62,9 +62,18 @@ fn main() -> Result<(), Box<dyn Error>> {
                 .help("Sets config file. Sample config at https://github.com/gfreezy/seeker/blob/master/sample_config.yml")
                 .required(true),
         )
+        .arg(
+            Arg::with_name("user_id")
+                .short("u")
+                .long("uid")
+                .value_name("UID")
+                .help("User id to proxy.")
+                .required(false),
+        )
         .get_matches();
 
     let path = matches.value_of("config").unwrap();
+    let uid = matches.value_of("user_id").map(|uid| uid.parse().unwrap());
     let config = Config::from_config_file(path);
 
     let term = Arc::new(AtomicBool::new(false));
@@ -81,7 +90,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let _dns_setup = DNSSetup::new();
 
     block_on(async {
-        let client = RuledClient::new(config.clone(), term.clone()).await;
+        let client = RuledClient::new(config.clone(), uid, term.clone()).await;
 
         handle_connection(client, config).await;
     });

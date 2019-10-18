@@ -12,3 +12,6 @@ libc = "0.2.62"
 
 [target.'cfg(target_os="macos")'.dependencies]
 libproc = { git = "https://github.com/gfreezy/libproc-rs", rev = "bffc2c4" }
+
+[target.'cfg(target_os="linux")'.dependencies]
+procfs = "0.5.4"
