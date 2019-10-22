@@ -640,9 +640,9 @@ dependencies = [
 
 [[package]]
 name = "libc"
-version = "0.2.62"
+version = "0.2.65"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "34fcd2c08d2f832f376f4173a231990fa5aef4e99fb569867318a227ef4c06ba"
+checksum = "1a31a0627fdf1f6a39ec0dd577e101440b7db22672c0901fe00a9a6fbb5c24e8"
 
 [[package]]
 name = "libflate"
@@ -1134,6 +1134,7 @@ dependencies = [
  "dnsserver",
  "futures-preview",
  "hermesdns",
+ "libc",
  "signal-hook",
  "smoltcp",
  "ssclient",
@@ -1207,6 +1208,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4f61c4d59f3aaa9f61bba6450a9b80ba48362fd7d651689e7a10c453b1f6dc68"
 dependencies = [
  "libc",
+ "mio",
  "signal-hook-registry",
 ]
 

@@ -1,21 +1,29 @@
 mod client;
+//mod signal;
 
 use std::error::Error;
 
 use crate::client::{Client, RuledClient};
+use async_std::io::timeout;
 use async_std::task::{block_on, spawn};
 use clap::{App, Arg};
 use config::{Address, Config};
 use dnsserver::create_dns_server;
 use futures::StreamExt;
-use std::sync::atomic::AtomicBool;
+use std::io::ErrorKind;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 use sysconfig::DNSSetup;
 use tracing_subscriber::{EnvFilter, FmtSubscriber};
 use tun::socket::TunSocket;
 use tun::Tun;
 
-async fn handle_connection<T: Client + Clone + Send + Sync + 'static>(client: T, config: Config) {
+async fn handle_connection<T: Client + Clone + Send + Sync + 'static>(
+    client: T,
+    config: Config,
+    term: Arc<AtomicBool>,
+) {
     let (dns_server, resolver) =
         create_dns_server("dns.db", "127.0.0.1:53".to_string(), config.dns_start_ip).await;
     println!("Spawn DNS server");
@@ -23,8 +31,23 @@ async fn handle_connection<T: Client + Clone + Send + Sync + 'static>(client: T,
     spawn(Tun::bg_send());
 
     let mut stream = Tun::listen();
-    while let Some(socket) = stream.next().await {
-        let socket = socket.expect("socket error");
+    loop {
+        let socket = timeout(Duration::from_secs(1), async {
+            stream.next().await.transpose()
+        })
+        .await;
+        let socket = match socket {
+            Ok(Some(s)) => s,
+            Ok(None) => break,
+            Err(e) if e.kind() == ErrorKind::TimedOut => {
+                if term.load(Ordering::Relaxed) {
+                    break;
+                } else {
+                    continue;
+                }
+            }
+            Err(e) => panic!(e),
+        };
         let resolver_clone = resolver.clone();
         let client_clone = client.clone();
         spawn(async move {
@@ -92,7 +115,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     block_on(async {
         let client = RuledClient::new(config.clone(), uid, term.clone()).await;
 
-        handle_connection(client, config).await;
+        handle_connection(client, config, term.clone()).await;
     });
 
     println!("Stop server. Bye bye...");
