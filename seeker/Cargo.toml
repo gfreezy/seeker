@@ -17,7 +17,7 @@ sysconfig = { path = "../sysconfig" }
 tun = { path = "../tun" }
 async-std = { git = "https://github.com/gfreezy/async-std", rev = "6d39151"}
 futures-preview = "0.3.0-alpha"
-signal-hook = "0.1.10"
+signal-hook = { version = "0.1.10", features = ["mio-support"] }
 async-trait = "0.1.14"
 hermesdns = { git = "https://github.com/gfreezy/hermes", rev = "516e863" }
 
@@ -35,3 +35,6 @@ features = [
 
 [dependencies.clap]
 version = "2"
+
+[dev-dependencies]
+libc = "0.2.65"
