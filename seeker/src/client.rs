@@ -126,8 +126,8 @@ impl RuledClient {
 impl Client for RuledClient {
     async fn handle_tcp(&self, socket: TunTcpSocket, addr: Address) -> Result<()> {
         let domain = match &addr {
-            Address::SocketAddress(_) => unreachable!(),
-            Address::DomainNameAddress(domain, _port) => domain,
+            Address::SocketAddress(a) => a.to_string(),
+            Address::DomainNameAddress(domain, _port) => domain.to_string(),
         };
         let mut pass_proxy = false;
         if let Some(uid) = self.proxy_uid {
@@ -139,7 +139,7 @@ impl Client for RuledClient {
             Action::Direct
         } else {
             self.rule
-                .action_for_domain(domain)
+                .action_for_domain(&domain)
                 .unwrap_or_else(|| self.rule.default_action())
         };
         match action {
