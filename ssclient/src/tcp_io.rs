@@ -3,7 +3,7 @@ use byteorder::BigEndian;
 use bytes::ByteOrder;
 use crypto::{BoxAeadDecryptor, BoxAeadEncryptor, CipherType};
 use futures::{AsyncRead, AsyncReadExt};
-use std::io::{Error, ErrorKind, Result};
+use std::io::{ErrorKind, Result};
 
 fn buffer_size(tag_size: usize, data: &[u8]) -> usize {
     2 + tag_size // len and len_tag
@@ -56,70 +56,10 @@ pub(crate) async fn aead_decrypted_read<T: AsyncRead + Unpin>(
     Ok(len)
 }
 
-#[allow(dead_code)]
-pub fn encrypt_payload_aead(
-    t: CipherType,
-    key: &[u8],
-    payload: &[u8],
-    output: &mut [u8],
-) -> Result<usize> {
-    let salt = t.gen_salt();
-    let tag_size = t.tag_size();
-    let mut cipher = crypto::new_aead_encryptor(t, key, &salt);
-
-    let salt_len = salt.len();
-    output[..salt_len].copy_from_slice(&salt);
-
-    cipher.encrypt(
-        payload,
-        &mut output[salt_len..salt_len + payload.len() + tag_size],
-    );
-
-    Ok(salt_len + payload.len() + tag_size)
-}
-
-#[allow(dead_code)]
-fn decrypt_payload_aead(
-    t: CipherType,
-    key: &[u8],
-    payload: &[u8],
-    output: &mut [u8],
-) -> Result<usize> {
-    let tag_size = t.tag_size();
-    let salt_size = t.salt_size();
-
-    if payload.len() < tag_size + salt_size {
-        let err = Error::new(ErrorKind::UnexpectedEof, "udp packet too short");
-        return Err(err);
-    }
-
-    let salt = &payload[..salt_size];
-    let data = &payload[salt_size..];
-    let data_length = payload.len() - tag_size - salt_size;
-
-    let mut cipher = crypto::new_aead_decryptor(t, key, salt);
-
-    cipher.decrypt(data, &mut output[..data_length])?;
-
-    Ok(data_length)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use async_std::task;
-
-    #[test]
-    fn test_encrypt_and_decrypt_payload() {
-        let cipher_type = CipherType::Aes256Gcm;
-        let key = cipher_type.bytes_to_key("key".as_bytes());
-        let payload = "payload".as_bytes();
-        let mut output = [0; MAX_PACKET_SIZE];
-        let mut output2 = [0; MAX_PACKET_SIZE];
-        let size = encrypt_payload_aead(cipher_type, &key, payload, &mut output).unwrap();
-        let size2 = decrypt_payload_aead(cipher_type, &key, &output[..size], &mut output2).unwrap();
-        assert_eq!(&output2[..size2], payload);
-    }
 
     #[test]
     fn test_encrypt_and_decrypt_stream() {

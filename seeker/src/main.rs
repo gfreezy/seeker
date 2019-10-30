@@ -61,7 +61,10 @@ async fn handle_connection<T: Client + Clone + Send + Sync + 'static>(
 
             match socket {
                 TunSocket::Tcp(socket) => client_clone.handle_tcp(socket, host).await,
-                TunSocket::Udp(socket) => client_clone.handle_udp(socket, host).await,
+                TunSocket::Udp(socket) => {
+                    println!("new udp socket: {:?}", &socket);
+                    client_clone.handle_udp(socket, host).await
+                },
             }
         });
     }
