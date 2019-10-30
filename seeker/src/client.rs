@@ -1,6 +1,7 @@
-use async_std::{future, task};
 use async_std::io::copy;
 use async_std::net::{TcpStream, UdpSocket};
+use async_std::task::JoinHandle;
+use async_std::{future, task};
 use config::rule::{Action, ProxyRules};
 use config::{Address, Config};
 use futures::io::Error;
@@ -13,9 +14,8 @@ use std::net::SocketAddr;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use sysconfig::{list_user_proc_socks, SocketInfo};
-use tun::socket::{TunTcpSocket, TunUdpSocket};
-use async_std::task::JoinHandle;
 use tracing::debug;
+use tun::socket::{TunTcpSocket, TunUdpSocket};
 
 #[async_trait::async_trait]
 pub trait Client {
@@ -113,7 +113,10 @@ impl Client for DirectClient {
 
         loop {
             let (recv_from_local_size, local_src) = socket.recv_from(&mut buf).await?;
-            debug!("recv {} bytes from tun {}", recv_from_local_size, &local_src);
+            debug!(
+                "recv {} bytes from tun {}",
+                recv_from_local_size, &local_src
+            );
             let udp_socket = match udp_map.get(&local_src).cloned() {
                 Some(socket) => socket,
                 None => {
@@ -126,18 +129,29 @@ impl Client for DirectClient {
                     let _handle: JoinHandle<Result<_>> = task::spawn(async move {
                         let mut recv_buf = vec![0; 1024];
                         loop {
-                            let (recv_from_ss_size, udp_ss_addr) = cloned_new_udp.recv_from(&mut recv_buf).await?;
-                            debug!("recv {} from remote server {}", recv_from_ss_size, &udp_ss_addr);
-                            let send_local_size = cloned_socket.send_to(&recv_buf[..recv_from_ss_size], &local_src).await?;
+                            let (recv_from_ss_size, udp_ss_addr) =
+                                cloned_new_udp.recv_from(&mut recv_buf).await?;
+                            debug!(
+                                "recv {} from remote server {}",
+                                recv_from_ss_size, &udp_ss_addr
+                            );
+                            let send_local_size = cloned_socket
+                                .send_to(&recv_buf[..recv_from_ss_size], &local_src)
+                                .await?;
                             debug!("send {} bytes to local {}", send_local_size, &local_src);
                         }
                         Ok(())
                     });
                     new_udp
-                },
+                }
             };
-            let send_ss_size = udp_socket.send_to(&buf[..recv_from_local_size], sock_addr).await?;
-            debug!("send {} bytes to remote server {}", send_ss_size, &sock_addr);
+            let send_ss_size = udp_socket
+                .send_to(&buf[..recv_from_local_size], sock_addr)
+                .await?;
+            debug!(
+                "send {} bytes to remote server {}",
+                send_ss_size, &sock_addr
+            );
         }
 
         Ok(())
