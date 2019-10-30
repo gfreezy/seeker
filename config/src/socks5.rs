@@ -176,9 +176,7 @@ fn read_address<T: Read>(reader: &mut T) -> Result<Address> {
         consts::SOCKS5_ADDR_TYPE_IPV4 => read_ipv4(reader),
         consts::SOCKS5_ADDR_TYPE_IPV6 => read_ipv6(reader),
         consts::SOCKS5_ADDR_TYPE_DOMAIN_NAME => read_domain_name(reader),
-        _ => {
-            return Err(ErrorKind::InvalidData.into());
-        }
+        _ => Err(ErrorKind::InvalidData.into()),
     }
 }
 
