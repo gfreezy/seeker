@@ -1,23 +1,27 @@
 const MAX_PACKET_SIZE: usize = 0x3FFF;
 
-mod ahead;
+mod tcp_io;
+mod udp_io;
 
-use crate::ahead::{aead_decrypted_read, aead_encrypted_write};
-use async_std::future;
+use crate::udp_io::{decrypt_payload, encrypt_payload};
 use async_std::io::timeout;
-use async_std::net::TcpStream;
+use async_std::net::{TcpStream, UdpSocket};
+use async_std::task::JoinHandle;
+use async_std::{future, task};
 use bytes::{Bytes, BytesMut};
 use config::{Address, ServerAddr, ServerConfig};
 use crypto::{CipherCategory, CryptoMode};
 use futures::io::ErrorKind;
 use futures::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use hermesdns::{DnsClient, DnsNetworkClient, QueryType};
+use std::collections::HashMap;
 use std::io;
 use std::io::{Error, Result};
 use std::net::{IpAddr, SocketAddr};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
+use tcp_io::{aead_decrypted_read, aead_encrypted_write};
 use tracing::debug;
 use tun::socket::TunUdpSocket;
 
@@ -191,8 +195,108 @@ impl SSClient {
         Ok(())
     }
 
-    pub async fn handle_udp_connection(&self, _socket: TunUdpSocket, _addr: Address) -> Result<()> {
-        Ok(())
+    pub async fn handle_udp_connection(
+        &self,
+        tun_socket: TunUdpSocket,
+        addr: Address,
+    ) -> Result<()> {
+        let ssserver = get_remote_ssserver_addr(
+            &*self.resolver,
+            self.srv_cfg.clone(),
+            (&self.dns_server.0, self.dns_server.1),
+        )
+        .await?;
+        //
+        //        let remote_addr = match addr.clone() {
+        //            Address::SocketAddress(addr) => addr,
+        //            Address::DomainNameAddress(domain, port) => {
+        //                let ip = resolve_domain(&*self.resolver,
+        //                                        (&self.dns_server.0, self.dns_server.1),
+        //                                        &domain, self.srv_cfg.connect_timeout()).await?;
+        //                match ip {
+        //                    None => {
+        //                        return Err(Error::new(
+        //                            ErrorKind::NotFound,
+        //                            format!("domain {} not found", &domain),
+        //                        ))
+        //                    }
+        //                    Some(ip) => SocketAddr::new(ip, port),
+        //                }
+        //            }
+        //        };
+
+        let mut buf = vec![0; MAX_PACKET_SIZE];
+        let mut encrypt_buf = BytesMut::with_capacity(MAX_PACKET_SIZE);
+        let mut udp_map = HashMap::new();
+        let cipher_type = self.srv_cfg.method();
+        let key = self.srv_cfg.key().to_vec();
+
+        loop {
+            encrypt_buf.clear();
+            buf[..addr.serialized_len()].copy_from_slice(&addr.to_bytes());
+            let (recv_from_tun_size, local_src) = tun_socket
+                .recv_from(&mut buf[addr.serialized_len()..])
+                .await?;
+            debug!("recv {} bytes from tun {}", recv_from_tun_size, &local_src);
+            let encrypt_size = encrypt_payload(
+                cipher_type,
+                &key,
+                &buf[..addr.serialized_len() + recv_from_tun_size],
+                &mut encrypt_buf,
+            )?;
+            debug!(
+                "encrypt {} bytes with {} to {} bytes",
+                addr.serialized_len() + recv_from_tun_size,
+                cipher_type,
+                encrypt_size
+            );
+
+            let udp_socket = match udp_map.get(&local_src).cloned() {
+                Some(socket) => socket,
+                None => {
+                    let new_udp = Arc::new(UdpSocket::bind("0.0.0.0:0").await?);
+                    debug!("new udp socket at {}", &new_udp.local_addr()?);
+                    udp_map.insert(local_src, new_udp.clone());
+
+                    let cloned_socket = tun_socket.clone();
+                    let cloned_new_udp = new_udp.clone();
+                    let key_cloned = key.clone();
+                    let _handle: JoinHandle<Result<()>> = task::spawn(async move {
+                        let mut recv_buf = vec![0; MAX_PACKET_SIZE];
+                        let mut decrypt_buf = BytesMut::with_capacity(MAX_PACKET_SIZE);
+                        loop {
+                            decrypt_buf.clear();
+                            let (recv_from_ss_size, udp_ss_addr) =
+                                cloned_new_udp.recv_from(&mut recv_buf).await?;
+                            debug!("recv {} from ss server {}", recv_from_ss_size, &udp_ss_addr);
+                            let decrypt_size = decrypt_payload(
+                                cipher_type,
+                                &key_cloned,
+                                &recv_buf[..recv_from_ss_size],
+                                &mut decrypt_buf,
+                            )?;
+                            debug!(
+                                "decrypt {} bytes with {} to {} bytes",
+                                recv_from_ss_size, cipher_type, decrypt_size
+                            );
+                            let addr = Address::read_from(&mut decrypt_buf.as_ref())?;
+                            let send_local_size = cloned_socket
+                                .send_to(
+                                    &decrypt_buf[addr.serialized_len()..decrypt_size],
+                                    &local_src,
+                                )
+                                .await?;
+                            debug!("send {} bytes to local {}", send_local_size, &local_src);
+                        }
+                    });
+                    new_udp
+                }
+            };
+            let send_ss_size = udp_socket
+                .send_to(&encrypt_buf[..encrypt_size], ssserver)
+                .await?;
+            debug!("send {} bytes to ss server {}", send_ss_size, &ssserver);
+        }
     }
 }
 
