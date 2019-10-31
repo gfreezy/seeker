@@ -1,8 +1,8 @@
-use byteorder::WriteBytesExt;
-use bytes::{BigEndian, BufMut};
+use byteorder::{ReadBytesExt, WriteBytesExt};
+use bytes::{BigEndian, BufMut, BytesMut};
 use std::fmt::{Debug, Formatter};
-use std::io::{Cursor, Write};
-use std::net::{SocketAddr, SocketAddrV4, SocketAddrV6, ToSocketAddrs};
+use std::io::{Cursor, ErrorKind, Read, Result, Write};
+use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6, ToSocketAddrs};
 use std::{fmt, io, vec};
 
 #[allow(dead_code)]
@@ -44,10 +44,20 @@ pub enum Address {
 }
 
 impl Address {
+    pub fn read_from<T: Read>(reader: &mut T) -> Result<Address> {
+        read_address(reader)
+    }
+
     /// Writes to buffer
     #[inline]
     pub fn write_to_buf<B: BufMut>(&self, buf: &mut B) {
         write_address(self, buf)
+    }
+
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut buf = BytesMut::with_capacity(self.serialized_len());
+        write_address(self, &mut buf);
+        buf.to_vec()
     }
 
     #[inline]
@@ -157,4 +167,59 @@ fn get_addr_len(atyp: &Address) -> usize {
         Address::SocketAddress(SocketAddr::V6(..)) => 1 + 8 * 2 + 2,
         Address::DomainNameAddress(ref dmname, _) => 1 + 1 + dmname.len() + 2,
     }
+}
+
+fn read_address<T: Read>(reader: &mut T) -> Result<Address> {
+    let addr_type = reader.read_u8()?;
+
+    match addr_type {
+        consts::SOCKS5_ADDR_TYPE_IPV4 => read_ipv4(reader),
+        consts::SOCKS5_ADDR_TYPE_IPV6 => read_ipv6(reader),
+        consts::SOCKS5_ADDR_TYPE_DOMAIN_NAME => read_domain_name(reader),
+        _ => Err(ErrorKind::InvalidData.into()),
+    }
+}
+
+fn read_ipv4<T: Read>(reader: &mut T) -> Result<Address> {
+    let v4addr = Ipv4Addr::new(
+        reader.read_u8()?,
+        reader.read_u8()?,
+        reader.read_u8()?,
+        reader.read_u8()?,
+    );
+    let port = reader.read_u16::<BigEndian>()?;
+    let addr = Address::SocketAddress(SocketAddr::V4(SocketAddrV4::new(v4addr, port)));
+    Ok(addr)
+}
+
+fn read_ipv6<T: Read>(reader: &mut T) -> Result<Address> {
+    let v6addr = Ipv6Addr::new(
+        reader.read_u16::<BigEndian>()?,
+        reader.read_u16::<BigEndian>()?,
+        reader.read_u16::<BigEndian>()?,
+        reader.read_u16::<BigEndian>()?,
+        reader.read_u16::<BigEndian>()?,
+        reader.read_u16::<BigEndian>()?,
+        reader.read_u16::<BigEndian>()?,
+        reader.read_u16::<BigEndian>()?,
+    );
+    let port = reader.read_u16::<BigEndian>()?;
+
+    let addr = Address::SocketAddress(SocketAddr::V6(SocketAddrV6::new(v6addr, port, 0, 0)));
+    Ok(addr)
+}
+
+fn read_domain_name<T: Read>(reader: &mut T) -> Result<Address> {
+    let addr_len = reader.read_u8()?;
+    let mut raw_addr = vec![0; addr_len as usize];
+    reader.read_exact(&mut raw_addr)?;
+
+    let addr = match String::from_utf8(raw_addr) {
+        Ok(addr) => addr,
+        Err(..) => return Err(ErrorKind::InvalidData.into()),
+    };
+    let port = reader.read_u16::<BigEndian>()?;
+
+    let addr = Address::DomainNameAddress(addr, port);
+    Ok(addr)
 }
