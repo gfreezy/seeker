@@ -232,6 +232,7 @@ impl SSClient {
         let key = self.srv_cfg.key().to_vec();
 
         loop {
+            encrypt_buf.clear();
             buf[..addr.serialized_len()].copy_from_slice(&addr.to_bytes());
             let (recv_from_tun_size, local_src) = tun_socket
                 .recv_from(&mut buf[addr.serialized_len()..])
@@ -264,6 +265,7 @@ impl SSClient {
                         let mut recv_buf = vec![0; MAX_PACKET_SIZE];
                         let mut decrypt_buf = BytesMut::with_capacity(MAX_PACKET_SIZE);
                         loop {
+                            decrypt_buf.clear();
                             let (recv_from_ss_size, udp_ss_addr) =
                                 cloned_new_udp.recv_from(&mut recv_buf).await?;
                             debug!("recv {} from ss server {}", recv_from_ss_size, &udp_ss_addr);
