@@ -24,7 +24,7 @@ script:
   - mkdir -p artifacts
   - cargo fmt --all -- --check
   - cargo clippy
-  - cargo test --verbose --all
+  - cargo test --all
   - cargo build --release
   - cp target/release/$BIN_NAME artifacts/$BIN_NAME-$TRAVIS_OS_NAME
 before_deploy:

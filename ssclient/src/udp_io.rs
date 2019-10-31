@@ -63,7 +63,7 @@ fn encrypt_payload_aead(
 
     let salt_len = salt.len();
     output.put_slice(&salt);
-    output.reserve(payload.len() + tag_size);
+    output.resize(salt_len + payload.len() + tag_size, 0);
 
     cipher.encrypt(
         payload,
@@ -93,7 +93,7 @@ fn decrypt_payload_aead(
 
     let mut cipher = crypto::new_aead_decryptor(t, key, salt);
 
-    output.reserve(data_length);
+    output.resize(data_length, 0);
     cipher.decrypt(data, &mut output[..data_length])?;
 
     Ok(data_length)
@@ -103,7 +103,7 @@ fn encrypt_payload_stream(
     t: CipherType,
     key: &[u8],
     payload: &[u8],
-    output: &mut dyn BufMut,
+    output: &mut BytesMut,
 ) -> Result<usize> {
     let iv = t.gen_init_vec();
     let mut cipher = crypto::new_stream(t, key, &iv, CryptoMode::Encrypt);
@@ -118,7 +118,7 @@ fn decrypt_payload_stream(
     t: CipherType,
     key: &[u8],
     payload: &[u8],
-    output: &mut dyn BufMut,
+    output: &mut BytesMut,
 ) -> Result<usize> {
     let iv_size = t.iv_size();
 
@@ -143,8 +143,8 @@ mod tests {
         let cipher_type = CipherType::Aes256Gcm;
         let key = cipher_type.bytes_to_key("key".as_bytes());
         let payload = "payload".as_bytes();
-        let mut output = [0; MAX_PACKET_SIZE];
-        let mut output2 = [0; MAX_PACKET_SIZE];
+        let mut output = BytesMut::with_capacity(MAX_PACKET_SIZE);
+        let mut output2 = BytesMut::with_capacity(MAX_PACKET_SIZE);
         let size = encrypt_payload_aead(cipher_type, &key, payload, &mut output).unwrap();
         let size2 = decrypt_payload_aead(cipher_type, &key, &output[..size], &mut output2).unwrap();
         assert_eq!(&output2[..size2], payload);
@@ -155,8 +155,8 @@ mod tests {
         let cipher_type = CipherType::ChaCha20Ietf;
         let key = cipher_type.bytes_to_key("key".as_bytes());
         let payload = "payload".as_bytes();
-        let mut output = Vec::with_capacity(MAX_PACKET_SIZE);
-        let mut output2 = Vec::with_capacity(MAX_PACKET_SIZE);
+        let mut output = BytesMut::with_capacity(MAX_PACKET_SIZE);
+        let mut output2 = BytesMut::with_capacity(MAX_PACKET_SIZE);
         let size = encrypt_payload_stream(cipher_type, &key, payload, &mut output).unwrap();
         let size2 =
             decrypt_payload_stream(cipher_type, &key, &output[..size], &mut output2).unwrap();
