@@ -2,7 +2,7 @@ if: tag IS blank
 language: rust
 sudo: false
 rust:
-  - beta
+  - stable
 cache:
   cargo: true
 env:

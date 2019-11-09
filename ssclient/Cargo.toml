@@ -11,8 +11,8 @@ tracing = "0.1"
 libc = "0.2.62"
 bytes = "0.4.12"
 byteorder = "1.3.2"
-async-std = { git = "https://github.com/gfreezy/async-std", rev = "6d39151"}
-futures-preview = "0.3.0-alpha.18"
+async-std = { git = "https://github.com/gfreezy/async-std", rev = "96fe93b"}
+futures = "0.3.0"
 lazy_static = "1.4.0"
 managed = "0.7.1"
 mio = "0.6.19"

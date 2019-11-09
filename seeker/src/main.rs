@@ -76,8 +76,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         .finish();
     tracing::subscriber::set_global_default(my_subscriber).expect("setting tracing default failed");
 
+    let version = env!("CARGO_PKG_VERSION");
     let matches = App::new("Seeker")
-        .version("0.0.1")
+        .version(version)
         .author("gfreezy <gfreezy@gmail.com>")
         .about("Tun to Shadowsockets proxy. https://github.com/gfreezy/seeker")
         .arg(
