@@ -12,7 +12,7 @@ chmod +x seeker-osx  # or  chmod+x seeker-linux
 1. 启动 `seeker`
 
     ```bash
-    Seeker 0.0.1
+    Seeker 1.0.0
     gfreezy <gfreezy@gmail.com>
     Tun to Shadowsockets proxy. https://github.com/gfreezy/seeker
     
