@@ -1,6 +1,6 @@
 [package]
 name = "seeker"
-version = "0.1.0"
+version = "1.0.0"
 authors = ["gfreezy <gfreezy@gmail.com>"]
 edition = "2018"
 
@@ -15,8 +15,8 @@ dnsserver = { path = "../dnsserver" }
 ssclient = { path = "../ssclient" }
 sysconfig = { path = "../sysconfig" }
 tun = { path = "../tun" }
-async-std = { git = "https://github.com/gfreezy/async-std", rev = "6d39151"}
-futures-preview = "0.3.0-alpha"
+async-std = { git = "https://github.com/gfreezy/async-std", rev = "96fe93b"}
+futures = "0.3.0"
 signal-hook = { version = "0.1.10", features = ["mio-support"] }
 async-trait = "0.1.14"
 hermesdns = { git = "https://github.com/gfreezy/hermes", rev = "516e863" }
