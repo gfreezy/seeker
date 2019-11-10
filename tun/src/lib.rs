@@ -13,7 +13,7 @@ use parking_lot::Mutex;
 use smoltcp::socket::{Socket, SocketHandle, SocketSet};
 use smoltcp::time::Instant;
 use smoltcp::wire::Ipv4Cidr;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::future::Future;
 use std::io;
 use std::io::Result;
@@ -49,23 +49,23 @@ impl Tun {
         to_terminate: Arc<AtomicBool>,
     ) {
         let tun = phy::TunSocket::new(tun_name.as_str());
-        let tun_name = tun.name().unwrap();
+        let tun_name = tun.name();
         if cfg!(target_os = "macos") {
             setup_ip(
-                &tun_name,
+                tun_name,
                 tun_ip.to_string().as_str(),
                 tun_cidr.to_string().as_str(),
             );
         } else {
             let new_ip = Ipv4Cidr::from_netmask(tun_ip.into(), tun_cidr.netmask()).unwrap();
             setup_ip(
-                &tun_name,
+                tun_name,
                 new_ip.to_string().as_str(),
                 tun_cidr.to_string().as_str(),
             );
         }
 
-        let device = PhonySocket::new(tun.mtu().unwrap());
+        let device = PhonySocket::new(tun.mtu());
         let ip_addrs = vec![tun_cidr.into()];
         let iface = InterfaceBuilder::new(device)
             .ip_addrs(ip_addrs)
@@ -101,35 +101,27 @@ impl Tun {
 
 pub struct TunListen;
 
-#[derive(Debug, Eq, PartialEq, Hash)]
+#[derive(Debug, PartialEq)]
 enum Handle {
     Tcp(SocketHandle),
     Udp(SocketHandle),
 }
 
 impl TunListen {
-    fn may_recv_tun_handles(mut_tun: &mut Tun) -> HashSet<Handle> {
-        mut_tun
+    fn may_recv_tun_handles(mut_tun: &mut Tun, handles: &mut Vec<Handle>) {
+        for s in mut_tun
             .sockets
-            .iter()
-            .filter_map(|s| match s {
-                Socket::Tcp(s) => {
-                    if s.may_recv() {
-                        Some(Handle::Tcp(s.handle()))
-                    } else {
-                        None
-                    }
-                }
-                Socket::Udp(s) => {
-                    if s.is_open() {
-                        Some(Handle::Udp(s.handle()))
-                    } else {
-                        None
-                    }
-                }
-                _ => unreachable!(),
-            })
-            .collect::<HashSet<_>>()
+            .iter() {
+            match s {
+                Socket::Tcp(s) if s.may_recv() => {
+                    handles.push(Handle::Tcp(s.handle()));
+                },
+                Socket::Udp(s) if s.is_open() => {
+                    handles.push(Handle::Udp(s.handle()));
+                },
+                _ => {}
+            }
+        }
     }
 }
 
@@ -138,10 +130,12 @@ impl Stream for TunListen {
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         debug!("TunListen.poll");
-        loop {
-            let mut guard = TUN.try_lock_for(Duration::from_secs(1)).unwrap();
-            let mut_tun = guard.as_mut().expect("no tun setup");
+        let mut guard = TUN.try_lock_for(Duration::from_secs(1)).unwrap();
+        let mut_tun = guard.as_mut().expect("no tun setup");
+        let mut before_handle = Vec::with_capacity(20);
+        let mut after_handle = Vec::with_capacity(20);
 
+        loop {
             if mut_tun.to_terminate.load(Ordering::Relaxed) {
                 return Poll::Ready(None);
             }
@@ -152,13 +146,13 @@ impl Stream for TunListen {
                 return Poll::Ready(Some(Ok(s)));
             }
 
-            let before_handles = TunListen::may_recv_tun_handles(mut_tun);
+            TunListen::may_recv_tun_handles(mut_tun, &mut before_handle);
 
             {
                 let mut lower = mut_tun.iface.device_mut().lower();
-                let mut buf = vec![0; mut_tun.tun.mtu().unwrap()];
+                let mut buf = vec![0; mut_tun.tun.mtu()];
                 let size = ready!(Pin::new(&mut mut_tun.tun).poll_read(cx, &mut buf)).unwrap();
-                debug!("tun poll_read size {}", size);
+                debug!("tun poll_read size {}, buf size: {}", size, buf.len());
                 lower.rx.enqueue_slice(&buf[..size]);
                 debug!("lower.rx size: {}", lower.rx.len());
             }
@@ -221,16 +215,18 @@ impl Stream for TunListen {
             debug!("TunListen.poll sockets.prune");
             mut_tun.sockets.prune();
 
-            let after_handles = TunListen::may_recv_tun_handles(mut_tun);
-            let new_sockets = after_handles
-                .difference(&before_handles)
-                .map(|h| match h {
-                    Handle::Tcp(h) => unsafe { TunSocket::new_tcp_socket(*h) },
-                    Handle::Udp(h) => unsafe { TunSocket::new_udp_socket(*h) },
-                })
-                .collect();
-
-            mut_tun.new_sockets = new_sockets;
+            TunListen::may_recv_tun_handles(mut_tun, &mut after_handle);
+            for handle in &after_handle {
+                if !before_handle.contains(handle) {
+                    let sock = match handle {
+                        Handle::Tcp(h) => unsafe { TunSocket::new_tcp_socket(*h) },
+                        Handle::Udp(h) => unsafe { TunSocket::new_udp_socket(*h) },
+                    };
+                    mut_tun.new_sockets.push(sock);
+                }
+            }
+            before_handle.clear();
+            after_handle.clear();
         }
     }
 }
@@ -297,9 +293,9 @@ impl Future for TunWrite {
     type Output = Result<()>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let mut guard = TUN.try_lock_for(Duration::from_secs(5)).unwrap();
+        let mut_tun = guard.as_mut().expect("no tun setup");
         loop {
-            let mut guard = TUN.try_lock_for(Duration::from_secs(5)).unwrap();
-            let mut_tun = guard.as_mut().expect("no tun setup");
             {
                 let mut lower = mut_tun.iface.device_mut().lower();
                 let buf = lower.tx.dequeue_one();

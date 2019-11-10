@@ -8,22 +8,27 @@ use std::task::{Context, Poll};
 mod sys;
 
 pub(crate) struct TunSocket {
+    mtu: usize,
+    name: String,
     watcher: Watcher<sys::TunSocket>,
 }
 
 impl TunSocket {
     pub fn new(name: &str) -> TunSocket {
+        let watcher = Watcher::new(sys::TunSocket::new(name).expect("TunSocket::new"));
         TunSocket {
-            watcher: Watcher::new(sys::TunSocket::new(name).expect("TunSocket::new")),
+            name: watcher.get_ref().name().expect("get name"),
+            mtu: watcher.get_ref().mtu().expect("get mut"),
+            watcher,
         }
     }
 
-    pub fn name(&self) -> io::Result<String> {
-        self.watcher.get_ref().name()
+    pub fn name(&self) -> &str {
+        &self.name
     }
 
-    pub fn mtu(&self) -> io::Result<usize> {
-        self.watcher.get_ref().mtu()
+    pub fn mtu(&self) -> usize {
+        self.mtu
     }
 }
 
