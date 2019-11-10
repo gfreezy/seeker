@@ -15,6 +15,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use sysconfig::DNSSetup;
+use tracing::{trace, trace_span};
+use tracing_futures::Instrument;
 use tracing_subscriber::{EnvFilter, FmtSubscriber};
 use tun::socket::TunSocket;
 use tun::Tun;
@@ -36,7 +38,7 @@ async fn handle_connection<T: Client + Clone + Send + Sync + 'static>(
             stream.next().await.transpose()
         })
         .await;
-        let socket = match socket {
+        let socket: TunSocket = match socket {
             Ok(Some(s)) => s,
             Ok(None) => break,
             Err(e) if e.kind() == ErrorKind::TimedOut => {
@@ -50,22 +52,39 @@ async fn handle_connection<T: Client + Clone + Send + Sync + 'static>(
         };
         let resolver_clone = resolver.clone();
         let client_clone = client.clone();
-        spawn(async move {
-            let remote_addr = socket.local_addr();
+        let remote_addr = socket.local_addr();
 
-            let host = resolver_clone
-                .lookup_host(&remote_addr.ip().to_string())
-                .await
-                .map(|s| Address::DomainNameAddress(s, remote_addr.port()))
-                .unwrap_or_else(|| Address::SocketAddress(remote_addr));
+        spawn(
+            async move {
+                let ip = remote_addr.ip().to_string();
+                let host = resolver_clone
+                    .lookup_host(&ip)
+                    .await
+                    .map(|s| Address::DomainNameAddress(s, remote_addr.port()))
+                    .unwrap_or_else(|| Address::SocketAddress(remote_addr));
 
-            match socket {
-                TunSocket::Tcp(socket) => client_clone.handle_tcp(socket, host).await,
-                TunSocket::Udp(socket) => {
-                    client_clone.handle_udp(socket, host).await
+                trace!(ip = ?ip, host = ?host, "lookup host");
+
+                match socket {
+                    TunSocket::Tcp(socket) => {
+                        let src_addr = socket.remote_addr();
+                        client_clone
+                            .handle_tcp(socket, host.clone())
+                            .instrument(
+                                trace_span!("handle tcp", src_addr = %src_addr, host = %host),
+                            )
+                            .await
+                    }
+                    TunSocket::Udp(socket) => {
+                        client_clone
+                            .handle_udp(socket, host.clone())
+                            .instrument(trace_span!("handle udp", host = %host))
+                            .await
+                    }
                 }
             }
-        });
+                .instrument(trace_span!("handle socket", socket = %remote_addr)),
+        );
     }
 }
 
