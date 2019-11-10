@@ -1042,6 +1042,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "pin-project"
+version = "0.4.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c5fce7042b4e4338a3f868e563fff394709c3ff62cf6908d407dd9e2caff96ed"
+dependencies = [
+ "pin-project-internal",
+]
+
+[[package]]
+name = "pin-project-internal"
+version = "0.4.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7644b4721cc27235f667e735da8732f5b781c442157315674c0cb7f28b4cabf3"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "pin-project-lite"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1259,6 +1279,7 @@ dependencies = [
  "sysconfig",
  "tracing",
  "tracing-core",
+ "tracing-futures",
  "tracing-subscriber",
  "tun",
 ]
@@ -1530,6 +1551,17 @@ checksum = "528c8ebaaa16cdac34795180b046c031775b0d56402704d98c096788f33d646a"
 dependencies = [
  "lazy_static",
  "spin",
+]
+
+[[package]]
+name = "tracing-futures"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "85a260ae9e7fdf7402955e761af889eb56203284295c0482b1fe33641cb948f0"
+dependencies = [
+ "futures-core-preview",
+ "pin-project",
+ "tracing",
 ]
 
 [[package]]

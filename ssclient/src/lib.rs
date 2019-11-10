@@ -20,9 +20,9 @@ use std::io::{Error, Result};
 use std::net::{IpAddr, SocketAddr};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tcp_io::{aead_decrypted_read, aead_encrypted_write};
-use tracing::debug;
+use tracing::trace;
 use tun::socket::TunUdpSocket;
 
 #[derive(Clone)]
@@ -114,7 +114,11 @@ impl SSClient {
         let mut buf = vec![0; MAX_PACKET_SIZE];
         let mut dst = BytesMut::with_capacity(MAX_PACKET_SIZE);
 
+        let now = Instant::now();
         let iv = send_iv(conn, self.srv_cfg.clone()).await?;
+        let duration = now.elapsed();
+        trace!(duration = ?duration, "send iv");
+
         let mut cipher = crypto::new_stream(cipher_type, key, &iv, CryptoMode::Encrypt);
 
         let mut addr_bytes = BytesMut::with_capacity(100);
@@ -122,8 +126,12 @@ impl SSClient {
         let mut offset = addr_bytes.len();
         buf[..offset].copy_from_slice(&addr_bytes);
         while !self.to_terminate.load(Ordering::Relaxed) {
+            let now = Instant::now();
             let size =
                 timeout(self.srv_cfg.read_timeout(), socket.read(&mut buf[offset..])).await?;
+            let duration = now.elapsed();
+            trace!(duration = ?duration, size = size, "read from tun socket");
+
             if size == 0 {
                 break;
             }
@@ -131,7 +139,11 @@ impl SSClient {
             dst.reserve(cipher.buffer_size(&buf[..offset + size]));
 
             cipher.update(&buf[..offset + size], &mut dst)?;
+            let now = Instant::now();
             timeout(self.srv_cfg.write_timeout(), conn.write_all(&dst)).await?;
+            let duration = now.elapsed();
+            trace!(duration = ?duration, size = dst.len(), "send to ss server");
+
             offset = 0;
         }
         Ok(())
@@ -147,21 +159,37 @@ impl SSClient {
         let key = self.srv_cfg.key();
         let mut buf = vec![0; MAX_PACKET_SIZE];
         let mut output = BytesMut::with_capacity(MAX_PACKET_SIZE);
+
+        let now = Instant::now();
         let iv = recv_iv(conn, self.srv_cfg.clone()).await?;
+        let duration = now.elapsed();
+        trace!(duration = ?duration, "recv iv");
+
         let mut cipher = crypto::new_stream(cipher_type, key, &iv, CryptoMode::Decrypt);
 
         while !self.to_terminate.load(Ordering::Relaxed) {
+            let now = Instant::now();
             let size = timeout(self.srv_cfg.read_timeout(), conn.read(&mut buf)).await?;
+            let duration = now.elapsed();
+            trace!(duration = ?duration, size = size, "read from ss server");
+
             let buffer_size = cipher.buffer_size(&buf[..size]);
             output.clear();
             output.reserve(buffer_size);
 
             if size > 0 {
                 cipher.update(&buf[..size], &mut output)?;
+                let now = Instant::now();
                 timeout(self.srv_cfg.write_timeout(), socket.write_all(&output)).await?;
+                let duration = now.elapsed();
+                trace!(duration = ?duration, size = output.len(), "write to tun socket");
             } else {
                 cipher.finalize(&mut output)?;
+                let now = Instant::now();
                 timeout(self.srv_cfg.write_timeout(), socket.write_all(&output)).await?;
+                let duration = now.elapsed();
+                trace!(duration = ?duration, size = output.len(), "close tun socket");
+
                 break;
             }
         }
@@ -179,7 +207,11 @@ impl SSClient {
             (&self.dns_server.0, self.dns_server.1),
         )
         .await?;
+        let now = Instant::now();
         let conn = timeout(self.srv_cfg.connect_timeout(), TcpStream::connect(ssserver)).await?;
+        let duration = now.elapsed();
+        trace!(duration = ?duration, addr = %ssserver, "TcpStream::connect");
+
         match self.srv_cfg.method().category() {
             CipherCategory::Stream => {
                 let send = self.handle_stream_send(&conn, socket.clone(), addr.clone());
@@ -234,28 +266,24 @@ impl SSClient {
         loop {
             encrypt_buf.clear();
             buf[..addr.serialized_len()].copy_from_slice(&addr.to_bytes());
+            let now = Instant::now();
             let (recv_from_tun_size, local_src) = tun_socket
                 .recv_from(&mut buf[addr.serialized_len()..])
                 .await?;
-            debug!("recv {} bytes from tun {}", recv_from_tun_size, &local_src);
+            let duration = now.elapsed();
             let encrypt_size = encrypt_payload(
                 cipher_type,
                 &key,
                 &buf[..addr.serialized_len() + recv_from_tun_size],
                 &mut encrypt_buf,
             )?;
-            debug!(
-                "encrypt {} bytes with {} to {} bytes",
-                addr.serialized_len() + recv_from_tun_size,
-                cipher_type,
-                encrypt_size
-            );
 
             let udp_socket = match udp_map.get(&local_src).cloned() {
                 Some(socket) => socket,
                 None => {
                     let new_udp = Arc::new(UdpSocket::bind("0.0.0.0:0").await?);
-                    debug!("new udp socket at {}", &new_udp.local_addr()?);
+                    let bind_addr = new_udp.local_addr()?;
+                    trace!(addr = %bind_addr, "bind new udp socket");
                     udp_map.insert(local_src, new_udp.clone());
 
                     let cloned_socket = tun_socket.clone();
@@ -266,36 +294,52 @@ impl SSClient {
                         let mut decrypt_buf = BytesMut::with_capacity(MAX_PACKET_SIZE);
                         loop {
                             decrypt_buf.clear();
+                            let now = Instant::now();
                             let (recv_from_ss_size, udp_ss_addr) =
                                 cloned_new_udp.recv_from(&mut recv_buf).await?;
-                            debug!("recv {} from ss server {}", recv_from_ss_size, &udp_ss_addr);
+                            let duration = now.elapsed();
+                            trace!(duration = ?duration, size = recv_from_ss_size, src_addr = %udp_ss_addr, local_udp_socket = ?bind_addr, "recv from ss server");
                             let decrypt_size = decrypt_payload(
                                 cipher_type,
                                 &key_cloned,
                                 &recv_buf[..recv_from_ss_size],
                                 &mut decrypt_buf,
                             )?;
-                            debug!(
+                            trace!(
                                 "decrypt {} bytes with {} to {} bytes",
-                                recv_from_ss_size, cipher_type, decrypt_size
+                                recv_from_ss_size,
+                                cipher_type,
+                                decrypt_size
                             );
                             let addr = Address::read_from(&mut decrypt_buf.as_ref())?;
+                            let now = Instant::now();
                             let send_local_size = cloned_socket
                                 .send_to(
                                     &decrypt_buf[addr.serialized_len()..decrypt_size],
                                     &local_src,
                                 )
                                 .await?;
-                            debug!("send {} bytes to local {}", send_local_size, &local_src);
+                            let duration = now.elapsed();
+                            trace!(duration = ?duration, size = send_local_size, dst_addr = %local_src, local_udp_socket = ?bind_addr, "send to tun socket");
                         }
                     });
                     new_udp
                 }
             };
+            let bind_addr = udp_socket.local_addr()?;
+            trace!(duration = ?duration, size = recv_from_tun_size, src_addr = %local_src, local_udp_socket = ?bind_addr, "recv from tun socket");
+            trace!(
+                "encrypt {} bytes with {} to {} bytes",
+                addr.serialized_len() + recv_from_tun_size,
+                cipher_type,
+                encrypt_size
+            );
+            let now = Instant::now();
             let send_ss_size = udp_socket
                 .send_to(&encrypt_buf[..encrypt_size], ssserver)
                 .await?;
-            debug!("send {} bytes to ss server {}", send_ss_size, &ssserver);
+            let duration = now.elapsed();
+            trace!(duration = ?duration, size = send_ss_size, dst_addr = %ssserver, local_udp_socket = ?bind_addr, "send to ss server");
         }
     }
 }
@@ -305,12 +349,10 @@ async fn send_iv(mut conn: &TcpStream, srv_cfg: Arc<ServerConfig>) -> Result<Byt
     let iv = match method.category() {
         CipherCategory::Stream => {
             let local_iv = method.gen_init_vec();
-            debug!("Going to send initialize vector: {:?}", local_iv);
             local_iv
         }
         CipherCategory::Aead => {
             let local_salt = method.gen_salt();
-            debug!("Going to send salt: {:?}", local_salt);
             local_salt
         }
     };
@@ -329,7 +371,6 @@ async fn recv_iv(mut conn: &TcpStream, srv_cfg: Arc<ServerConfig>) -> Result<Vec
 
     let mut iv = vec![0; iv_size];
     timeout(srv_cfg.read_timeout(), conn.read_exact(&mut iv)).await?;
-    debug!("Recv initialize vector: {:?}", &iv);
     Ok(iv)
 }
 
@@ -339,14 +380,18 @@ async fn resolve_domain<T: DnsClient>(
     domain: &str,
     t: Duration,
 ) -> Result<Option<IpAddr>> {
+    let now = Instant::now();
     let packet = timeout(t, resolver.send_query(domain, QueryType::A, server, true)).await?;
-    packet
+    let elapsed = now.elapsed();
+    let ip = packet
         .get_random_a()
         .map(|ip| {
             ip.parse::<IpAddr>()
                 .map_err(|e| io::Error::new(ErrorKind::Other, e))
         })
-        .transpose()
+        .transpose();
+    trace!(duration = ?elapsed, dns_server = ?server, domain, ip = ?ip, "resolve_domain");
+    ip
 }
 
 async fn get_remote_ssserver_addr(
