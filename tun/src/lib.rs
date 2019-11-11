@@ -109,16 +109,14 @@ enum Handle {
 
 impl TunListen {
     fn may_recv_tun_handles(mut_tun: &mut Tun, handles: &mut Vec<Handle>) {
-        for s in mut_tun
-            .sockets
-            .iter() {
+        for s in mut_tun.sockets.iter() {
             match s {
                 Socket::Tcp(s) if s.may_recv() => {
                     handles.push(Handle::Tcp(s.handle()));
-                },
+                }
                 Socket::Udp(s) if s.is_open() => {
                     handles.push(Handle::Udp(s.handle()));
-                },
+                }
                 _ => {}
             }
         }
