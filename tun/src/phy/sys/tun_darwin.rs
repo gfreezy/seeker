@@ -221,40 +221,13 @@ impl TunSocket {
 
 impl Read for TunSocket {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
-        let mut hdr = [0u8; 4];
-
-        let mut iov = [
-            iovec {
-                iov_base: hdr.as_mut_ptr() as _,
-                iov_len: hdr.len(),
-            },
-            iovec {
-                iov_base: buf.as_mut_ptr() as _,
-                iov_len: buf.len(),
-            },
-        ];
-
-        let mut msg_hdr = msghdr {
-            msg_name: null_mut(),
-            msg_namelen: 0,
-            msg_iov: &mut iov[0],
-            msg_iovlen: iov.len() as _,
-            msg_control: null_mut(),
-            msg_controllen: 0,
-            msg_flags: 0,
-        };
-
-        match unsafe { recvmsg(self.fd, &mut msg_hdr, 0) } {
-            -1 => Err(io::Error::last_os_error()),
-            0..=4 => Ok(0),
-            n => Ok((n - 4) as usize),
-        }
+        (&*self).read(buf)
     }
 }
 
 impl Write for TunSocket {
     fn write(&mut self, buf: &[u8]) -> Result<usize> {
-        self.af_write(buf, AF_INET as u8)
+        (&*self).write(buf)
     }
 
     fn flush(&mut self) -> Result<()> {
@@ -264,34 +237,38 @@ impl Write for TunSocket {
 
 impl Read for &TunSocket {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
-        let mut hdr = [0u8; 4];
+        fn read(fd: RawFd, buf: &mut [u8]) -> Result<usize> {
+            let mut hdr = [0u8; 4];
 
-        let mut iov = [
-            iovec {
-                iov_base: hdr.as_mut_ptr() as _,
-                iov_len: hdr.len(),
-            },
-            iovec {
-                iov_base: buf.as_mut_ptr() as _,
-                iov_len: buf.len(),
-            },
-        ];
+            let mut iov = [
+                iovec {
+                    iov_base: hdr.as_mut_ptr() as _,
+                    iov_len: hdr.len(),
+                },
+                iovec {
+                    iov_base: buf.as_mut_ptr() as _,
+                    iov_len: buf.len(),
+                },
+            ];
 
-        let mut msg_hdr = msghdr {
-            msg_name: null_mut(),
-            msg_namelen: 0,
-            msg_iov: &mut iov[0],
-            msg_iovlen: iov.len() as _,
-            msg_control: null_mut(),
-            msg_controllen: 0,
-            msg_flags: 0,
-        };
+            let mut msg_hdr = msghdr {
+                msg_name: null_mut(),
+                msg_namelen: 0,
+                msg_iov: &mut iov[0],
+                msg_iovlen: iov.len() as _,
+                msg_control: null_mut(),
+                msg_controllen: 0,
+                msg_flags: 0,
+            };
 
-        match unsafe { recvmsg(self.fd, &mut msg_hdr, 0) } {
-            -1 => Err(io::Error::last_os_error()),
-            0..=4 => Ok(0),
-            n => Ok((n - 4) as usize),
+            match unsafe { recvmsg(fd, &mut msg_hdr, 0) } {
+                -1 => Err(io::Error::last_os_error()),
+                0..=4 => Ok(0),
+                n => Ok((n - 4) as usize),
+            }
         }
+
+        read(self.fd, buf)
     }
 }
 
