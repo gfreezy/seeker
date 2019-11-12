@@ -348,12 +348,10 @@ async fn send_iv(mut conn: &TcpStream, srv_cfg: Arc<ServerConfig>) -> Result<Byt
     let method = srv_cfg.method();
     let iv = match method.category() {
         CipherCategory::Stream => {
-            let local_iv = method.gen_init_vec();
-            local_iv
+            method.gen_init_vec()
         }
         CipherCategory::Aead => {
-            let local_salt = method.gen_salt();
-            local_salt
+            method.gen_salt()
         }
     };
 
