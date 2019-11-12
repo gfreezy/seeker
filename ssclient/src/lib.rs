@@ -347,12 +347,8 @@ impl SSClient {
 async fn send_iv(mut conn: &TcpStream, srv_cfg: Arc<ServerConfig>) -> Result<Bytes> {
     let method = srv_cfg.method();
     let iv = match method.category() {
-        CipherCategory::Stream => {
-            method.gen_init_vec()
-        }
-        CipherCategory::Aead => {
-            method.gen_salt()
-        }
+        CipherCategory::Stream => method.gen_init_vec(),
+        CipherCategory::Aead => method.gen_salt(),
     };
 
     timeout(srv_cfg.write_timeout(), conn.write_all(&iv)).await?;
