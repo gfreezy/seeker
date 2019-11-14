@@ -315,11 +315,7 @@ impl Future for TunWrite {
                 match buf {
                     Some(buf) if buf.is_empty() => {}
                     Some(buf) => {
-                        debug!("lower.tx.dequeue_one, size: {}", buf.len());
-
-                        let size =
-                            ready!(Pin::new(&mut mut_tun.tun).poll_write(cx, buf.as_slice()))
-                                .unwrap();
+                        let size = ready!(Pin::new(&mut mut_tun.tun).poll_write(cx, &buf)).unwrap();
                         assert_eq!(size, buf.len());
                         debug!("write {} bytes to tun.", size);
                     }
@@ -361,15 +357,20 @@ mod tests {
 
             task::spawn(async move {
                 let mut stream = Tun::listen();
-                match stream.next().await {
-                    Some(Ok(TunSocket::Tcp(mut s))) => {
-                        assert_eq!(s.local_addr(), "10.0.0.2:80".parse::<SocketAddr>().unwrap());
-                        let mut buf = vec![0; 1024];
-                        let size = s.read(&mut buf).await.unwrap();
-                        assert_eq!(size, 5);
-                        assert_eq!(&buf[..size], "hello".as_bytes());
+                loop {
+                    match stream.next().await {
+                        Some(Ok(TunSocket::Tcp(mut s))) => {
+                            assert_eq!(
+                                s.local_addr(),
+                                "10.0.0.2:80".parse::<SocketAddr>().unwrap()
+                            );
+                            let mut buf = vec![0; 1024];
+                            let size = s.read(&mut buf).await.unwrap();
+                            assert_eq!(size, 5);
+                            assert_eq!(&buf[..size], "hello".as_bytes());
+                        }
+                        _ => panic!(),
                     }
-                    _ => panic!(),
                 }
             });
 
