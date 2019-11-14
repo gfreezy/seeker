@@ -429,14 +429,14 @@ mod tests {
         task::block_on(async {
             let dns_client = DnsNetworkClient::new(0).await;
             let cfg = Arc::new(ServerConfig::new(
-                ServerAddr::DomainName("localtest.me".to_string(), 7789),
+                ServerAddr::DomainName("local.allsunday.in".to_string(), 7789),
                 "pass".to_string(),
                 CipherType::ChaCha20Ietf,
-                Duration::from_secs(3),
-                Duration::from_secs(3),
-                Duration::from_secs(3),
+                Duration::from_secs(10),
+                Duration::from_secs(10),
+                Duration::from_secs(10),
             ));
-            let addr = get_remote_ssserver_addr(&dns_client, cfg, ("208.67.222.222", 53)).await;
+            let addr = get_remote_ssserver_addr(&dns_client, cfg, ("223.5.5.5", 53)).await;
             assert_eq!(addr.unwrap(), "127.0.0.1:7789".parse().unwrap());
         })
     }
