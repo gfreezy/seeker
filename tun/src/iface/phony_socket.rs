@@ -1,8 +1,8 @@
-use smoltcp::phy;
 use smoltcp::phy::{Device, DeviceCapabilities};
 use smoltcp::storage::RingBuffer;
 use smoltcp::time::Instant;
 use smoltcp::Result;
+use smoltcp::{phy, Error};
 use tracing::debug;
 
 const MAX_PACKETS: usize = 1024;
@@ -23,7 +23,7 @@ fn enqueue<'a>(
     Ok(buf)
 }
 
-fn deque<'a>(ring_buffer: &'a mut RingBuffer<'static, Vec<u8>>) -> Result<&'a mut Vec<u8>> {
+fn deque<'a>(ring_buffer: &'a mut RingBuffer<'static, Vec<u8>>) -> Option<&'a mut Vec<u8>> {
     //    NLL 目前没法支持这种类型的代码，只能写出这样来绕过 borrow checker
     //    loop {
     //        let buf = ring_buffer.dequeue_one()?;
@@ -42,11 +42,16 @@ fn deque<'a>(ring_buffer: &'a mut RingBuffer<'static, Vec<u8>>) -> Result<&'a mu
         });
         match buf {
             Ok(_) => {}
-            Err(smoltcp::Error::Checksum) => break,
-            Err(e) => return Err(e),
+            Err(Error::Checksum) => break,
+            Err(Error::Exhausted) => return None,
+            Err(_) => unreachable!(),
         }
     }
-    ring_buffer.dequeue_one()
+    match ring_buffer.dequeue_one() {
+        Ok(buf) => Some(buf),
+        Err(Error::Exhausted) => None,
+        Err(_) => unreachable!(),
+    }
 }
 
 impl PhonySocket {
@@ -65,26 +70,25 @@ impl PhonySocket {
     }
 
     pub fn vacate_tx(&mut self) -> Option<&mut Vec<u8>> {
-        deque(&mut self.tx).ok()
+        deque(&mut self.tx)
     }
 }
 
 impl<'a> Device<'a> for PhonySocket {
-    type RxToken = Token<'a>;
-    type TxToken = Token<'a>;
+    type RxToken = RxToken<'a>;
+    type TxToken = TxToken<'a>;
 
     fn receive(&'a mut self) -> Option<(Self::RxToken, Self::TxToken)> {
-        let rx = Token {
-            ring_buffer: &mut self.rx,
-        };
-        let tx = Token {
+        let buf = deque(&mut self.rx)?;
+        let rx = RxToken { buf };
+        let tx = TxToken {
             ring_buffer: &mut self.tx,
         };
         Some((rx, tx))
     }
 
     fn transmit(&'a mut self) -> Option<Self::TxToken> {
-        let tx = Token {
+        let tx = TxToken {
             ring_buffer: &mut self.tx,
         };
         Some(tx)
@@ -98,11 +102,16 @@ impl<'a> Device<'a> for PhonySocket {
 }
 
 #[doc(hidden)]
-pub struct Token<'a> {
+pub struct TxToken<'a> {
     ring_buffer: &'a mut RingBuffer<'static, Vec<u8>>,
 }
 
-impl<'a> phy::TxToken for Token<'a> {
+#[doc(hidden)]
+pub struct RxToken<'a> {
+    buf: &'a mut [u8],
+}
+
+impl<'a> phy::TxToken for TxToken<'a> {
     fn consume<R, F>(self, _timestamp: Instant, len: usize, f: F) -> smoltcp::Result<R>
     where
         F: FnOnce(&mut [u8]) -> smoltcp::Result<R>,
@@ -115,12 +124,11 @@ impl<'a> phy::TxToken for Token<'a> {
     }
 }
 
-impl<'a> phy::RxToken for Token<'a> {
+impl<'a> phy::RxToken for RxToken<'a> {
     fn consume<R, F>(self, _timestamp: Instant, f: F) -> smoltcp::Result<R>
     where
         F: FnOnce(&mut [u8]) -> smoltcp::Result<R>,
     {
-        let buf = deque(self.ring_buffer)?;
-        f(buf)
+        f(self.buf)
     }
 }
