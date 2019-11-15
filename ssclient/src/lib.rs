@@ -426,6 +426,7 @@ mod tests {
 
     #[test]
     fn test_get_remote_ssserver_domain() {
+        let dns = std::env::var("DNS").unwrap_or_else(|_| "223.5.5.5".to_string());
         task::block_on(async {
             let dns_client = DnsNetworkClient::new(0).await;
             let cfg = Arc::new(ServerConfig::new(
@@ -436,7 +437,7 @@ mod tests {
                 Duration::from_secs(10),
                 Duration::from_secs(10),
             ));
-            let addr = get_remote_ssserver_addr(&dns_client, cfg, ("223.5.5.5", 53)).await;
+            let addr = get_remote_ssserver_addr(&dns_client, cfg, (&dns, 53)).await;
             assert_eq!(addr.unwrap(), "127.0.0.1:7789".parse().unwrap());
         })
     }
