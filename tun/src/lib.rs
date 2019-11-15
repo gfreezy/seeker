@@ -1,21 +1,5 @@
-pub mod iface;
-pub mod phy;
-
-#[macro_use]
-pub mod socket;
-
-use crate::socket::TunSocket;
-use futures::{ready, AsyncRead, AsyncWrite, Stream};
-use iface::ethernet::{Interface, InterfaceBuilder};
-use iface::phony_socket::PhonySocket;
-use lazy_static::lazy_static;
-use parking_lot::Mutex;
-use smoltcp::socket::{Socket, SocketHandle, SocketSet};
-use smoltcp::time::Instant;
-use smoltcp::wire::Ipv4Cidr;
 use std::collections::HashMap;
 use std::future::Future;
-use std::io;
 use std::io::Result;
 use std::net::Ipv4Addr;
 use std::pin::Pin;
@@ -23,8 +7,26 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::task::{Context, Poll, Waker};
 use std::time::Duration;
-use sysconfig::setup_ip;
+
+use futures::{ready, AsyncRead, AsyncWrite, Stream};
+use parking_lot::Mutex;
+use smoltcp::socket::{Socket, SocketHandle, SocketSet};
+use smoltcp::time::Instant;
+use smoltcp::wire::Ipv4Cidr;
 use tracing::{debug, error};
+
+use iface::ethernet::{Interface, InterfaceBuilder};
+use iface::phony_socket::PhonySocket;
+use lazy_static::lazy_static;
+use sysconfig::setup_ip;
+
+use crate::socket::TunSocket;
+
+pub mod iface;
+pub mod phy;
+
+#[macro_use]
+pub mod socket;
 
 lazy_static! {
     static ref TUN: Mutex<Option<Tun>> = Mutex::new(None);
@@ -130,8 +132,9 @@ impl Stream for TunListen {
         debug!("TunListen.poll");
         let mut guard = TUN.try_lock_for(Duration::from_secs(1)).unwrap();
         let mut_tun = guard.as_mut().expect("no tun setup");
-        let mut before_handle = Vec::with_capacity(20);
-        let mut after_handle = Vec::with_capacity(20);
+        let size = mut_tun.sockets.iter().count();
+        let mut before_handle = Vec::with_capacity(size);
+        let mut after_handle = Vec::with_capacity(size);
 
         loop {
             if mut_tun.to_terminate.load(Ordering::Relaxed) {
@@ -147,12 +150,27 @@ impl Stream for TunListen {
             TunListen::may_recv_tun_handles(mut_tun, &mut before_handle);
 
             {
-                let mut lower = mut_tun.iface.device_mut().lower();
-                let mut buf = vec![0; mut_tun.tun.mtu()];
-                let size = ready!(Pin::new(&mut mut_tun.tun).poll_read(cx, &mut buf)).unwrap();
-                debug!("tun poll_read size {}, buf size: {}", size, buf.len());
-                lower.rx.enqueue_slice(&buf[..size]);
-                debug!("lower.rx size: {}", lower.rx.len());
+                let phony_socket = mut_tun.iface.device_mut();
+                let mut total_size = 0;
+                while let Some(buf) = phony_socket.populate_rx() {
+                    let size = match Pin::new(&mut mut_tun.tun).poll_read(cx, buf) {
+                        Poll::Ready(Ok(size)) => {
+                            buf.truncate(size);
+                            size
+                        }
+                        Poll::Ready(Err(e)) => return Poll::Ready(Some(Err(e))),
+                        Poll::Pending => {
+                            buf.clear();
+                            if total_size > 0 {
+                                break;
+                            } else {
+                                return Poll::Pending;
+                            }
+                        }
+                    };
+                    debug!("tun poll_read size {}, buf size: {}", size, buf.len());
+                    total_size += size;
+                }
             }
 
             match mut_tun
@@ -232,22 +250,15 @@ impl Stream for TunListen {
 pub struct TunWrite;
 
 impl TunWrite {
-    fn poll_write_sockets_to_phoney_socket(
-        cx: &mut Context<'_>,
-        tun: &mut Tun,
-    ) -> Poll<Result<()>> {
+    fn poll_write_sockets_to_phoney_socket(cx: &mut Context<'_>, tun: &mut Tun) -> Result<bool> {
         let processed_any = match tun.iface.poll_write(&mut tun.sockets, Instant::now()) {
-            Ok(processed) => {
-                debug!("tun.iface.poll_write successfully");
-                processed
-            }
+            Ok(any) => any,
+            Err(smoltcp::Error::Malformed) | Err(smoltcp::Error::Dropped) => true,
             Err(e) => {
-                error!("poll_read error: {}, poll again.", e);
-                return Poll::Ready(Ok(()));
+                error!("poll_write error: {}, poll again", e);
+                true
             }
         };
-
-        debug!("TunWrite processed_any: {}", processed_any);
 
         for socket in tun.sockets.iter_mut() {
             match &*socket {
@@ -281,9 +292,8 @@ impl TunWrite {
         if !processed_any {
             debug!("TunWrite NotReady");
             tun.tun_write_task = Some(cx.waker().clone());
-            return Poll::Pending;
         }
-        Poll::Ready(Ok(()))
+        Ok(processed_any)
     }
 }
 
@@ -291,42 +301,30 @@ impl Future for TunWrite {
     type Output = Result<()>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let mut guard = TUN.try_lock_for(Duration::from_secs(5)).unwrap();
-        let mut_tun = guard.as_mut().expect("no tun setup");
         loop {
-            {
-                let mut lower = mut_tun.iface.device_mut().lower();
-                let buf = lower.tx.dequeue_one();
-                match buf {
-                    Ok(buf) => {
-                        debug!("lower.tx.dequeue_one, size: {}", buf.len());
-
-                        let size =
-                            ready!(Pin::new(&mut mut_tun.tun).poll_write(cx, buf.as_slice()))
-                                .unwrap();
-                        assert_eq!(size, buf.len());
-                        debug!("write {} bytes to tun.", size);
-                        continue;
-                    }
-                    Err(smoltcp::Error::Exhausted) => {}
-                    Err(err) => {
-                        return Poll::Ready(Err(io::Error::new(
-                            io::ErrorKind::Other,
-                            err.to_string(),
-                        )))
-                    }
-                }
-            }
+            let mut guard = TUN.try_lock_for(Duration::from_secs(5)).unwrap();
+            let mut_tun = guard.as_mut().expect("no tun setup");
 
             if mut_tun.to_terminate.load(Ordering::Relaxed) {
                 return Poll::Ready(Ok(()));
             }
 
-            let ret = TunWrite::poll_write_sockets_to_phoney_socket(cx, mut_tun);
-            match ret {
-                Poll::Pending => return Poll::Pending,
-                Poll::Ready(Err(e)) => return Poll::Ready(Err(e)),
-                _ => {}
+            loop {
+                let phony_socket = mut_tun.iface.device_mut();
+                let buf = phony_socket.vacate_tx();
+                match buf {
+                    Some(buf) if buf.is_empty() => {}
+                    Some(buf) => {
+                        let size = ready!(Pin::new(&mut mut_tun.tun).poll_write(cx, &buf)).unwrap();
+                        assert_eq!(size, buf.len());
+                        debug!("write {} bytes to tun.", size);
+                    }
+                    None => break,
+                }
+            }
+
+            if !TunWrite::poll_write_sockets_to_phoney_socket(cx, mut_tun)? {
+                return Poll::Pending;
             }
         }
     }
@@ -334,13 +332,15 @@ impl Future for TunWrite {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use std::net::SocketAddr;
+
     use async_std::io;
     use async_std::net::TcpStream;
     use async_std::task;
     use futures::{AsyncReadExt, AsyncWriteExt, StreamExt};
     use smoltcp::wire::Ipv4Address;
-    use std::net::SocketAddr;
+
+    use super::*;
 
     #[test]
     fn test_accept_tcp() {
@@ -357,22 +357,27 @@ mod tests {
 
             task::spawn(async move {
                 let mut stream = Tun::listen();
-                match stream.next().await {
-                    Some(Ok(TunSocket::Tcp(mut s))) => {
-                        assert_eq!(s.local_addr(), "10.0.0.2:80".parse::<SocketAddr>().unwrap());
-                        let mut buf = vec![0; 1024];
-                        let size = s.read(&mut buf).await.unwrap();
-                        assert_eq!(size, 5);
-                        assert_eq!(&buf[..size], "hello".as_bytes());
+                loop {
+                    match stream.next().await {
+                        Some(Ok(TunSocket::Tcp(mut s))) => {
+                            assert_eq!(
+                                s.local_addr(),
+                                "10.0.0.2:80".parse::<SocketAddr>().unwrap()
+                            );
+                            let mut buf = vec![0; 1024];
+                            let size = s.read(&mut buf).await.unwrap();
+                            assert_eq!(size, 5);
+                            assert_eq!(&buf[..size], "hello".as_bytes());
+                        }
+                        _ => panic!(),
                     }
-                    _ => panic!(),
                 }
             });
 
             task::sleep(Duration::from_secs(1)).await;
             let mut stream = io::timeout(Duration::from_secs(1), TcpStream::connect("10.0.0.2:80"))
                 .await
-                .unwrap();
+                .expect("connect 10.0.0.2:80");
             stream.write_all("hello".as_bytes()).await.unwrap();
 
             task::sleep(Duration::from_secs(1)).await;

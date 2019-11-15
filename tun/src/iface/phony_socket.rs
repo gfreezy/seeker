@@ -2,77 +2,92 @@ use smoltcp::phy;
 use smoltcp::phy::{Device, DeviceCapabilities};
 use smoltcp::storage::RingBuffer;
 use smoltcp::time::Instant;
-use std::sync::{Arc, Mutex, MutexGuard};
+use smoltcp::Result;
 use tracing::debug;
 
-const MAX_PACKETS: usize = 102_400;
+const MAX_PACKETS: usize = 1024;
 
 #[derive(Debug)]
 pub struct PhonySocket {
-    lower: Arc<Mutex<Lower>>,
     mtu: usize,
+    rx: RingBuffer<'static, Vec<u8>>,
+    tx: RingBuffer<'static, Vec<u8>>,
+}
+
+fn enqueue<'a>(
+    ring_buffer: &'a mut RingBuffer<'static, Vec<u8>>,
+    mtu: usize,
+) -> Result<&'a mut Vec<u8>> {
+    let buf = ring_buffer.enqueue_one()?;
+    buf.resize(mtu, 0);
+    Ok(buf)
+}
+
+fn deque<'a>(ring_buffer: &'a mut RingBuffer<'static, Vec<u8>>) -> Result<&'a mut Vec<u8>> {
+    //    NLL 目前没法支持这种类型的代码，只能写出这样来绕过 borrow checker
+    //    loop {
+    //        let buf = ring_buffer.dequeue_one()?;
+    //        if !buf.is_empty() {
+    //            return Some(buf);
+    //        }
+    //    }
+
+    loop {
+        let buf = ring_buffer.dequeue_one_with(|buf| {
+            if !buf.is_empty() {
+                Err(smoltcp::Error::Checksum)
+            } else {
+                Ok(buf)
+            }
+        });
+        match buf {
+            Ok(_) => {}
+            Err(smoltcp::Error::Checksum) => break,
+            Err(e) => return Err(e),
+        }
+    }
+    ring_buffer.dequeue_one()
 }
 
 impl PhonySocket {
     pub fn new(mtu: usize) -> Self {
+        let rx: Vec<_> = (0..MAX_PACKETS).map(|_| vec![0; mtu]).collect();
+        let tx: Vec<_> = (0..MAX_PACKETS).map(|_| vec![0; mtu]).collect();
         PhonySocket {
-            lower: Arc::new(Mutex::new(Lower::new(mtu))),
             mtu,
-        }
-    }
-
-    pub fn lower(&self) -> MutexGuard<Lower> {
-        self.lower.lock().unwrap()
-    }
-}
-
-#[derive(Debug)]
-pub struct Lower {
-    pub rx: RingBuffer<'static, u8>,
-    pub tx: RingBuffer<'static, Vec<u8>>,
-}
-
-impl Lower {
-    pub fn new(mtu: usize) -> Self {
-        let tx = {
-            let mut tx = Vec::with_capacity(MAX_PACKETS);
-            for _i in 0..MAX_PACKETS {
-                tx.push(vec![0; mtu])
-            }
-            tx
-        };
-        Lower {
-            rx: RingBuffer::new(vec![0; mtu * MAX_PACKETS]),
+            rx: RingBuffer::new(rx),
             tx: RingBuffer::new(tx),
         }
+    }
+
+    pub fn populate_rx(&mut self) -> Option<&mut Vec<u8>> {
+        enqueue(&mut self.rx, self.mtu).ok()
+    }
+
+    pub fn vacate_tx(&mut self) -> Option<&mut Vec<u8>> {
+        deque(&mut self.tx).ok()
     }
 }
 
 impl<'a> Device<'a> for PhonySocket {
-    type RxToken = RxToken;
-    type TxToken = TxToken;
+    type RxToken = Token<'a>;
+    type TxToken = Token<'a>;
 
     fn receive(&'a mut self) -> Option<(Self::RxToken, Self::TxToken)> {
-        let mut lower = self.lower.try_lock().unwrap();
-        if lower.rx.is_empty() {
-            return None;
-        }
-
-        let mut buf = vec![0; self.mtu];
-        let size = lower.rx.dequeue_slice(&mut buf);
-        debug!("dequeue {} bytes", size);
-        buf.truncate(size);
-        let rx = RxToken { buf };
-        let tx = TxToken {
-            lower: self.lower.clone(),
+        let rx = Token {
+            ring_buffer: &mut self.rx,
+        };
+        let tx = Token {
+            ring_buffer: &mut self.tx,
         };
         Some((rx, tx))
     }
 
     fn transmit(&'a mut self) -> Option<Self::TxToken> {
-        Some(TxToken {
-            lower: self.lower.clone(),
-        })
+        let tx = Token {
+            ring_buffer: &mut self.tx,
+        };
+        Some(tx)
     }
 
     fn capabilities(&self) -> DeviceCapabilities {
@@ -83,34 +98,29 @@ impl<'a> Device<'a> for PhonySocket {
 }
 
 #[doc(hidden)]
-pub struct RxToken {
-    buf: Vec<u8>,
+pub struct Token<'a> {
+    ring_buffer: &'a mut RingBuffer<'static, Vec<u8>>,
 }
 
-impl phy::RxToken for RxToken {
-    fn consume<R, F>(mut self, _timestamp: Instant, f: F) -> smoltcp::Result<R>
-    where
-        F: FnOnce(&mut [u8]) -> smoltcp::Result<R>,
-    {
-        f(&mut self.buf)
-    }
-}
-
-#[doc(hidden)]
-pub struct TxToken {
-    lower: Arc<Mutex<Lower>>,
-}
-
-impl phy::TxToken for TxToken {
+impl<'a> phy::TxToken for Token<'a> {
     fn consume<R, F>(self, _timestamp: Instant, len: usize, f: F) -> smoltcp::Result<R>
     where
         F: FnOnce(&mut [u8]) -> smoltcp::Result<R>,
     {
-        let mut lower = self.lower.try_lock().unwrap();
-        let buf = lower.tx.enqueue_one()?;
+        let buf = enqueue(self.ring_buffer, len)?;
         buf.resize(len, 0);
         let ret = f(buf);
         debug!("TxToken.consume {} bytes", len);
         ret
+    }
+}
+
+impl<'a> phy::RxToken for Token<'a> {
+    fn consume<R, F>(self, _timestamp: Instant, f: F) -> smoltcp::Result<R>
+    where
+        F: FnOnce(&mut [u8]) -> smoltcp::Result<R>,
+    {
+        let buf = deque(self.ring_buffer)?;
+        f(buf)
     }
 }

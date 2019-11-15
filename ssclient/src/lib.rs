@@ -347,14 +347,8 @@ impl SSClient {
 async fn send_iv(mut conn: &TcpStream, srv_cfg: Arc<ServerConfig>) -> Result<Bytes> {
     let method = srv_cfg.method();
     let iv = match method.category() {
-        CipherCategory::Stream => {
-            let local_iv = method.gen_init_vec();
-            local_iv
-        }
-        CipherCategory::Aead => {
-            let local_salt = method.gen_salt();
-            local_salt
-        }
+        CipherCategory::Stream => method.gen_init_vec(),
+        CipherCategory::Aead => method.gen_salt(),
     };
 
     timeout(srv_cfg.write_timeout(), conn.write_all(&iv)).await?;
@@ -435,14 +429,14 @@ mod tests {
         task::block_on(async {
             let dns_client = DnsNetworkClient::new(0).await;
             let cfg = Arc::new(ServerConfig::new(
-                ServerAddr::DomainName("localtest.me".to_string(), 7789),
+                ServerAddr::DomainName("local.allsunday.in".to_string(), 7789),
                 "pass".to_string(),
                 CipherType::ChaCha20Ietf,
-                Duration::from_secs(3),
-                Duration::from_secs(3),
-                Duration::from_secs(3),
+                Duration::from_secs(10),
+                Duration::from_secs(10),
+                Duration::from_secs(10),
             ));
-            let addr = get_remote_ssserver_addr(&dns_client, cfg, ("208.67.222.222", 53)).await;
+            let addr = get_remote_ssserver_addr(&dns_client, cfg, ("223.5.5.5", 53)).await;
             assert_eq!(addr.unwrap(), "127.0.0.1:7789".parse().unwrap());
         })
     }
