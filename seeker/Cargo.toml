@@ -16,11 +16,10 @@ dnsserver = { path = "../dnsserver" }
 ssclient = { path = "../ssclient" }
 sysconfig = { path = "../sysconfig" }
 tun = { path = "../tun" }
-async-std = { git = "https://github.com/gfreezy/async-std", rev = "96fe93b"}
 futures = "0.3.0"
 signal-hook = { version = "0.1.10", features = ["mio-support"] }
 async-trait = "0.1.14"
-hermesdns = { git = "https://github.com/gfreezy/hermes", rev = "516e863" }
+hermesdns = { path = "../hermes/hermesdns" }
 
 [dependencies.smoltcp]
 git = "https://github.com/gfreezy/smoltcp"
@@ -39,3 +38,8 @@ version = "2"
 
 [dev-dependencies]
 libc = "0.2.65"
+
+[dependencies.async-std]
+git = "https://github.com/gfreezy/async-std"
+rev = "3b3f0f9f27e74ec6b7eb027d292ede25350b032d"
+features = ["unstable"]

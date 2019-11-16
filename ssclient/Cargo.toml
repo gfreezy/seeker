@@ -11,13 +11,12 @@ tracing = "0.1"
 libc = "0.2.62"
 bytes = "0.4.12"
 byteorder = "1.3.2"
-async-std = { git = "https://github.com/gfreezy/async-std", rev = "96fe93b"}
 futures = "0.3.0"
 lazy_static = "1.4.0"
 managed = "0.7.1"
 mio = "0.6.19"
 parking_lot = "0.9.0"
-hermesdns = { git = "https://github.com/gfreezy/hermes", rev = "516e863" }
+hermesdns = { path = "../hermes/hermesdns" }
 sysconfig = { path = "../sysconfig" }
 tun = { path = "../tun" }
 config = { path = "../config" }
@@ -34,3 +33,8 @@ features = [
 	"socket-tcp",
 	"phy-raw_socket",
 ]
+
+[dependencies.async-std]
+git = "https://github.com/gfreezy/async-std"
+rev = "3b3f0f9f27e74ec6b7eb027d292ede25350b032d"
+features = ["unstable"]
