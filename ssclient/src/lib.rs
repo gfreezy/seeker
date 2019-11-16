@@ -6,8 +6,9 @@ mod udp_io;
 use crate::udp_io::{decrypt_payload, encrypt_payload};
 use async_std::io::timeout;
 use async_std::net::{TcpStream, UdpSocket};
+use async_std::prelude::FutureExt;
+use async_std::task;
 use async_std::task::JoinHandle;
-use async_std::{future, task};
 use bytes::{Bytes, BytesMut};
 use config::{Address, ServerAddr, ServerConfig};
 use crypto::{CipherCategory, CryptoMode};
@@ -20,7 +21,7 @@ use std::io::{Error, Result};
 use std::net::{IpAddr, SocketAddr};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use tcp_io::{aead_decrypted_read, aead_encrypted_write};
 use tracing::trace;
 use tun::socket::TunUdpSocket;
@@ -40,8 +41,8 @@ impl SSClient {
         to_terminate: Arc<AtomicBool>,
     ) -> SSClient {
         SSClient {
-            srv_cfg: server_config,
-            resolver: Arc::new(DnsNetworkClient::new(0).await),
+            srv_cfg: server_config.clone(),
+            resolver: Arc::new(DnsNetworkClient::new(0, server_config.read_timeout()).await),
             dns_server,
             to_terminate,
         }
@@ -216,12 +217,12 @@ impl SSClient {
             CipherCategory::Stream => {
                 let send = self.handle_stream_send(&conn, socket.clone(), addr.clone());
                 let recv = self.handle_stream_recv(&conn, socket.clone(), addr);
-                let _ = future::join!(send, recv).await;
+                let _ = send.join(recv).await;
             }
             CipherCategory::Aead => {
                 let send = self.handle_aead_send(&conn, socket.clone(), addr.clone());
                 let recv = self.handle_aead_recv(&conn, socket.clone(), addr);
-                let _ = future::join!(send, recv).await;
+                let _ = send.join(recv).await;
             }
         }
         Ok(())
@@ -368,14 +369,15 @@ async fn recv_iv(mut conn: &TcpStream, srv_cfg: Arc<ServerConfig>) -> Result<Vec
     Ok(iv)
 }
 
-async fn resolve_domain<T: DnsClient>(
+pub async fn resolve_domain<T: DnsClient>(
     resolver: &T,
     server: (&str, u16),
     domain: &str,
-    t: Duration,
 ) -> Result<Option<IpAddr>> {
     let now = Instant::now();
-    let packet = timeout(t, resolver.send_query(domain, QueryType::A, server, true)).await?;
+    let packet = resolver
+        .send_query(domain, QueryType::A, server, true)
+        .await?;
     let elapsed = now.elapsed();
     let ip = packet
         .get_random_a()
@@ -396,13 +398,7 @@ async fn get_remote_ssserver_addr(
     let addr = match cfg.addr() {
         ServerAddr::SocketAddr(addr) => *addr,
         ServerAddr::DomainName(domain, port) => {
-            let ip = resolve_domain(
-                resolver,
-                (&dns_server.0, dns_server.1),
-                &domain,
-                cfg.read_timeout(),
-            )
-            .await?;
+            let ip = resolve_domain(resolver, (&dns_server.0, dns_server.1), &domain).await?;
             let ip = match ip {
                 Some(i) => i,
                 None => {
@@ -423,12 +419,13 @@ mod tests {
     use super::*;
     use async_std::task;
     use crypto::CipherType;
+    use std::time::Duration;
 
     #[test]
     fn test_get_remote_ssserver_domain() {
         let dns = std::env::var("DNS").unwrap_or_else(|_| "223.5.5.5".to_string());
         task::block_on(async {
-            let dns_client = DnsNetworkClient::new(0).await;
+            let dns_client = DnsNetworkClient::new(0, Duration::from_secs(3)).await;
             let cfg = Arc::new(ServerConfig::new(
                 ServerAddr::DomainName("local.allsunday.in".to_string(), 7789),
                 "pass".to_string(),
@@ -445,7 +442,7 @@ mod tests {
     #[test]
     fn test_get_remote_ssserver_ip() {
         task::block_on(async {
-            let dns_client = DnsNetworkClient::new(0).await;
+            let dns_client = DnsNetworkClient::new(0, Duration::from_secs(3)).await;
             let cfg = Arc::new(ServerConfig::new(
                 ServerAddr::SocketAddr("1.2.3.4:7789".parse().unwrap()),
                 "pass".to_string(),
