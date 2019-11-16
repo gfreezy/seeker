@@ -13,7 +13,7 @@ use parking_lot::Mutex;
 use smoltcp::socket::{Socket, SocketHandle, SocketSet};
 use smoltcp::time::Instant;
 use smoltcp::wire::Ipv4Cidr;
-use tracing::{debug, error};
+use tracing::{debug, error, trace};
 
 use iface::ethernet::{Interface, InterfaceBuilder};
 use iface::phony_socket::PhonySocket;
@@ -129,7 +129,6 @@ impl Stream for TunListen {
     type Item = Result<TunSocket>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        debug!("TunListen.poll");
         let mut guard = TUN.try_lock_for(Duration::from_secs(1)).unwrap();
         let mut_tun = guard.as_mut().expect("no tun setup");
         let size = mut_tun.sockets.iter().count();
@@ -141,9 +140,8 @@ impl Stream for TunListen {
                 return Poll::Ready(None);
             }
 
-            debug!("TunListen.poll start loop");
             if let Some(s) = mut_tun.new_sockets.pop() {
-                debug!("new socket: {}", s);
+                trace!("new socket accepted: {}", s);
                 return Poll::Ready(Some(Ok(s)));
             }
 
@@ -156,19 +154,20 @@ impl Stream for TunListen {
                     let size = match Pin::new(&mut mut_tun.tun).poll_read(cx, buf) {
                         Poll::Ready(Ok(size)) => {
                             buf.truncate(size);
+                            trace!("tun.poll_read size {}", size);
                             size
                         }
                         Poll::Ready(Err(e)) => return Poll::Ready(Some(Err(e))),
                         Poll::Pending => {
                             buf.clear();
                             if total_size > 0 {
+                                trace!("tun.poll_read will block, total read size: {}", total_size);
                                 break;
                             } else {
                                 return Poll::Pending;
                             }
                         }
                     };
-                    debug!("tun poll_read size {}, buf size: {}", size, buf.len());
                     total_size += size;
                 }
             }
@@ -177,46 +176,34 @@ impl Stream for TunListen {
                 .iface
                 .poll_read(&mut mut_tun.sockets, Instant::now())
             {
-                Ok(_) => {
-                    debug!("tun.iface.poll_read success");
-                }
+                Ok(_) => {}
                 Err(smoltcp::Error::Malformed) | Err(smoltcp::Error::Dropped) => {}
                 Err(e) => {
-                    error!("poll_read error: {}, poll again", e);
+                    error!("iface.poll_read error: {}, poll again", e);
                 }
             };
 
             if let Some(waker) = mut_tun.tun_write_task.take() {
-                debug!("notify TunWrite");
+                debug!("notify tun for write");
                 waker.wake();
             }
 
             for mut socket in mut_tun.sockets.iter_mut() {
                 match &mut *socket {
                     Socket::Tcp(ref mut s) => {
-                        //                                debug!("tcp socket {} state: {}.", s.handle(), s.state());
-                        if s.is_open() {
-                            // notify can recv or notify to be closed
-                            if s.can_recv() || !s.may_recv() {
-                                //                                        debug!("tcp socket {} can recv or close.", s.handle());
-                                if let Some(t) = mut_tun.socket_read_tasks.get_mut(&s.handle()) {
-                                    if let Some(waker) = t.take() {
-                                        debug!(
-                                            "notify tcp socket {} for read or close",
-                                            s.handle()
-                                        );
-                                        waker.wake();
-                                    }
+                        if s.is_open() && (s.can_recv() || !s.may_recv()) {
+                            if let Some(t) = mut_tun.socket_read_tasks.get_mut(&s.handle()) {
+                                if let Some(waker) = t.take() {
+                                    debug!("notify tcp socket {} for read", s.handle());
+                                    waker.wake();
                                 }
                             }
                         }
                     }
+
                     Socket::Udp(s) => {
-                        debug!("udp socket {}.", s.handle());
                         if s.is_open() && s.can_recv() {
-                            debug!("udp socket {} can recv.", s.handle());
                             if let Some(t) = mut_tun.socket_read_tasks.get_mut(&s.handle()) {
-                                debug!("udp socket {} get task {:?}.", s.handle(), &t);
                                 if let Some(waker) = t.take() {
                                     debug!("notify udp socket {} for read", s.handle());
                                     waker.wake();
@@ -228,7 +215,6 @@ impl Stream for TunListen {
                 }
             }
 
-            debug!("TunListen.poll sockets.prune");
             mut_tun.sockets.prune();
 
             TunListen::may_recv_tun_handles(mut_tun, &mut after_handle);
