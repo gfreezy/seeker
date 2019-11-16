@@ -1,0 +1,18 @@
+[package]
+name = "hermesdns"
+version = "0.1.0"
+authors = ["gfreezy <gfreezy@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+rand = "0.7.2"
+chrono = "0.4.9"
+async-trait = "0.1.13"
+futures = "0.3"
+
+[dependencies.async-std]
+git = "https://github.com/gfreezy/async-std"
+rev = "3b3f0f9f27e74ec6b7eb027d292ede25350b032d"
+features = ["unstable"]

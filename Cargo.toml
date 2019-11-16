@@ -1,2 +1,5 @@
 [workspace]
-members = ["seeker", "dnsserver", "ssclient", "sysconfig", "tun", "config", "crypto"]
+members = ["seeker", "dnsserver", "ssclient", "sysconfig", "tun", "config", "crypto", "hermes/hermesdns"]
+
+[profile.release]
+debug = true

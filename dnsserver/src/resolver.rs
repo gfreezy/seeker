@@ -2,6 +2,7 @@ use async_std::sync::Mutex;
 use async_trait::async_trait;
 use hermesdns::{DnsPacket, DnsRecord, DnsResolver, QueryType, TransientTtl};
 use sled::Db;
+use std::any::Any;
 use std::io::Result;
 use std::net::Ipv4Addr;
 use std::path::Path;
@@ -106,6 +107,10 @@ impl DnsResolver for RuleBasedDnsResolver {
     ) -> Result<DnsPacket> {
         let mut guard = self.inner.lock().await;
         guard.resolve(domain).await
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }
 

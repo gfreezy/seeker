@@ -1,16 +1,17 @@
 use async_std::io::copy;
 use async_std::net::{TcpStream, UdpSocket};
+use async_std::prelude::FutureExt;
+use async_std::task;
 use async_std::task::JoinHandle;
-use async_std::{future, task};
 use config::rule::{Action, ProxyRules};
-use config::{Address, Config};
+use config::{Address, Config, ServerConfig};
 use futures::io::Error;
-use hermesdns::{DnsClient, DnsNetworkClient, QueryType};
-use ssclient::SSClient;
+use hermesdns::DnsNetworkClient;
+use ssclient::{resolve_domain, SSClient};
 use std::collections::HashMap;
 use std::io::ErrorKind;
 use std::io::Result;
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::Instant;
@@ -42,9 +43,9 @@ struct DirectClient {
 }
 
 impl DirectClient {
-    pub async fn new(dns_server: (String, u16)) -> Self {
+    pub async fn new(server_config: Arc<ServerConfig>, dns_server: (String, u16)) -> Self {
         DirectClient {
-            resolver: DnsNetworkClient::new(0).await,
+            resolver: DnsNetworkClient::new(0, server_config.read_timeout()).await,
             dns_server,
         }
     }
@@ -53,17 +54,8 @@ impl DirectClient {
         (&self.dns_server.0, self.dns_server.1)
     }
 
-    async fn lookup_ip(&self, domain: &str) -> Result<Option<String>> {
-        let dns_server = self.dns_server();
-        let now = Instant::now();
-        let packet = self
-            .resolver
-            .send_query(domain, QueryType::A, dns_server, true)
-            .await?;
-        let ip = packet.get_random_a();
-        let duration = now.elapsed();
-        trace!(duration = ?duration, domain = domain, dns_server = ?dns_server, ip = ?ip, "lookup ip");
-        Ok(ip)
+    async fn resolve_domain(&self, domain: &str) -> Result<Option<IpAddr>> {
+        resolve_domain(&self.resolver, self.dns_server(), domain).await
     }
 }
 
@@ -73,7 +65,7 @@ impl Client for DirectClient {
         let sock_addr = match addr {
             Address::SocketAddress(addr) => addr,
             Address::DomainNameAddress(domain, port) => {
-                let ip = self.lookup_ip(&domain).await?;
+                let ip = self.resolve_domain(&domain).await?;
                 match ip {
                     None => {
                         return Err(Error::new(
@@ -81,7 +73,7 @@ impl Client for DirectClient {
                             format!("domain {} not found", &domain),
                         ))
                     }
-                    Some(ip) => SocketAddr::new(ip.parse().expect("not valid ip addr"), port),
+                    Some(ip) => SocketAddr::new(ip, port),
                 }
             }
         };
@@ -94,7 +86,7 @@ impl Client for DirectClient {
         let mut ref_conn2 = &conn;
         let a = copy(&mut socket_clone, &mut ref_conn);
         let b = copy(&mut ref_conn2, &mut socket);
-        let (ret_a, ret_b) = future::join!(a, b).await;
+        let (ret_a, ret_b) = a.join(b).await;
         ret_a?;
         ret_b?;
         Ok(())
@@ -105,7 +97,7 @@ impl Client for DirectClient {
         let sock_addr = match addr.clone() {
             Address::SocketAddress(addr) => addr,
             Address::DomainNameAddress(domain, port) => {
-                let ip = self.lookup_ip(&domain).await?;
+                let ip = self.resolve_domain(&domain).await?;
                 match ip {
                     None => {
                         return Err(Error::new(
@@ -113,7 +105,7 @@ impl Client for DirectClient {
                             format!("domain {} not found", &domain),
                         ))
                     }
-                    Some(ip) => SocketAddr::new(ip.parse().expect("not valid ip addr"), port),
+                    Some(ip) => SocketAddr::new(ip, port),
                 }
             }
         };
@@ -188,7 +180,7 @@ impl RuledClient {
             to_terminal,
         )
         .await;
-        let direct_client = DirectClient::new(dns_server_addr).await;
+        let direct_client = DirectClient::new(conf.server_config, dns_server_addr).await;
         RuledClient {
             rule: conf.rules.clone(),
             ssclient,

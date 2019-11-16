@@ -47,7 +47,7 @@ mod tests {
             .await;
             task::spawn(server.run_server());
             task::sleep(Duration::from_secs(1)).await;
-            let client = DnsNetworkClient::new(0).await;
+            let client = DnsNetworkClient::new(0, Duration::from_secs(3)).await;
             assert_eq!(
                 get_ip(&client, "baidu.com").await,
                 Some("10.0.0.1".to_string())
