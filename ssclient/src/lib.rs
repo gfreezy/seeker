@@ -1,7 +1,7 @@
+mod connection_pool;
+mod encrypted_stream;
 mod tcp_io;
 mod udp_io;
-// mod connection_pool;
-mod encrypted_stream;
 
 use std::collections::HashMap;
 use std::io;
@@ -29,6 +29,7 @@ use tun::socket::TunUdpSocket;
 use crate::encrypted_stream::{AeadEncryptedTcpStream, StreamEncryptedTcpStream};
 use crate::udp_io::{decrypt_payload, encrypt_payload};
 use encrypted_stream::EncryptedTcpStream;
+//use crate::connection_pool::Pool;
 
 const MAX_PACKET_SIZE: usize = 0x3FFF;
 
@@ -46,24 +47,43 @@ impl SSClient {
         dns_server: (String, u16),
         to_terminate: Arc<AtomicBool>,
     ) -> SSClient {
+        let resolver = Arc::new(DnsNetworkClient::new(0, server_config.read_timeout()).await);
+        let srv_cfg = server_config.clone();
+        //
+        //        let connector = from_fn(|| {
+        //            let ssserver = get_remote_ssserver_addr(
+        //                &resolver,
+        //                srv_cfg.clone(),
+        //                (&dns_server.0, dns_server.1),
+        //            )
+        //                .await?;
+        //
+        //            match srv_cfg.method().category() {
+        //                CipherCategory::Stream => {
+        //                    Box::new(StreamEncryptedTcpStream::new(srv_cfg.clone(), ssserver).await?)
+        //                }
+        //                CipherCategory::Aead => {
+        //                    Box::new(AeadEncryptedTcpStream::new(srv_cfg.clone(), ssserver).await?)
+        //                }
+        //            }
+        //        });
+
         SSClient {
             srv_cfg: server_config.clone(),
-            resolver: Arc::new(DnsNetworkClient::new(0, server_config.read_timeout()).await),
+            resolver,
             dns_server,
             to_terminate,
         }
     }
 
     async fn handle_encrypted_tcp_stream<
-        'a,
-        'b: 'a,
         T: AsyncRead + AsyncWrite + Clone + Unpin,
-        S: EncryptedTcpStream<'a, 'b> + 'b,
+        S: EncryptedTcpStream,
     >(
         &self,
         mut socket: T,
         addr: Address,
-        conn: &'b S,
+        conn: &S,
     ) -> Result<()> {
         let conn1 = conn;
         let conn2 = conn;
