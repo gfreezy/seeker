@@ -69,6 +69,22 @@ rules:
   - 'MATCH,DIRECT'
 ```
 
+## 代理局域网内其他机器
+1. 打开 `gateway_mode`。`gateway_mode` 开启后， `dns_server` 会自动覆盖为 `0.0.0.0:53`
+
+    ```yaml
+    gateway_mode: true
+    ```
+
+2. 查看本地 IP
+
+    ```shell script
+    ifconfig
+    ```
+
+3. 打开希望走代理的手机或者电脑的网络设置，将 **DNS** 与 **网关** 修改为步骤2获取到的 IP
+
+
 ## 重置 DNS 分配
 
 ```bash
