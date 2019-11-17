@@ -32,8 +32,10 @@ impl AeadEncryptedTcpStream {
     }
 }
 
-impl<'a, 'b: 'a> EncryptedTcpStream<'a, 'b> for AeadEncryptedTcpStream {
-    fn get_writer(&'b self) -> BoxFuture<'b, Result<Box<dyn EncryptedWriter<'a> + 'a + Send>>> {
+impl EncryptedTcpStream for AeadEncryptedTcpStream {
+    fn get_writer<'a, 'b: 'a>(
+        &'b self,
+    ) -> BoxFuture<'b, Result<Box<dyn EncryptedWriter<'a> + 'a + Send>>> {
         // We need to send iv first, then we can read the iv from ss server.
         async move {
             let writer = AeadEncryptedWriter::new(self.srv_cfg.clone(), &self.conn).await?;
@@ -43,7 +45,9 @@ impl<'a, 'b: 'a> EncryptedTcpStream<'a, 'b> for AeadEncryptedTcpStream {
             .boxed()
     }
 
-    fn get_reader(&'b self) -> BoxFuture<'b, Result<Box<dyn EncryptedReader<'a> + 'a + Send>>> {
+    fn get_reader<'a, 'b: 'a>(
+        &'b self,
+    ) -> BoxFuture<'b, Result<Box<dyn EncryptedReader<'a> + 'a + Send>>> {
         // We need to send iv first, then we can read the iv from ss server.
         async move {
             let reader = AeadEncryptedReader::new(self.srv_cfg.clone(), &self.conn).await?;

@@ -12,10 +12,14 @@ pub(crate) trait EncryptedWriter<'a> {
     async fn send_all(&mut self, buf: &[u8]) -> Result<()>;
 }
 
-pub(crate) trait EncryptedTcpStream<'a, 'b: 'a> {
-    fn get_writer(&'b self) -> BoxFuture<'b, Result<Box<dyn EncryptedWriter<'a> + 'a + Send>>>;
+pub(crate) trait EncryptedTcpStream {
+    fn get_writer<'a, 'b: 'a>(
+        &'b self,
+    ) -> BoxFuture<'b, Result<Box<dyn EncryptedWriter<'a> + 'a + Send>>>;
 
-    fn get_reader(&'b self) -> BoxFuture<'b, Result<Box<dyn EncryptedReader<'a> + 'a + Send>>>;
+    fn get_reader<'a, 'b: 'a>(
+        &'b self,
+    ) -> BoxFuture<'b, Result<Box<dyn EncryptedReader<'a> + 'a + Send>>>;
 }
 
 mod aead_encrypt;
