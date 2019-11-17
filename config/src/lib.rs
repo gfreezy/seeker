@@ -24,6 +24,7 @@ pub struct Config {
     pub tun_cidr: Ipv4Cidr,
     pub rules: ProxyRules,
     pub dns_listen: String,
+    pub gateway_mode: bool,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -54,6 +55,7 @@ struct YamlConfig {
     tun_cidr: String,
     rules: Vec<String>,
     dns_listen: String,
+    gateway_mode: bool,
 }
 
 impl Config {
@@ -84,6 +86,7 @@ impl Config {
                     .collect(),
             ),
             dns_listen: conf.dns_listen,
+            gateway_mode: conf.gateway_mode,
         }
     }
 }

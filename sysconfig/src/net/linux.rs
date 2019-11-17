@@ -1,3 +1,4 @@
+use crate::net::run_cmd;
 use std::fs::OpenOptions;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::process::Command;
@@ -42,26 +43,6 @@ impl Drop for DNSSetup {
 }
 
 pub fn setup_ip(tun_name: &str, ip: &str, _cidr: &str) {
-    let output = Command::new("ip")
-        .args(&["addr", "add", ip, "dev", tun_name])
-        .output()
-        .expect("run ip addr");
-    if !output.status.success() {
-        panic!(
-            "stdout: {}\nstderr: {}",
-            std::str::from_utf8(&output.stdout).expect("utf8"),
-            std::str::from_utf8(&output.stderr).expect("utf8")
-        );
-    }
-    let output = Command::new("ip")
-        .args(&["link", "set", tun_name, "up"])
-        .output()
-        .expect("run ip addr");
-    if !output.status.success() {
-        panic!(
-            "stdout: {}\nstderr: {}",
-            std::str::from_utf8(&output.stdout).expect("utf8"),
-            std::str::from_utf8(&output.stderr).expect("utf8")
-        );
-    }
+    let _ = run_cmd("ip", &["addr", "add", ip, "dev", tun_name]);
+    let _ = run_cmd("ip", &["link", "set", tun_name, "up"]);
 }
