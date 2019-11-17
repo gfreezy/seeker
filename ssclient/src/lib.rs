@@ -13,12 +13,12 @@ use std::time::Instant;
 
 use async_std::io::timeout;
 use async_std::net::{TcpStream, UdpSocket};
-use async_std::prelude::FutureExt;
+use async_std::prelude::FutureExt as _;
 use async_std::task;
 use async_std::task::JoinHandle;
 use bytes::{Bytes, BytesMut};
 use futures::io::ErrorKind;
-use futures::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use futures::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, FutureExt};
 use tracing::trace;
 
 use config::{Address, ServerAddr, ServerConfig};
@@ -26,10 +26,9 @@ use crypto::CipherCategory;
 use hermesdns::{DnsClient, DnsNetworkClient, QueryType};
 use tun::socket::TunUdpSocket;
 
+use crate::connection_pool::{EncryptedStremBox, Pool};
 use crate::encrypted_stream::{AeadEncryptedTcpStream, StreamEncryptedTcpStream};
 use crate::udp_io::{decrypt_payload, encrypt_payload};
-use encrypted_stream::EncryptedTcpStream;
-//use crate::connection_pool::Pool;
 
 const MAX_PACKET_SIZE: usize = 0x3FFF;
 
@@ -38,6 +37,7 @@ pub struct SSClient {
     srv_cfg: Arc<ServerConfig>,
     dns_server: (String, u16),
     resolver: Arc<DnsNetworkClient>,
+    pool: Pool,
     to_terminate: Arc<AtomicBool>,
 }
 
@@ -48,45 +48,62 @@ impl SSClient {
         to_terminate: Arc<AtomicBool>,
     ) -> SSClient {
         let resolver = Arc::new(DnsNetworkClient::new(0, server_config.read_timeout()).await);
-        let srv_cfg = server_config.clone();
-        //
-        //        let connector = from_fn(|| {
-        //            let ssserver = get_remote_ssserver_addr(
-        //                &resolver,
-        //                srv_cfg.clone(),
-        //                (&dns_server.0, dns_server.1),
-        //            )
-        //                .await?;
-        //
-        //            match srv_cfg.method().category() {
-        //                CipherCategory::Stream => {
-        //                    Box::new(StreamEncryptedTcpStream::new(srv_cfg.clone(), ssserver).await?)
-        //                }
-        //                CipherCategory::Aead => {
-        //                    Box::new(AeadEncryptedTcpStream::new(srv_cfg.clone(), ssserver).await?)
-        //                }
-        //            }
-        //        });
+        let srv_cfg_clone = server_config.clone();
+        let resolver_clone = resolver.clone();
+        let dns_server_clone = dns_server.clone();
+        let pool = Pool::new(
+            10,
+            Arc::new(move || {
+                let srv_cfg = srv_cfg_clone.clone();
+                let resolver = resolver_clone.clone();
+                let dns_server = dns_server_clone.clone();
 
+                async move {
+                    let ssserver = get_remote_ssserver_addr(
+                        &*resolver,
+                        srv_cfg.clone(),
+                        (&dns_server.0, dns_server.1),
+                    )
+                    .await?;
+
+                    let conn: EncryptedStremBox = match srv_cfg.method().category() {
+                        CipherCategory::Stream => Box::new(
+                            StreamEncryptedTcpStream::new(srv_cfg.clone(), ssserver).await?,
+                        ),
+                        CipherCategory::Aead => {
+                            Box::new(AeadEncryptedTcpStream::new(srv_cfg.clone(), ssserver).await?)
+                        }
+                    };
+                    Ok(conn)
+                }
+                    .boxed()
+            }),
+        );
+
+        let pool_clone = pool.clone();
+        let _ = task::spawn(async move {
+            pool_clone
+                .run_connection_pool()
+                .await
+                .expect("run connection pool");
+        });
         SSClient {
             srv_cfg: server_config.clone(),
             resolver,
             dns_server,
+            pool,
             to_terminate,
         }
     }
 
-    async fn handle_encrypted_tcp_stream<
-        T: AsyncRead + AsyncWrite + Clone + Unpin,
-        S: EncryptedTcpStream,
-    >(
+    async fn handle_encrypted_tcp_stream<T: AsyncRead + AsyncWrite + Clone + Unpin>(
         &self,
         mut socket: T,
         addr: Address,
-        conn: &S,
+        conn: EncryptedStremBox,
     ) -> Result<()> {
-        let conn1 = conn;
-        let conn2 = conn;
+        let conn1 = &conn;
+        let conn2 = &conn;
         let mut socket_clone = socket.clone();
 
         let send_task = async move {
@@ -138,25 +155,8 @@ impl SSClient {
         socket: T,
         addr: Address,
     ) -> Result<()> {
-        let ssserver = get_remote_ssserver_addr(
-            &*self.resolver,
-            self.srv_cfg.clone(),
-            (&self.dns_server.0, self.dns_server.1),
-        )
-        .await?;
-
-        match self.srv_cfg.method().category() {
-            CipherCategory::Stream => {
-                let conn = StreamEncryptedTcpStream::new(self.srv_cfg.clone(), ssserver).await?;
-                self.handle_encrypted_tcp_stream(socket, addr, &conn)
-                    .await?;
-            }
-            CipherCategory::Aead => {
-                let conn = AeadEncryptedTcpStream::new(self.srv_cfg.clone(), ssserver).await?;
-                self.handle_encrypted_tcp_stream(socket, addr, &conn)
-                    .await?;
-            }
-        }
+        let conn = self.pool.get_connection().await?;
+        self.handle_encrypted_tcp_stream(socket, addr, conn).await?;
         Ok(())
     }
 
