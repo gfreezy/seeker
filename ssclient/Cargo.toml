@@ -21,6 +21,7 @@ sysconfig = { path = "../sysconfig" }
 tun = { path = "../tun" }
 config = { path = "../config" }
 crypto = { path = "../crypto" }
+async-trait = "0.1.14"
 
 [dependencies.smoltcp]
 git = "https://github.com/gfreezy/smoltcp"
