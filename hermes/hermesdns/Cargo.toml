@@ -11,6 +11,7 @@ rand = "0.7.2"
 chrono = "0.4.9"
 async-trait = "0.1.13"
 futures = "0.3"
+tracing = "0.1"
 
 [dependencies.async-std]
 git = "https://github.com/gfreezy/async-std"

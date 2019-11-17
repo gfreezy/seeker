@@ -5,18 +5,19 @@ use std::io::{Error, ErrorKind, Result};
 use std::marker::{Send, Sync};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-
-use async_std::future;
-use async_std::io::timeout;
-use async_std::net::UdpSocket;
-use async_std::sync::{channel, Mutex, Receiver, Sender};
-use async_std::task;
-
-use async_trait::async_trait;
+use std::sync::Mutex;
 
 use crate::dns::buffer::{BytePacketBuffer, PacketBuffer};
 use crate::dns::protocol::{DnsPacket, DnsQuestion, QueryType};
+use async_std::future;
+use async_std::io::timeout;
+use async_std::net::UdpSocket;
+use async_std::prelude::FutureExt;
+use async_std::sync::{channel, Receiver, Sender};
+use async_std::task;
+use async_trait::async_trait;
 use std::time::Duration;
+use tracing::trace;
 
 #[async_trait]
 pub trait DnsClient {
@@ -39,12 +40,13 @@ pub trait DnsClient {
 /// in any order. For that reason, we fire off replies on the sending thread, but
 /// handle replies on a single thread. A channel is created for every response,
 /// and the caller will block on the channel until the a response is received.
+#[derive(Clone)]
 pub struct DnsNetworkClient {
-    total_sent: AtomicUsize,
-    total_failed: AtomicUsize,
+    total_sent: Arc<AtomicUsize>,
+    total_failed: Arc<AtomicUsize>,
 
     /// Counter for assigning packet ids
-    seq: AtomicUsize,
+    seq: Arc<AtomicUsize>,
     port: u16,
     timeout: Duration,
 
@@ -66,48 +68,56 @@ impl DnsNetworkClient {
     pub async fn new(bind_port: u16, timeout: Duration) -> DnsNetworkClient {
         let (sender, receiver) = channel(1);
         let client = DnsNetworkClient {
-            total_sent: AtomicUsize::new(0),
-            total_failed: AtomicUsize::new(0),
-            seq: AtomicUsize::new(0),
+            total_sent: Arc::new(AtomicUsize::new(0)),
+            total_failed: Arc::new(AtomicUsize::new(0)),
+            seq: Arc::new(AtomicUsize::new(0)),
             port: bind_port,
             timeout,
             sender,
             receiver,
         };
-        client.run().await.expect("run");
+        let c = client.clone();
+        let _ = task::spawn(async move {
+            let (_, _) = c.run().await.unwrap();
+        });
         client
     }
 
-    pub async fn run(&self) -> Result<()> {
-        let socket = Arc::new(UdpSocket::bind(format!("0.0.0.0:{}", self.port)).await?);
+    pub async fn run(&self) -> Result<((), ())> {
+        let addr = format!("0.0.0.0:{}", self.port);
+        let socket = Arc::new(UdpSocket::bind(addr).await?);
         let req_resp_map: Arc<Mutex<HashMap<u16, Sender<DnsPacket>>>> =
             Arc::new(Mutex::new(HashMap::with_capacity(10)));
 
         let req_resp_map2 = req_resp_map.clone();
         let socket2 = socket.clone();
-        let t1 = self.timeout;
         let t2 = self.timeout;
 
-        let _: task::JoinHandle<Result<()>> = task::spawn(async move {
+        let read_task = async move {
             // Read data into a buffer
             let mut res_buffer = BytePacketBuffer::new();
             loop {
                 res_buffer.seek(0)?;
-                let (size, _src) = timeout(t1, socket2.recv_from(&mut res_buffer.buf)).await?;
+                let (size, src) = socket2.recv_from(&mut res_buffer.buf).await?;
+                trace!(size = size, src = ?src, "recv dns packet from udp");
                 assert!(res_buffer.buf.len() >= size);
 
                 // Construct a DnsPacket from buffer, skipping the packet if parsing
                 // failed
                 if let Ok(packet) = DnsPacket::from_buffer(&mut res_buffer) {
-                    if let Some(resp) = req_resp_map2.lock().await.remove(&packet.header.id) {
+                    trace!(packet = ?&packet, "get map lock to pop query");
+                    let resp = { req_resp_map2.lock().unwrap().remove(&packet.header.id) };
+                    if let Some(resp) = resp {
                         resp.send(packet).await;
                     }
+                } else {
+                    eprintln!("invalid udp packet");
                 }
             }
-        });
+        };
 
         let req_receiver = self.receiver.clone();
-        let _: task::JoinHandle<Result<()>> = task::spawn(async move {
+        let write_task = async move {
             let mut req_buffer = BytePacketBuffer::new();
             while let Some(mut req) = req_receiver.recv().await {
                 let server = (req.server.0.as_str(), req.server.1);
@@ -119,14 +129,18 @@ impl DnsNetworkClient {
                 )
                 .await?;
                 assert_eq!(size, req_buffer.pos);
-                req_resp_map
-                    .lock()
-                    .await
-                    .insert(req.packet.header.id, req.resp);
+                trace!(query = ?&req.resp, "get map lock to insert query");
+                {
+                    req_resp_map
+                        .lock()
+                        .unwrap()
+                        .insert(req.packet.header.id, req.resp);
+                }
             }
             Ok(())
-        });
-        Ok(())
+        };
+
+        read_task.try_join(write_task).await
     }
 
     /// Send a DNS query using UDP transport
@@ -171,7 +185,7 @@ impl DnsNetworkClient {
             .await;
 
         match future::timeout(self.timeout, receiver.recv()).await {
-            Ok(Some(t)) => Ok(t),
+            Ok(Some(qr)) => Ok(qr),
             _ => {
                 let _ = self.total_failed.fetch_add(1, Ordering::Release);
                 Err(Error::new(ErrorKind::InvalidInput, "Lookup failed"))
@@ -202,6 +216,7 @@ impl DnsClient for DnsNetworkClient {
             return Ok(packet);
         }
 
+        eprint!("error resolve domain: {}", qname);
         Err(Error::new(ErrorKind::UnexpectedEof, "truncated message"))
     }
 }
