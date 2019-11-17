@@ -105,7 +105,8 @@ mod tests {
             Duration::from_secs(3),
             10,
         ));
-        let ssserver = "114.114.114.114:53".parse().unwrap();
+        let dns = std::env::var("DNS").unwrap_or_else(|_| "223.5.5.5".to_string());
+        let ssserver = format!("{}:53", dns).parse().unwrap();
 
         let ret: Result<()> = task::block_on(async {
             let pool = Pool::new(
