@@ -141,6 +141,8 @@ pub struct ServerConfig {
     write_timeout: Duration,
     /// Encryption key
     enc_key: Bytes,
+    /// Max idle connections
+    idle_connections: usize,
 }
 
 impl ServerConfig {
@@ -152,6 +154,7 @@ impl ServerConfig {
         connect_timeout: Duration,
         read_timeout: Duration,
         write_timeout: Duration,
+        idle_connections: usize,
     ) -> ServerConfig {
         let enc_key = method.bytes_to_key(pwd.as_bytes());
         trace!("Initialize config with pwd: {:?}, key: {:?}", pwd, enc_key);
@@ -163,6 +166,7 @@ impl ServerConfig {
             enc_key,
             read_timeout,
             write_timeout,
+            idle_connections,
         }
     }
 
@@ -175,6 +179,7 @@ impl ServerConfig {
             Duration::from_secs(30),
             Duration::from_secs(30),
             Duration::from_secs(30),
+            10,
         )
     }
 
@@ -223,5 +228,10 @@ impl ServerConfig {
     /// Get write timeout
     pub fn write_timeout(&self) -> Duration {
         self.write_timeout
+    }
+
+    /// Get idle connections
+    pub fn idle_connections(&self) -> usize {
+        self.idle_connections
     }
 }

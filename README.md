@@ -50,11 +50,14 @@ server_config:
   connect_timeout: 5
   read_timeout: 30
   write_timeout: 30
+  idle_connections: 10
 dns_start_ip: 10.0.0.10
 dns_server: 223.5.5.5:53
 tun_name: utun4
 tun_ip: 10.0.0.1
 tun_cidr: 10.0.0.0/16
+dns_listen: 0.0.0.0:53
+gateway_mode: true  // 允许本机作为网关
 
 rules:
   - 'DOMAIN,audio-ssl.itunes.apple.com,DIRECT'
@@ -65,6 +68,22 @@ rules:
   - 'DOMAIN-SUFFIX,apple.com,REJECT'
   - 'MATCH,DIRECT'
 ```
+
+## 代理局域网内其他机器
+1. 打开 `gateway_mode`。`gateway_mode` 开启后， `dns_server` 会自动覆盖为 `0.0.0.0:53`
+
+    ```yaml
+    gateway_mode: true
+    ```
+
+2. 查看本地 IP
+
+    ```shell script
+    ifconfig
+    ```
+
+3. 打开希望走代理的手机或者电脑的网络设置，将 **DNS** 与 **网关** 修改为步骤2获取到的 IP
+
 
 ## 重置 DNS 分配
 
