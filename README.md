@@ -50,6 +50,7 @@ server_config:
   connect_timeout: 5
   read_timeout: 30
   write_timeout: 30
+  idle_connections: 10
 dns_start_ip: 10.0.0.10
 dns_server: 223.5.5.5:53
 tun_name: utun4
