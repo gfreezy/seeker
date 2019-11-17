@@ -879,6 +879,18 @@ impl DnsPacket {
         None
     }
 
+    pub fn get_first_a(&self) -> Option<String> {
+        if !self.answers.is_empty() {
+            for a_record in &self.answers {
+                if let DnsRecord::A { addr, .. } = a_record {
+                    return Some(addr.to_string());
+                }
+            }
+        }
+
+        None
+    }
+
     pub fn get_unresolved_cnames(&self) -> Vec<DnsRecord> {
         let mut unresolved = Vec::new();
         for answer in &self.answers {

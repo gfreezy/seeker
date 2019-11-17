@@ -14,7 +14,7 @@ use std::io::ErrorKind;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-use sysconfig::DNSSetup;
+use sysconfig::{DNSSetup, IpForward};
 use tracing::{trace, trace_span};
 use tracing_futures::Instrument;
 use tracing_subscriber::{EnvFilter, FmtSubscriber};
@@ -27,7 +27,7 @@ async fn handle_connection<T: Client + Clone + Send + Sync + 'static>(
     term: Arc<AtomicBool>,
 ) {
     let (dns_server, resolver) =
-        create_dns_server("dns.db", "127.0.0.1:53".to_string(), config.dns_start_ip).await;
+        create_dns_server("dns.db", config.dns_listen.clone(), config.dns_start_ip).await;
     println!("Spawn DNS server");
     spawn(dns_server.run_server());
     spawn(Tun::bg_send());
@@ -119,7 +119,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let path = matches.value_of("config").unwrap();
     let uid = matches.value_of("user_id").map(|uid| uid.parse().unwrap());
-    let config = Config::from_config_file(path);
+    let mut config = Config::from_config_file(path);
 
     let term = Arc::new(AtomicBool::new(false));
     signal_hook::flag::register(signal_hook::SIGINT, Arc::clone(&term))?;
@@ -133,6 +133,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     );
 
     let _dns_setup = DNSSetup::new();
+    let _ip_forward = if config.gateway_mode {
+        // In gateway mode, dns server need be accessible from the network.
+        config.dns_listen = "0.0.0.0:53".to_string();
+        Some(IpForward::new())
+    } else {
+        None
+    };
 
     block_on(async {
         let client = RuledClient::new(config.clone(), uid, term.clone()).await;

@@ -141,8 +141,8 @@ mod tests {
     #[test]
     fn test_encrypt_and_decrypt_payload_aead() {
         let cipher_type = CipherType::Aes256Gcm;
-        let key = cipher_type.bytes_to_key("key".as_bytes());
-        let payload = "payload".as_bytes();
+        let key = cipher_type.bytes_to_key(b"key");
+        let payload = b"payload";
         let mut output = BytesMut::with_capacity(MAX_PACKET_SIZE);
         let mut output2 = BytesMut::with_capacity(MAX_PACKET_SIZE);
         let size = encrypt_payload_aead(cipher_type, &key, payload, &mut output).unwrap();
@@ -153,8 +153,8 @@ mod tests {
     #[test]
     fn test_encrypt_and_decrypt_payload_stream() {
         let cipher_type = CipherType::ChaCha20Ietf;
-        let key = cipher_type.bytes_to_key("key".as_bytes());
-        let payload = "payload".as_bytes();
+        let key = cipher_type.bytes_to_key(b"key");
+        let payload = b"payload";
         let mut output = BytesMut::with_capacity(MAX_PACKET_SIZE);
         let mut output2 = BytesMut::with_capacity(MAX_PACKET_SIZE);
         let size = encrypt_payload_stream(cipher_type, &key, payload, &mut output).unwrap();

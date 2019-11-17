@@ -249,9 +249,7 @@ impl TunWrite {
         for socket in tun.sockets.iter_mut() {
             match &*socket {
                 Socket::Tcp(s) => {
-                    //                    debug!("tcp socket {} state: {}.", s.handle(), s.state());
                     if s.can_send() {
-                        //                        debug!("tcp socket {} can send", s.handle());
                         if let Some(t) = tun.socket_write_tasks.get_mut(&s.handle()) {
                             if let Some(waker) = t.take() {
                                 debug!("notify tcp socket {} for write", s.handle());
