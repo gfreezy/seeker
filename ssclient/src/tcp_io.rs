@@ -64,18 +64,18 @@ mod tests {
     #[test]
     fn test_encrypt_and_decrypt_stream() {
         let cipher_type = CipherType::Aes256Gcm;
-        let key = cipher_type.bytes_to_key("keasdfsdfy".as_bytes());
+        let key = cipher_type.bytes_to_key(b"keasdfsdfy");
         let iv = cipher_type.gen_salt();
         let mut encrypter_cipher = crypto::new_aead_encryptor(cipher_type, &key, &iv);
         let mut decrypter_cipher = crypto::new_aead_decryptor(cipher_type, &key, &iv);
 
-        let buf = "hello".as_bytes();
+        let buf = b"hello";
         let mut dst = [0; MAX_PACKET_SIZE];
         let mut tmp_buf = [0; MAX_PACKET_SIZE];
         let mut output = [0; MAX_PACKET_SIZE];
 
         let size =
-            aead_encrypted_write(&mut encrypter_cipher, &buf, &mut dst, cipher_type).unwrap();
+            aead_encrypted_write(&mut encrypter_cipher, &buf[..], &mut dst, cipher_type).unwrap();
 
         task::block_on(async {
             let s = aead_decrypted_read(

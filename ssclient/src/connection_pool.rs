@@ -80,19 +80,17 @@ impl Pool {
 #[cfg(test)]
 mod tests {
     use std::io::Result;
-    use std::net::SocketAddr;
     use std::sync::Arc;
     use std::time::Duration;
 
     use async_std::task;
-    use futures::future::BoxFuture;
     use futures::FutureExt;
 
     use config::{ServerAddr, ServerConfig};
     use crypto::CipherType;
 
     use crate::connection_pool::Pool;
-    use crate::encrypted_stream::{EncryptedTcpStream, StreamEncryptedTcpStream};
+    use crate::encrypted_stream::StreamEncryptedTcpStream;
 
     use super::*;
 
@@ -105,6 +103,7 @@ mod tests {
             Duration::from_secs(3),
             Duration::from_secs(3),
             Duration::from_secs(3),
+            10,
         ));
         let ssserver = "114.114.114.114:53".parse().unwrap();
 
@@ -125,7 +124,7 @@ mod tests {
             task::spawn(async move {
                 pool_clone.run_connection_pool().await.unwrap();
             });
-            let conn = pool.get_connection().await?;
+            let _conn = pool.get_connection().await?;
             task::sleep(Duration::from_secs(1)).await;
             assert!(pool.size().await > 0);
             Ok(())
