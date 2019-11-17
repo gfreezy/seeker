@@ -105,7 +105,7 @@ mod tests {
             Duration::from_secs(3),
             10,
         ));
-        let dns = std::env::var("DNS").unwrap_or_else(|_| "223.5.5.5".to_string());
+        let dns = std::env::var("DNS").unwrap_or_else(|_| "114.114.114.114".to_string());
         let ssserver = format!("{}:53", dns).parse().unwrap();
 
         let ret: Result<()> = task::block_on(async {

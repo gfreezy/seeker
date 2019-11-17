@@ -274,10 +274,11 @@ pub mod tests {
     pub fn test_udp_client() {
         block_on(async {
             let client = DnsNetworkClient::new(31456, Duration::from_secs(3)).await;
+            let dns = std::env::var("DNS").unwrap_or_else(|_| "223.5.5.5".to_string());
 
             let res = timeout(
                 Duration::from_secs(3),
-                client.send_udp_query("google.com", QueryType::A, ("8.8.8.8", 53), true),
+                client.send_udp_query("google.com", QueryType::A, (&dns, 53), true),
             )
             .await
             .unwrap();
