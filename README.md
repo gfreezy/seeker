@@ -56,6 +56,7 @@ dns_server: 223.5.5.5:53
 tun_name: utun4
 tun_ip: 10.0.0.1
 tun_cidr: 10.0.0.0/16
+dns_listen: 127.0.0.1:53
 
 rules:
   - 'DOMAIN,audio-ssl.itunes.apple.com,DIRECT'

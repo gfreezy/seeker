@@ -23,6 +23,7 @@ pub struct Config {
     pub tun_ip: Ipv4Addr,
     pub tun_cidr: Ipv4Cidr,
     pub rules: ProxyRules,
+    pub dns_listen: String,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -52,6 +53,7 @@ struct YamlConfig {
     tun_ip: String,
     tun_cidr: String,
     rules: Vec<String>,
+    dns_listen: String,
 }
 
 impl Config {
@@ -81,6 +83,7 @@ impl Config {
                     .map(|rule| Rule::from_str(rule).unwrap())
                     .collect(),
             ),
+            dns_listen: conf.dns_listen,
         }
     }
 }
