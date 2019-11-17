@@ -39,6 +39,8 @@ struct YamlServerConfig {
     read_timeout: u64,
     /// Connection timeout
     write_timeout: u64,
+    /// Idle Connections
+    idle_connections: usize,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -64,6 +66,7 @@ impl Config {
             Duration::from_secs(yaml_server_config.connect_timeout),
             Duration::from_secs(yaml_server_config.read_timeout),
             Duration::from_secs(yaml_server_config.write_timeout),
+            yaml_server_config.idle_connections,
         );
         Config {
             server_config: Arc::new(server_config),

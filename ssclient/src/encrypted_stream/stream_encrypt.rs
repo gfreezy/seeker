@@ -191,6 +191,7 @@ mod tests {
             Duration::from_secs(3),
             Duration::from_secs(3),
             Duration::from_secs(3),
+            10,
         ));
         const DATA: &[u8] = b"hello,worldasdfklewjflksajdflkjcxlkjvaoiduf0923fhsdaklfnskadnvasjfp2efu98fsalhfksalfjaslkdjfpefuew9p8hfwaef";
         let addr = Address::DomainNameAddress("www.baidu.com".to_string(), 80);

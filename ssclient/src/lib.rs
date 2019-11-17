@@ -52,7 +52,7 @@ impl SSClient {
         let resolver_clone = resolver.clone();
         let dns_server_clone = dns_server.clone();
         let pool = Pool::new(
-            10,
+            srv_cfg_clone.idle_connections(),
             Arc::new(move || {
                 let srv_cfg = srv_cfg_clone.clone();
                 let resolver = resolver_clone.clone();
@@ -349,7 +349,7 @@ mod tests {
     #[test]
     fn test_get_remote_ssserver_domain() {
         let dns = std::env::var("DNS").unwrap_or_else(|_| "223.5.5.5".to_string());
-        let _ = task::block_on(async {
+        task::block_on(async {
             let dns_client = DnsNetworkClient::new(0, Duration::from_secs(3)).await;
             let cfg = Arc::new(ServerConfig::new(
                 ServerAddr::DomainName("local.allsunday.in".to_string(), 7789),
@@ -358,6 +358,7 @@ mod tests {
                 Duration::from_secs(10),
                 Duration::from_secs(10),
                 Duration::from_secs(10),
+                10,
             ));
             let addr = get_remote_ssserver_addr(&dns_client, cfg, (&dns, 53)).await;
             assert_eq!(addr.unwrap(), "127.0.0.1:7789".parse().unwrap());
@@ -366,7 +367,7 @@ mod tests {
 
     #[test]
     fn test_get_remote_ssserver_ip() {
-        let _ = task::block_on(async {
+        task::block_on(async {
             let dns_client = DnsNetworkClient::new(0, Duration::from_secs(3)).await;
             let cfg = Arc::new(ServerConfig::new(
                 ServerAddr::SocketAddr("1.2.3.4:7789".parse().unwrap()),
@@ -375,6 +376,7 @@ mod tests {
                 Duration::from_secs(3),
                 Duration::from_secs(3),
                 Duration::from_secs(3),
+                10,
             ));
             let addr = get_remote_ssserver_addr(&dns_client, cfg, ("208.67.222.222", 53)).await;
             assert_eq!(addr.unwrap(), "1.2.3.4:7789".parse().unwrap());
