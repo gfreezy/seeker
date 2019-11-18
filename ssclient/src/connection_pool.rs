@@ -6,7 +6,7 @@ use std::time::Instant;
 use async_std::sync::Mutex;
 use async_std::sync::{channel, Receiver, Sender};
 use futures::future::BoxFuture;
-use tracing::trace;
+use tracing::{error, trace};
 
 use crate::encrypted_stream::EncryptedTcpStream;
 
@@ -36,12 +36,18 @@ impl Pool {
         }
     }
 
-    pub(crate) async fn run_connection_pool(&self) -> Result<()> {
+    pub(crate) async fn run_connection_pool(&self) {
         let connections = self.connections.clone();
         loop {
             let len = connections.lock().await.len();
             for _ in 0..(self.max_idle - len) {
-                let conn = self.new_connection().await?;
+                let conn = match self.new_connection().await {
+                    Ok(conn) => conn,
+                    Err(e) => {
+                        error!(err = ?e, "new connection");
+                        continue;
+                    }
+                };
                 let mut conns = connections.lock().await;
                 conns.push_back(conn);
             }
@@ -49,7 +55,6 @@ impl Pool {
                 break;
             }
         }
-        Ok(())
     }
 
     async fn new_connection(&self) -> Result<EncryptedStremBox> {
@@ -123,7 +128,7 @@ mod tests {
             );
             let pool_clone = pool.clone();
             task::spawn(async move {
-                pool_clone.run_connection_pool().await.unwrap();
+                pool_clone.run_connection_pool().await;
             });
             let _conn = pool.get_connection().await?;
             task::sleep(Duration::from_secs(1)).await;

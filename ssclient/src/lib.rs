@@ -82,10 +82,7 @@ impl SSClient {
 
         let pool_clone = pool.clone();
         let _ = task::spawn(async move {
-            pool_clone
-                .run_connection_pool()
-                .await
-                .expect("run connection pool");
+            pool_clone.run_connection_pool().await;
         });
         SSClient {
             srv_cfg: server_config.clone(),
