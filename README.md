@@ -37,13 +37,17 @@ chmod +x seeker-osx  # or  chmod+x seeker-linux
 
 ## Config
 
-* `seeker` 直接使用的 clash 的规则。目前支持 `DOMAIN` `DOMAIN-KEYWORD` `DOMAIN-SUFFIX` `MATCH` 规则，
-不支持 `IP` 相关的规则。
+* `seeker` 直接使用的 clash 的规则。目前支持 `DOMAIN` `DOMAIN-KEYWORD` `DOMAIN-SUFFIX` `MATCH` 规则，不支持 `IP` 相关的规则。
+* 支持的 `Action`:
+    * `PROXY` 走代理 
+    * `DIRECT` 直连
+    * `REJECT` 拒绝 
+    * `PROBE` 默认尝试直连，如果超时，则走代理。由 `direct_connect_timeout` 控制超时时间
 * 确保系统没有重复的 `tun_name` 
 * 确保 TUN 的网络 `tun_ip` 和 `tun_cidr` 与当前所处网络环境不在一个网段
 
 ```yaml
-dns_start_ip: 10.0.0.10
+dns_start_ip: 10.0.0.10   
 dns_server: 223.5.5.5:53
 tun_name: utun4
 tun_ip: 10.0.0.1
