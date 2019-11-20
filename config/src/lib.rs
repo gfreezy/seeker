@@ -16,7 +16,7 @@ use std::time::Duration;
 
 #[derive(Debug, Clone)]
 pub struct Config {
-    pub server_config: Arc<ServerConfig>,
+    pub server_configs: Arc<Vec<ServerConfig>>,
     pub dns_start_ip: Ipv4Addr,
     pub dns_server: SocketAddr,
     pub tun_name: String,
@@ -25,10 +25,15 @@ pub struct Config {
     pub rules: ProxyRules,
     pub dns_listen: String,
     pub gateway_mode: bool,
+    pub probe_timeout: Duration,
+    pub direct_connect_timeout: Duration,
+    pub max_connect_errors: usize,
 }
 
 #[derive(Deserialize, Debug, Clone)]
 struct YamlServerConfig {
+    /// Server name
+    name: String,
     /// Server address
     addr: String,
     /// Encryption password (key)
@@ -47,7 +52,7 @@ struct YamlServerConfig {
 
 #[derive(Debug, Deserialize, Clone)]
 struct YamlConfig {
-    server_config: YamlServerConfig,
+    server_configs: Vec<YamlServerConfig>,
     dns_start_ip: String,
     dns_server: String,
     tun_name: String,
@@ -56,24 +61,33 @@ struct YamlConfig {
     rules: Vec<String>,
     dns_listen: String,
     gateway_mode: bool,
+    probe_timeout_ms: u64,
+    direct_connect_timeout: u64,
+    max_connect_errors: usize,
 }
 
 impl Config {
     pub fn from_config_file(path: &str) -> Self {
         let file = File::open(&path).unwrap();
         let conf: YamlConfig = serde_yaml::from_reader(&file).unwrap();
-        let yaml_server_config = conf.server_config;
-        let server_config = ServerConfig::new(
-            ServerAddr::from_str(&yaml_server_config.addr).unwrap(),
-            yaml_server_config.password,
-            CipherType::from_str(&yaml_server_config.method).unwrap(),
-            Duration::from_secs(yaml_server_config.connect_timeout),
-            Duration::from_secs(yaml_server_config.read_timeout),
-            Duration::from_secs(yaml_server_config.write_timeout),
-            yaml_server_config.idle_connections,
-        );
+        let yaml_server_configs = conf.server_configs;
+        let server_configs = yaml_server_configs
+            .into_iter()
+            .map(|yaml_server_config| {
+                ServerConfig::new(
+                    yaml_server_config.name,
+                    ServerAddr::from_str(&yaml_server_config.addr).unwrap(),
+                    yaml_server_config.password,
+                    CipherType::from_str(&yaml_server_config.method).unwrap(),
+                    Duration::from_secs(yaml_server_config.connect_timeout),
+                    Duration::from_secs(yaml_server_config.read_timeout),
+                    Duration::from_secs(yaml_server_config.write_timeout),
+                    yaml_server_config.idle_connections,
+                )
+            })
+            .collect();
         Config {
-            server_config: Arc::new(server_config),
+            server_configs: Arc::new(server_configs),
             dns_start_ip: conf.dns_start_ip.parse().unwrap(),
             dns_server: conf.dns_server.parse().unwrap(),
             tun_name: conf.tun_name,
@@ -87,6 +101,9 @@ impl Config {
             ),
             dns_listen: conf.dns_listen,
             gateway_mode: conf.gateway_mode,
+            probe_timeout: Duration::from_millis(conf.probe_timeout_ms),
+            direct_connect_timeout: Duration::from_secs(conf.direct_connect_timeout),
+            max_connect_errors: conf.max_connect_errors,
         }
     }
 }

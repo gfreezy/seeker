@@ -73,7 +73,13 @@ impl Pool {
         let size = self.size().await;
         trace!(size = size, "connection pool size");
         self.sender.send(()).await;
-        ret
+        match ret {
+            Ok(conn) => Ok(conn),
+            Err(e) => {
+                error!(err = ?e, "new connection");
+                Err(e)
+            }
+        }
     }
 
     #[allow(dead_code)]
