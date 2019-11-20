@@ -41,23 +41,35 @@ chmod +x seeker-osx  # or  chmod+x seeker-linux
 不支持 `IP` 相关的规则。
 * 确保系统没有重复的 `tun_name` 
 * 确保 TUN 的网络 `tun_ip` 和 `tun_cidr` 与当前所处网络环境不在一个网段
-   
+
 ```yaml
-server_config:
-  addr: domain-or-ip-to-ss-server:port
-  method: chacha20-ietf
-  password: password
-  connect_timeout: 5
-  read_timeout: 30
-  write_timeout: 30
-  idle_connections: 10
 dns_start_ip: 10.0.0.10
 dns_server: 223.5.5.5:53
 tun_name: utun4
 tun_ip: 10.0.0.1
 tun_cidr: 10.0.0.0/16
 dns_listen: 0.0.0.0:53
-gateway_mode: true  // 允许本机作为网关
+gateway_mode: true
+probe_timeout_ms: 10
+direct_connect_timeout: 1
+max_connect_errors: 20
+server_configs:
+  - name: server1
+    addr: domain-or-ip-to-ss-server:port
+    method: chacha20-ietf
+    password: password
+    connect_timeout: 5
+    read_timeout: 30
+    write_timeout: 30
+    idle_connections: 10
+  - name: server2
+    addr: domain-or-ip-to-ss-server:port
+    method: chacha20-ietf
+    password: password
+    connect_timeout: 5
+    read_timeout: 30
+    write_timeout: 30
+    idle_connections: 10
 
 rules:
   - 'DOMAIN,audio-ssl.itunes.apple.com,DIRECT'

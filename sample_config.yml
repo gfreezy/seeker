@@ -1,11 +1,3 @@
-server_config:
-  addr: domain-or-ip-to-ss-server:port
-  method: chacha20-ietf
-  password: password
-  connect_timeout: 5
-  read_timeout: 30
-  write_timeout: 30
-  idle_connections: 10
 dns_start_ip: 10.0.0.10
 dns_server: 223.5.5.5:53
 tun_name: utun4
@@ -13,6 +5,26 @@ tun_ip: 10.0.0.1
 tun_cidr: 10.0.0.0/16
 dns_listen: 0.0.0.0:53
 gateway_mode: true
+probe_timeout_ms: 10
+direct_connect_timeout: 1
+max_connect_errors: 20
+server_configs:
+  - name: server1
+    addr: domain-or-ip-to-ss-server:port
+    method: chacha20-ietf
+    password: password
+    connect_timeout: 5
+    read_timeout: 30
+    write_timeout: 30
+    idle_connections: 10
+  - name: server2
+    addr: domain-or-ip-to-ss-server:port
+    method: chacha20-ietf
+    password: password
+    connect_timeout: 5
+    read_timeout: 30
+    write_timeout: 30
+    idle_connections: 10
 
 rules:
   - 'DOMAIN,audio-ssl.itunes.apple.com,DIRECT'

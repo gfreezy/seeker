@@ -1,10 +1,11 @@
-use async_std::io::copy;
+use async_std::io;
 use async_std::net::{TcpStream, UdpSocket};
 use async_std::prelude::FutureExt;
+use async_std::sync::RwLock;
 use async_std::task;
 use async_std::task::JoinHandle;
 use config::rule::{Action, ProxyRules};
-use config::{Address, Config, ServerConfig};
+use config::{Address, Config};
 use futures::io::Error;
 use hermesdns::DnsNetworkClient;
 use ssclient::{resolve_domain, SSClient};
@@ -14,9 +15,9 @@ use std::io::Result;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use sysconfig::{list_user_proc_socks, SocketInfo};
-use tracing::{trace, trace_span};
+use tracing::{error, info, trace, trace_span};
 use tracing_futures::Instrument;
 use tun::socket::{TunTcpSocket, TunUdpSocket};
 
@@ -40,13 +41,21 @@ impl Client for SSClient {
 struct DirectClient {
     resolver: DnsNetworkClient,
     dns_server: (String, u16),
+    connect_timeout: Duration,
+    probe_timeout: Duration,
 }
 
 impl DirectClient {
-    pub async fn new(server_config: Arc<ServerConfig>, dns_server: (String, u16)) -> Self {
+    pub async fn new(
+        dns_server: (String, u16),
+        connect_timeout: Duration,
+        probe_timeout: Duration,
+    ) -> Self {
         DirectClient {
-            resolver: DnsNetworkClient::new(0, server_config.read_timeout()).await,
+            resolver: DnsNetworkClient::new(0, connect_timeout).await,
             dns_server,
+            connect_timeout,
+            probe_timeout,
         }
     }
 
@@ -57,11 +66,12 @@ impl DirectClient {
     async fn resolve_domain(&self, domain: &str) -> Result<Option<IpAddr>> {
         resolve_domain(&self.resolver, self.dns_server(), domain).await
     }
-}
 
-#[async_trait::async_trait]
-impl Client for DirectClient {
-    async fn handle_tcp(&self, mut socket: TunTcpSocket, addr: Address) -> Result<()> {
+    pub(crate) async fn probe_connectivity(&self, addr: Address) -> bool {
+        self.connect(addr, self.probe_timeout).await.is_ok()
+    }
+
+    async fn connect(&self, addr: Address, timeout: Duration) -> Result<TcpStream> {
         let sock_addr = match addr {
             Address::SocketAddress(addr) => addr,
             Address::DomainNameAddress(domain, port) => {
@@ -78,14 +88,22 @@ impl Client for DirectClient {
             }
         };
         let now = Instant::now();
-        let conn = TcpStream::connect(sock_addr).await?;
+        let conn = io::timeout(timeout, TcpStream::connect(sock_addr)).await?;
         let elapsed = now.elapsed();
         trace!(duration = ?elapsed, "TcpStream::connect");
+        return Ok(conn);
+    }
+}
+
+#[async_trait::async_trait]
+impl Client for DirectClient {
+    async fn handle_tcp(&self, mut socket: TunTcpSocket, addr: Address) -> Result<()> {
+        let conn = self.connect(addr, self.connect_timeout).await?;
         let mut socket_clone = socket.clone();
         let mut ref_conn = &conn;
         let mut ref_conn2 = &conn;
-        let a = copy(&mut socket_clone, &mut ref_conn);
-        let b = copy(&mut ref_conn2, &mut socket);
+        let a = io::copy(&mut socket_clone, &mut ref_conn);
+        let b = io::copy(&mut ref_conn2, &mut socket);
         let (ret_a, ret_b) = a.join(b).await;
         ret_a?;
         ret_b?;
@@ -163,54 +181,93 @@ impl Client for DirectClient {
 
 #[derive(Clone)]
 pub struct RuledClient {
+    conf: Config,
     rule: ProxyRules,
-    ssclient: SSClient,
+    ssclient: Arc<RwLock<SSClient>>,
     direct_client: Arc<DirectClient>,
     proxy_uid: Option<u32>,
+    term: Arc<AtomicBool>,
+}
+
+async fn new_ssclient(conf: &Config, conf_index: usize) -> SSClient {
+    let dns = conf.dns_server;
+    let dns_server_addr = (dns.ip().to_string(), dns.port());
+
+    SSClient::new(
+        Arc::new(
+            conf.server_configs
+                .get(conf_index)
+                .expect("no config at index")
+                .clone(),
+        ),
+        dns_server_addr.clone(),
+    )
+    .await
+}
+
+async fn new_direct_client(conf: &Config) -> DirectClient {
+    let dns = conf.dns_server;
+    let dns_server_addr = (dns.ip().to_string(), dns.port());
+    DirectClient::new(
+        dns_server_addr,
+        conf.direct_connect_timeout,
+        conf.probe_timeout,
+    )
+    .await
 }
 
 impl RuledClient {
-    pub async fn new(conf: Config, proxy_uid: Option<u32>, to_terminal: Arc<AtomicBool>) -> Self {
-        let dns = conf.dns_server;
-        let dns_server_addr = (dns.ip().to_string(), dns.port());
-
-        let ssclient = SSClient::new(
-            conf.server_config.clone(),
-            dns_server_addr.clone(),
-            to_terminal,
-        )
-        .await;
-        let direct_client = DirectClient::new(conf.server_config, dns_server_addr).await;
+    pub async fn new(conf: Config, proxy_uid: Option<u32>, to_terminate: Arc<AtomicBool>) -> Self {
         RuledClient {
+            term: to_terminate.clone(),
             rule: conf.rules.clone(),
-            ssclient,
-            direct_client: Arc::new(direct_client),
+            ssclient: Arc::new(RwLock::new(new_ssclient(&conf, 0).await)),
+            direct_client: Arc::new(new_direct_client(&conf).await),
+            conf: conf,
             proxy_uid,
         }
     }
-}
 
-#[async_trait::async_trait]
-impl Client for RuledClient {
-    async fn handle_tcp(&self, socket: TunTcpSocket, addr: Address) -> Result<()> {
+    async fn get_action_for_addr(&self, remote_addr: SocketAddr, addr: &Address) -> Result<Action> {
         let domain = match &addr {
             Address::SocketAddress(a) => a.to_string(),
             Address::DomainNameAddress(domain, _port) => domain.to_string(),
         };
         let mut pass_proxy = false;
         if let Some(uid) = self.proxy_uid {
-            if !socket_addr_belong_to_user(socket.remote_addr(), uid)? {
+            if !socket_addr_belong_to_user(remote_addr, uid)? {
                 pass_proxy = true;
             }
         }
-        let action = if pass_proxy {
+        let mut action = if pass_proxy {
             Action::Direct
         } else {
             self.rule
                 .action_for_domain(&domain)
                 .unwrap_or_else(|| self.rule.default_action())
         };
-        trace!(addr = %addr, action = ?action, "RuledClient:handle_tcp");
+
+        if action == Action::Probe {
+            if self.direct_client.probe_connectivity(addr.clone()).await {
+                action = Action::Direct;
+            } else {
+                action = Action::Proxy;
+            }
+            info!(addr = %addr, action = ?action, "Probe action");
+        } else {
+            info!(addr = %addr, action = ?action, "Rule action");
+        }
+
+        Ok(action)
+    }
+}
+
+#[async_trait::async_trait]
+impl Client for RuledClient {
+    async fn handle_tcp(&self, socket: TunTcpSocket, addr: Address) -> Result<()> {
+        let action = self
+            .get_action_for_addr(socket.remote_addr(), &addr)
+            .await?;
 
         match action {
             Action::Reject => Ok(()),
@@ -221,36 +278,43 @@ impl Client for RuledClient {
                     .await
             }
             Action::Proxy => {
+                let old_client = self.ssclient.read().await;
+                let connect_errors = old_client.connect_errors();
+                let old_conf_index = self
+                    .conf
+                    .server_configs
+                    .iter()
+                    .position(|s| s.name() == old_client.srv_cfg.name())
+                    .unwrap_or(0);
+                if connect_errors > self.conf.max_connect_errors {
+                    let next_conf_index = (old_conf_index + 1) % self.conf.server_configs.len();
+                    error!(
+                        "SSClient '{}' reached max connect errors, change to another server '{}'",
+                        self.conf.server_configs[old_conf_index].name(),
+                        self.conf.server_configs[next_conf_index].name()
+                    );
+                    *self.ssclient.write().await = new_ssclient(&self.conf, next_conf_index).await;
+                }
                 self.ssclient
+                    .read()
+                    .await
                     .handle_tcp(socket, addr.clone())
                     .instrument(trace_span!("SSClient.handle_tcp", addr = %addr))
                     .await
             }
+            Action::Probe => unreachable!(),
         }
     }
 
     async fn handle_udp(&self, socket: TunUdpSocket, addr: Address) -> Result<()> {
-        let domain = match &addr {
-            Address::SocketAddress(a) => a.to_string(),
-            Address::DomainNameAddress(domain, _port) => domain.to_string(),
-        };
-        let mut pass_proxy = false;
-        if let Some(uid) = self.proxy_uid {
-            if !socket_addr_belong_to_user(socket.local_addr(), uid)? {
-                pass_proxy = true;
-            }
-        }
-        let action = if pass_proxy {
-            Action::Direct
-        } else {
-            self.rule
-                .action_for_domain(&domain)
-                .unwrap_or_else(|| self.rule.default_action())
-        };
+        // FIXME: `socket.local_addr` is not right
+        let action = self.get_action_for_addr(socket.local_addr(), &addr).await?;
+
         match action {
             Action::Reject => Ok(()),
             Action::Direct => self.direct_client.handle_udp(socket, addr).await,
-            Action::Proxy => self.ssclient.handle_udp(socket, addr).await,
+            Action::Proxy => self.ssclient.read().await.handle_udp(socket, addr).await,
+            Action::Probe => unreachable!(),
         }
     }
 }
