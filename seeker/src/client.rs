@@ -91,7 +91,7 @@ impl DirectClient {
         let conn = io::timeout(timeout, TcpStream::connect(sock_addr)).await?;
         let elapsed = now.elapsed();
         trace!(duration = ?elapsed, "TcpStream::connect");
-        return Ok(conn);
+        Ok(conn)
     }
 }
 
@@ -223,7 +223,7 @@ impl RuledClient {
             rule: conf.rules.clone(),
             ssclient: Arc::new(RwLock::new(new_ssclient(&conf, 0).await)),
             direct_client: Arc::new(new_direct_client(&conf).await),
-            conf: conf,
+            conf,
             proxy_uid,
         }
     }
