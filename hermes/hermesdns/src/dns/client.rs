@@ -78,7 +78,13 @@ impl DnsNetworkClient {
         };
         let c = client.clone();
         let _ = task::spawn(async move {
-            let (_, _) = c.run().await.unwrap();
+            loop {
+                match c.run().await {
+                    Ok(_) => {}
+                    Err(e) if e.kind() == ErrorKind::AddrNotAvailable => {}
+                    Err(e) => panic!(e),
+                }
+            }
         });
         client
     }
