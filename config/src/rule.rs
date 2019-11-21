@@ -18,6 +18,7 @@ pub enum Action {
     Reject,
     Direct,
     Proxy,
+    Probe,
 }
 
 #[derive(Debug, Clone)]
@@ -73,6 +74,7 @@ impl FromStr for Action {
             "REJECT" => Action::Reject,
             "DIRECT" => Action::Direct,
             "PROXY" => Action::Proxy,
+            "PROBE" => Action::Probe,
             _ => unreachable!(),
         })
     }

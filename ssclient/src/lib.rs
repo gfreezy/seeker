@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::io;
 use std::io::{Error, Result};
 use std::net::{IpAddr, SocketAddr};
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -32,31 +32,29 @@ use crate::udp_io::{decrypt_payload, encrypt_payload};
 
 const MAX_PACKET_SIZE: usize = 0x3FFF;
 
-#[derive(Clone)]
 pub struct SSClient {
-    srv_cfg: Arc<ServerConfig>,
+    pub srv_cfg: Arc<ServerConfig>,
     dns_server: (String, u16),
     resolver: Arc<DnsNetworkClient>,
     pool: Pool,
-    to_terminate: Arc<AtomicBool>,
+    connect_errors: Arc<AtomicUsize>,
 }
 
 impl SSClient {
-    pub async fn new(
-        server_config: Arc<ServerConfig>,
-        dns_server: (String, u16),
-        to_terminate: Arc<AtomicBool>,
-    ) -> SSClient {
+    pub async fn new(server_config: Arc<ServerConfig>, dns_server: (String, u16)) -> SSClient {
         let resolver = Arc::new(DnsNetworkClient::new(0, server_config.read_timeout()).await);
         let srv_cfg_clone = server_config.clone();
         let resolver_clone = resolver.clone();
         let dns_server_clone = dns_server.clone();
+        let connect_errors = Arc::new(AtomicUsize::new(0));
+        let connect_errors_clone = connect_errors.clone();
         let pool = Pool::new(
             srv_cfg_clone.idle_connections(),
             Arc::new(move || {
                 let srv_cfg = srv_cfg_clone.clone();
                 let resolver = resolver_clone.clone();
                 let dns_server = dns_server_clone.clone();
+                let connect_errors = connect_errors_clone.clone();
 
                 async move {
                     let ssserver = get_remote_ssserver_addr(
@@ -68,11 +66,23 @@ impl SSClient {
 
                     let conn: EncryptedStremBox = match srv_cfg.method().category() {
                         CipherCategory::Stream => Box::new(
-                            StreamEncryptedTcpStream::new(srv_cfg.clone(), ssserver).await?,
+                            match StreamEncryptedTcpStream::new(srv_cfg.clone(), ssserver).await {
+                                Ok(conn) => conn,
+                                Err(e) => {
+                                    connect_errors.fetch_add(1, Ordering::SeqCst);
+                                    return Err(e);
+                                }
+                            },
                         ),
-                        CipherCategory::Aead => {
-                            Box::new(AeadEncryptedTcpStream::new(srv_cfg.clone(), ssserver).await?)
-                        }
+                        CipherCategory::Aead => Box::new(
+                            match AeadEncryptedTcpStream::new(srv_cfg.clone(), ssserver).await {
+                                Ok(conn) => conn,
+                                Err(e) => {
+                                    connect_errors.fetch_add(1, Ordering::SeqCst);
+                                    return Err(e);
+                                }
+                            },
+                        ),
                     };
                     Ok(conn)
                 }
@@ -86,11 +96,15 @@ impl SSClient {
         });
         SSClient {
             srv_cfg: server_config.clone(),
+            connect_errors,
             resolver,
             dns_server,
             pool,
-            to_terminate,
         }
+    }
+
+    pub fn connect_errors(&self) -> usize {
+        self.connect_errors.load(Ordering::SeqCst)
     }
 
     async fn handle_encrypted_tcp_stream<T: AsyncRead + AsyncWrite + Clone + Unpin>(
@@ -349,6 +363,7 @@ mod tests {
         task::block_on(async {
             let dns_client = DnsNetworkClient::new(0, Duration::from_secs(3)).await;
             let cfg = Arc::new(ServerConfig::new(
+                "servername".to_string(),
                 ServerAddr::DomainName("local.allsunday.in".to_string(), 7789),
                 "pass".to_string(),
                 CipherType::ChaCha20Ietf,
@@ -367,6 +382,7 @@ mod tests {
         task::block_on(async {
             let dns_client = DnsNetworkClient::new(0, Duration::from_secs(3)).await;
             let cfg = Arc::new(ServerConfig::new(
+                "servername".to_string(),
                 ServerAddr::SocketAddr("1.2.3.4:7789".parse().unwrap()),
                 "pass".to_string(),
                 CipherType::ChaCha20Ietf,

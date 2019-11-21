@@ -185,6 +185,7 @@ mod tests {
     fn test_encrypted_stream() {
         const BIND_ADDR: &str = "127.0.0.1:65510";
         let srv_cfg = Arc::new(ServerConfig::new(
+            "servername".to_string(),
             ServerAddr::DomainName("sdf".to_string(), 112),
             "pass".to_string(),
             CipherType::ChaCha20Ietf,
