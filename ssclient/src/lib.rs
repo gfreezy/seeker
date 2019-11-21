@@ -363,6 +363,7 @@ mod tests {
         task::block_on(async {
             let dns_client = DnsNetworkClient::new(0, Duration::from_secs(3)).await;
             let cfg = Arc::new(ServerConfig::new(
+                "servername".to_string(),
                 ServerAddr::DomainName("local.allsunday.in".to_string(), 7789),
                 "pass".to_string(),
                 CipherType::ChaCha20Ietf,
@@ -381,6 +382,7 @@ mod tests {
         task::block_on(async {
             let dns_client = DnsNetworkClient::new(0, Duration::from_secs(3)).await;
             let cfg = Arc::new(ServerConfig::new(
+                "servername".to_string(),
                 ServerAddr::SocketAddr("1.2.3.4:7789".parse().unwrap()),
                 "pass".to_string(),
                 CipherType::ChaCha20Ietf,
