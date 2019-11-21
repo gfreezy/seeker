@@ -73,7 +73,7 @@ impl<'a> StreamEncryptedWriter<'a> {
         let cipher_type = srv_cfg.method();
 
         let send_iv = send_iv(&conn, srv_cfg.clone()).await?;
-        let encrypt_cipher = crypto::new_stream(cipher_type, key, &send_iv, CryptoMode::Encrypt);
+        let encrypt_cipher = crypto::new_stream(cipher_type, &key, &send_iv, CryptoMode::Encrypt);
 
         Ok(StreamEncryptedWriter {
             srv_cfg: srv_cfg.clone(),
@@ -127,7 +127,7 @@ impl<'a> StreamEncryptedReader<'a> {
         let cipher_type = srv_cfg.method();
 
         let recv_iv = recv_iv(&conn, srv_cfg.clone()).await?;
-        let decrypt_cipher = crypto::new_stream(cipher_type, key, &recv_iv, CryptoMode::Decrypt);
+        let decrypt_cipher = crypto::new_stream(cipher_type, &key, &recv_iv, CryptoMode::Decrypt);
         Ok(StreamEncryptedReader {
             srv_cfg: srv_cfg.clone(),
             conn: &conn,

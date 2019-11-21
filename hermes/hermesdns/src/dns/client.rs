@@ -290,7 +290,7 @@ pub mod tests {
             .unwrap();
 
             assert_eq!(res.questions[0].name, "google.com");
-            assert!(res.answers.len() > 0);
+            assert!(!res.answers.is_empty());
 
             match res.answers[0] {
                 DnsRecord::A { ref domain, .. } => {
