@@ -73,7 +73,13 @@ impl Pool {
         let size = self.size().await;
         trace!(size = size, "connection pool size");
         self.sender.send(()).await;
-        ret
+        match ret {
+            Ok(conn) => Ok(conn),
+            Err(e) => {
+                error!(err = ?e, "new connection");
+                Err(e)
+            }
+        }
     }
 
     #[allow(dead_code)]
@@ -102,6 +108,7 @@ mod tests {
     #[test]
     fn test_pool() {
         let srv_cfg = Arc::new(ServerConfig::new(
+            "srvname".to_string(),
             ServerAddr::DomainName("sdf".to_string(), 112),
             "pass".to_string(),
             CipherType::ChaCha20Ietf,
@@ -110,8 +117,7 @@ mod tests {
             Duration::from_secs(3),
             10,
         ));
-        let dns = std::env::var("DNS").unwrap_or_else(|_| "114.114.114.114".to_string());
-        let ssserver = format!("{}:53", dns).parse().unwrap();
+        let ssserver = format!("119.29.29.29:80").parse().unwrap();
 
         let ret: Result<()> = task::block_on(async {
             let pool = Pool::new(

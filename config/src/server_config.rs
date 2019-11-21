@@ -127,6 +127,8 @@ impl Display for ServerAddr {
 /// Configuration for a server
 #[derive(Clone, Debug)]
 pub struct ServerConfig {
+    /// Server name
+    name: String,
     /// Server address
     addr: ServerAddr,
     /// Encryption password (key)
@@ -148,6 +150,7 @@ pub struct ServerConfig {
 impl ServerConfig {
     /// Creates a new ServerConfig
     pub fn new(
+        name: String,
         addr: ServerAddr,
         pwd: String,
         method: CipherType,
@@ -159,6 +162,7 @@ impl ServerConfig {
         let enc_key = method.bytes_to_key(pwd.as_bytes());
         trace!("Initialize config with pwd: {:?}, key: {:?}", pwd, enc_key);
         ServerConfig {
+            name,
             addr,
             password: pwd,
             method,
@@ -173,6 +177,7 @@ impl ServerConfig {
     /// Create a basic config
     pub fn basic(addr: SocketAddr, password: String, method: CipherType) -> ServerConfig {
         ServerConfig::new(
+            addr.to_string(),
             ServerAddr::SocketAddr(addr),
             password,
             method,
@@ -188,6 +193,11 @@ impl ServerConfig {
         self.password = pwd;
         self.method = t;
         self.enc_key = t.bytes_to_key(self.password.as_bytes());
+    }
+
+    /// Get server name
+    pub fn name(&self) -> &str {
+        &self.name
     }
 
     /// Set server addr
