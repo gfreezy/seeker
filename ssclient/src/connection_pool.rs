@@ -43,8 +43,7 @@ impl Pool {
             for _ in 0..(self.max_idle - len) {
                 let conn = match self.new_connection().await {
                     Ok(conn) => conn,
-                    Err(e) => {
-                        error!(err = ?e, "new connection");
+                    Err(_) => {
                         continue;
                     }
                 };
@@ -59,7 +58,13 @@ impl Pool {
 
     async fn new_connection(&self) -> Result<EncryptedStremBox> {
         let now = Instant::now();
-        let conn = (self.connector)().await?;
+        let conn = match (self.connector)().await {
+            Ok(conn) => conn,
+            Err(e) => {
+                error!(err = ?e, "new connection");
+                return Err(e);
+            }
+        };
         let duration = now.elapsed();
         trace!(duration = ?duration, "Pool.new_connection");
         Ok(conn)
