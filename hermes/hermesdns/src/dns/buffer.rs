@@ -406,7 +406,7 @@ mod tests {
 
         // Then we set up a slight variation with relies on a jump back to the data of
         // the first name
-        let crafted_data = [0x01, b'b' as u8, 0xC0, 0x02];
+        let crafted_data = [0x01, b'b', 0xC0, 0x02];
         for b in &crafted_data {
             match buffer.write_u8(*b) {
                 Ok(_) => {}

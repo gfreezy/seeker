@@ -47,42 +47,44 @@ chmod +x seeker-osx  # or  chmod+x seeker-linux
 * 确保 TUN 的网络 `tun_ip` 和 `tun_cidr` 与当前所处网络环境不在一个网段
 
 ```yaml
-dns_start_ip: 10.0.0.10   
+dns_start_ip: 10.0.0.10
 dns_server: 223.5.5.5:53
 tun_name: utun4
 tun_ip: 10.0.0.1
 tun_cidr: 10.0.0.0/16
 dns_listen: 0.0.0.0:53
 gateway_mode: true
-probe_timeout_ms: 10
-direct_connect_timeout: 1
+probe_timeout: 10ms
+direct_connect_timeout: 1s
 max_connect_errors: 20
 server_configs:
   - name: server1
     addr: domain-or-ip-to-ss-server:port
     method: chacha20-ietf
     password: password
-    connect_timeout: 5
-    read_timeout: 30
-    write_timeout: 30
+    connect_timeout: 5s
+    read_timeout: 30s
+    write_timeout: 30s
     idle_connections: 10
   - name: server2
     addr: domain-or-ip-to-ss-server:port
     method: chacha20-ietf
     password: password
-    connect_timeout: 5
-    read_timeout: 30
-    write_timeout: 30
+    connect_timeout: 5s
+    read_timeout: 30s
+    write_timeout: 30s
     idle_connections: 10
 
 rules:
   - 'DOMAIN,audio-ssl.itunes.apple.com,DIRECT'
-  - 'DOMAIN,gspe1-ssl.ls.apple.com,DIRECT'
-  - 'DOMAIN-KEYWORD,itunes.apple.com,PROXY'
-  - 'DOMAIN-KEYWORD,itunes.apple.com,PROXY'
-  - 'DOMAIN-SUFFIX,apple.co,REJECT'
-  - 'DOMAIN-SUFFIX,apple.com,REJECT'
-  - 'MATCH,DIRECT'
+  - 'DOMAIN,gspe1-ssl.ls.apple.com,REJECT'
+  - 'DOMAIN-SUFFIX,aaplimg.com,DIRECT'
+  - 'DOMAIN-SUFFIX,apple.co,DIRECT'
+  - 'DOMAIN-KEYWORD,bbcfmt,PROXY'
+  - 'DOMAIN-KEYWORD,uk-live,PROXY'
+  - 'DOMAIN-SUFFIX,snssdk.com,DIRECT'
+  - 'DOMAIN-SUFFIX,toutiao.com,PROBE'
+  - 'MATCH,PROBE'
 ```
 
 ## 代理局域网内其他机器

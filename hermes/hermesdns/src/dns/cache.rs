@@ -401,7 +401,7 @@ mod tests {
         cache.store(&records2);
 
         // And now it should succeed, since the record has been store
-        if !cache.lookup("www.yahoo.com", QueryType::A).is_some() {
+        if cache.lookup("www.yahoo.com", QueryType::A).is_none() {
             panic!();
         }
 

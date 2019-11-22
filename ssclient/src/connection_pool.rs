@@ -117,7 +117,7 @@ mod tests {
             Duration::from_secs(3),
             10,
         ));
-        let ssserver = format!("119.29.29.29:80").parse().unwrap();
+        let ssserver = "119.29.29.29:80".parse().unwrap();
 
         let ret: Result<()> = task::block_on(async {
             let pool = Pool::new(
