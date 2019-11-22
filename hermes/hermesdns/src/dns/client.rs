@@ -78,7 +78,13 @@ impl DnsNetworkClient {
         };
         let c = client.clone();
         let _ = task::spawn(async move {
-            let (_, _) = c.run().await.unwrap();
+            loop {
+                match c.run().await {
+                    Ok(_) => {}
+                    Err(e) if e.kind() == ErrorKind::AddrNotAvailable => {}
+                    Err(e) => panic!(e),
+                }
+            }
         });
         client
     }
@@ -284,7 +290,7 @@ pub mod tests {
             .unwrap();
 
             assert_eq!(res.questions[0].name, "google.com");
-            assert!(res.answers.len() > 0);
+            assert!(!res.answers.is_empty());
 
             match res.answers[0] {
                 DnsRecord::A { ref domain, .. } => {

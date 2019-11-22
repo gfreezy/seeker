@@ -74,7 +74,7 @@ impl<'a> AeadEncryptedWriter<'a> {
         let cipher_type = srv_cfg.method();
 
         let iv = send_iv(&conn, srv_cfg.clone()).await?;
-        let cipher = crypto::new_aead_encryptor(cipher_type, key, &iv);
+        let cipher = crypto::new_aead_encryptor(cipher_type, &key, &iv);
 
         Ok(AeadEncryptedWriter {
             srv_cfg: srv_cfg.clone(),
@@ -131,7 +131,7 @@ impl<'a> AeadEncryptedReader<'a> {
         let cipher_type = srv_cfg.method();
 
         let iv = recv_iv(&conn, srv_cfg.clone()).await?;
-        let decrypt_cipher = crypto::new_aead_decryptor(cipher_type, key, &iv);
+        let decrypt_cipher = crypto::new_aead_decryptor(cipher_type, &key, &iv);
 
         Ok(AeadEncryptedReader {
             srv_cfg: srv_cfg.clone(),

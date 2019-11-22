@@ -1,48 +1,3 @@
-//! This is a mod for storing and parsing configuration
-//!
-//! According to shadowsocks' official documentation, the standard configuration
-//! file should be in JSON format:
-//!
-//! ```ignore
-//! {
-//!     "server": "127.0.0.1",
-//!     "server_port": 1080,
-//!     "local_port": 8388,
-//!     "password": "the-password",
-//!     "connect_timeout": 30,
-//!     "write_timeout": 30,
-//!     "read_timeout": 30,
-//!     "method": "aes-256-cfb",
-//!     "local_address": "127.0.0.1"
-//! }
-//! ```
-//!
-//! But this configuration is not for using multiple shadowsocks server, so we
-//! introduce an extended configuration file format:
-//!
-//! ```ignore
-//! {
-//!     "servers": [
-//!         {
-//!             "address": "127.0.0.1",
-//!             "port": 1080,
-//!             "password": "hellofuck",
-//!             "method": "bf-cfb"
-//!         },
-//!         {
-//!             "address": "127.0.0.1",
-//!             "port": 1081,
-//!             "password": "hellofuck",
-//!             "method": "aes-128-cfb"
-//!         }
-//!     ],
-//!     "local_port": 8388,
-//!     "local_address": "127.0.0.1"
-//! }
-//! ```
-//!
-//! These defined server will be used with a load balancing algorithm.
-
 use std::{
     fmt::{self, Debug, Display, Formatter},
     net::SocketAddr,
@@ -51,12 +6,14 @@ use std::{
     time::Duration,
 };
 
+use crate::duration;
 use bytes::Bytes;
 use crypto::CipherType;
+use serde::Deserialize;
 use tracing::trace;
 
 /// Server address
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Deserialize)]
 pub enum ServerAddr {
     /// IP Address
     SocketAddr(SocketAddr),
@@ -125,26 +82,61 @@ impl Display for ServerAddr {
 }
 
 /// Configuration for a server
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct ServerConfig {
     /// Server name
     name: String,
     /// Server address
+    #[serde(with = "server_addr")]
     addr: ServerAddr,
     /// Encryption password (key)
     password: String,
     /// Encryption type (method)
+    #[serde(with = "cipher_type")]
     method: CipherType,
     /// Connection timeout
+    #[serde(with = "duration")]
     connect_timeout: Duration,
     /// Read timeout
+    #[serde(with = "duration")]
     read_timeout: Duration,
     /// Write timeout
+    #[serde(with = "duration")]
     write_timeout: Duration,
-    /// Encryption key
-    enc_key: Bytes,
     /// Max idle connections
     idle_connections: usize,
+}
+
+mod cipher_type {
+    use crypto::CipherType;
+    use serde::de::Error;
+    use serde::{Deserialize, Deserializer};
+    use std::str::FromStr;
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<CipherType, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        CipherType::from_str(&s).map_err(Error::custom)
+    }
+}
+
+mod server_addr {
+
+    use crate::ServerAddr;
+    use serde::de::Error;
+    use serde::{Deserialize, Deserializer};
+    use std::str::FromStr;
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<ServerAddr, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        ServerAddr::from_str(&s)
+            .map_err(|_| Error::custom(format!("invalid value: {}, ip:port or domain:port", s)))
+    }
 }
 
 impl ServerConfig {
@@ -167,7 +159,6 @@ impl ServerConfig {
             password: pwd,
             method,
             connect_timeout,
-            enc_key,
             read_timeout,
             write_timeout,
             idle_connections,
@@ -192,7 +183,6 @@ impl ServerConfig {
     pub fn set_method(&mut self, t: CipherType, pwd: String) {
         self.password = pwd;
         self.method = t;
-        self.enc_key = t.bytes_to_key(self.password.as_bytes());
     }
 
     /// Get server name
@@ -211,8 +201,8 @@ impl ServerConfig {
     }
 
     /// Get encryption key
-    pub fn key(&self) -> &[u8] {
-        &self.enc_key[..]
+    pub fn key(&self) -> Bytes {
+        self.method.bytes_to_key(self.password.as_bytes())
     }
 
     /// Get password
