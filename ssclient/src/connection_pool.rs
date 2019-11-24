@@ -130,8 +130,17 @@ mod tests {
                 Arc::new(move || {
                     let srv_cfg_clone = srv_cfg.clone();
                     async move {
-                        let conn: EncryptedStremBox =
-                            Box::new(StreamEncryptedTcpStream::new(srv_cfg_clone, ssserver).await?);
+                        let conn: EncryptedStremBox = Box::new(
+                            StreamEncryptedTcpStream::new(
+                                ssserver,
+                                srv_cfg_clone.method(),
+                                srv_cfg_clone.key(),
+                                srv_cfg_clone.connect_timeout(),
+                                srv_cfg_clone.read_timeout(),
+                                srv_cfg_clone.write_timeout(),
+                            )
+                            .await?,
+                        );
                         Ok(conn)
                     }
                         .boxed()
