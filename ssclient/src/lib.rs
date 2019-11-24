@@ -9,7 +9,7 @@ use std::io::{Error, Result};
 use std::net::{IpAddr, SocketAddr};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use async_std::io::timeout;
 use async_std::net::{TcpStream, UdpSocket};
@@ -18,22 +18,24 @@ use async_std::task;
 use async_std::task::JoinHandle;
 use bytes::{Bytes, BytesMut};
 use futures::io::ErrorKind;
-use futures::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, FutureExt};
-use tracing::trace;
+use futures::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, FutureExt, TryFutureExt};
+use tracing::{trace, trace_span};
 
 use config::{Address, ServerAddr, ServerConfig};
-use crypto::CipherCategory;
+use crypto::{CipherCategory, CipherType};
 use hermesdns::{DnsClient, DnsNetworkClient, QueryType};
 use tun::socket::TunUdpSocket;
 
 use crate::connection_pool::{EncryptedStremBox, Pool};
 use crate::encrypted_stream::{AeadEncryptedTcpStream, StreamEncryptedTcpStream};
 use crate::udp_io::{decrypt_payload, encrypt_payload};
+use async_std::sync::RwLock;
+use tracing_futures::Instrument;
 
 const MAX_PACKET_SIZE: usize = 0x3FFF;
 
 pub struct SSClient {
-    pub srv_cfg: Arc<ServerConfig>,
+    srv_cfg: Arc<RwLock<ServerConfig>>,
     dns_server: (String, u16),
     resolver: Arc<DnsNetworkClient>,
     pool: Pool,
@@ -41,59 +43,86 @@ pub struct SSClient {
 }
 
 impl SSClient {
-    pub async fn new(server_config: Arc<ServerConfig>, dns_server: (String, u16)) -> SSClient {
-        let resolver = Arc::new(DnsNetworkClient::new(0, server_config.read_timeout()).await);
-        let srv_cfg_clone = server_config.clone();
+    pub async fn new(
+        server_config: Arc<RwLock<ServerConfig>>,
+        dns_server: (String, u16),
+    ) -> SSClient {
+        let server_config_clone = server_config.clone();
+        let idle_connections = server_config.read().await.idle_connections();
+        let resolver =
+            Arc::new(DnsNetworkClient::new(0, server_config.read().await.read_timeout()).await);
         let resolver_clone = resolver.clone();
         let dns_server_clone = dns_server.clone();
         let connect_errors = Arc::new(AtomicUsize::new(0));
         let connect_errors_clone = connect_errors.clone();
         let pool = Pool::new(
-            srv_cfg_clone.idle_connections(),
+            idle_connections,
             Arc::new(move || {
-                let srv_cfg = srv_cfg_clone.clone();
+                trace!("new connection connect to");
+                let srv_cfg = server_config_clone.clone();
+                trace!("get srv_cfg");
                 let resolver = resolver_clone.clone();
                 let dns_server = dns_server_clone.clone();
                 let connect_errors = connect_errors_clone.clone();
 
                 async move {
+                    let srv_cfg = srv_cfg.read().await;
+                    let read_timeout = srv_cfg.read_timeout();
+                    let write_timeout = srv_cfg.write_timeout();
+                    let connect_timeout = srv_cfg.connect_timeout();
+                    let key = srv_cfg.key();
+                    let method = srv_cfg.method();
+                    let server_addr = srv_cfg.addr().clone();
+
+                    trace!(server_addr=?server_addr, "connect to");
                     let ssserver = get_remote_ssserver_addr(
                         &*resolver,
-                        srv_cfg.clone(),
+                        &server_addr,
                         (&dns_server.0, dns_server.1),
                     )
                     .await?;
 
-                    let conn: EncryptedStremBox = match srv_cfg.method().category() {
+                    let conn: EncryptedStremBox = match method.category() {
                         CipherCategory::Stream => Box::new(
-                            match StreamEncryptedTcpStream::new(srv_cfg.clone(), ssserver).await {
-                                Ok(conn) => conn,
-                                Err(e) => {
-                                    connect_errors.fetch_add(1, Ordering::SeqCst);
-                                    return Err(e);
-                                }
-                            },
+                            StreamEncryptedTcpStream::new(
+                                ssserver,
+                                method,
+                                key,
+                                connect_timeout,
+                                read_timeout,
+                                write_timeout,
+                            )
+                            .await?,
                         ),
                         CipherCategory::Aead => Box::new(
-                            match AeadEncryptedTcpStream::new(srv_cfg.clone(), ssserver).await {
-                                Ok(conn) => conn,
-                                Err(e) => {
-                                    connect_errors.fetch_add(1, Ordering::SeqCst);
-                                    return Err(e);
-                                }
-                            },
+                            AeadEncryptedTcpStream::new(
+                                ssserver,
+                                method,
+                                key,
+                                connect_timeout,
+                                read_timeout,
+                                write_timeout,
+                            )
+                            .await?,
                         ),
                     };
                     Ok(conn)
                 }
+                    .map_err(move |e| {
+                        connect_errors.fetch_add(1, Ordering::SeqCst);
+                        e
+                    })
                     .boxed()
             }),
         );
 
         let pool_clone = pool.clone();
-        let _ = task::spawn(async move {
-            pool_clone.run_connection_pool().await;
-        });
+        let _ = task::spawn(
+            async move {
+                pool_clone.run_connection_pool().await;
+            }
+                .instrument(trace_span!("background connection pool")),
+        );
         SSClient {
             srv_cfg: server_config.clone(),
             connect_errors,
@@ -103,8 +132,17 @@ impl SSClient {
         }
     }
 
+    pub async fn name(&self) -> String {
+        self.srv_cfg.read().await.name().to_string()
+    }
+
     pub fn connect_errors(&self) -> usize {
         self.connect_errors.load(Ordering::SeqCst)
+    }
+
+    pub async fn change_conf(&self, conf: ServerConfig) {
+        *self.srv_cfg.write().await = conf;
+        let _ = self.connect_errors.swap(0, Ordering::SeqCst);
     }
 
     async fn handle_encrypted_tcp_stream<T: AsyncRead + AsyncWrite + Clone + Unpin>(
@@ -116,6 +154,10 @@ impl SSClient {
         let conn1 = &conn;
         let conn2 = &conn;
         let mut socket_clone = socket.clone();
+        let (read_timeout, write_timeout) = {
+            let srv_cfg = self.srv_cfg.read().await;
+            (srv_cfg.read_timeout(), srv_cfg.write_timeout())
+        };
 
         let send_task = async move {
             let mut writer = conn1.get_writer().await?;
@@ -127,8 +169,7 @@ impl SSClient {
             let mut buf = vec![0; MAX_PACKET_SIZE];
             loop {
                 let now = Instant::now();
-                let size =
-                    timeout(self.srv_cfg.read_timeout(), socket_clone.read(&mut buf)).await?;
+                let size = timeout(read_timeout, socket_clone.read(&mut buf)).await?;
                 let duration = now.elapsed();
                 trace!(duration = ?duration, size = size, "read from tun socket");
 
@@ -150,7 +191,7 @@ impl SSClient {
                     break;
                 }
                 let now = Instant::now();
-                timeout(self.srv_cfg.write_timeout(), socket.write_all(&buf[..size])).await?;
+                timeout(write_timeout, socket.write_all(&buf[..size])).await?;
                 let duration = now.elapsed();
                 trace!(duration = ?duration, size = size, "write to tun socket");
             }
@@ -176,17 +217,24 @@ impl SSClient {
         tun_socket: TunUdpSocket,
         addr: Address,
     ) -> Result<()> {
+        let (key, method, server_addr) = {
+            let srv_cfg = self.srv_cfg.read().await;
+            let key = srv_cfg.key();
+            let method = srv_cfg.method();
+            let server_addr = srv_cfg.addr().clone();
+            (key, method, server_addr)
+        };
         let ssserver = get_remote_ssserver_addr(
             &*self.resolver,
-            self.srv_cfg.clone(),
+            &server_addr,
             (&self.dns_server.0, self.dns_server.1),
         )
         .await?;
         let mut buf = vec![0; MAX_PACKET_SIZE];
         let mut encrypt_buf = BytesMut::with_capacity(MAX_PACKET_SIZE);
         let mut udp_map = HashMap::new();
-        let cipher_type = self.srv_cfg.method();
-        let key = self.srv_cfg.key().to_vec();
+        let cipher_type = method;
+        let key = key.to_vec();
 
         loop {
             encrypt_buf.clear();
@@ -269,23 +317,29 @@ impl SSClient {
     }
 }
 
-async fn send_iv(mut conn: &TcpStream, srv_cfg: Arc<ServerConfig>) -> Result<Bytes> {
-    let method = srv_cfg.method();
+async fn send_iv(
+    mut conn: &TcpStream,
+    method: CipherType,
+    write_timeout: Duration,
+) -> Result<Bytes> {
     let iv = match method.category() {
         CipherCategory::Stream => method.gen_init_vec(),
         CipherCategory::Aead => method.gen_salt(),
     };
 
     let now = Instant::now();
-    timeout(srv_cfg.write_timeout(), conn.write_all(&iv)).await?;
+    timeout(write_timeout, conn.write_all(&iv)).await?;
     let duration = now.elapsed();
     trace!(duration = ?duration, "send iv");
 
     Ok(iv)
 }
 
-async fn recv_iv(mut conn: &TcpStream, srv_cfg: Arc<ServerConfig>) -> Result<Vec<u8>> {
-    let method = srv_cfg.method();
+async fn recv_iv(
+    mut conn: &TcpStream,
+    method: CipherType,
+    read_timeout: Duration,
+) -> Result<Vec<u8>> {
     let iv_size = match method.category() {
         CipherCategory::Stream => method.iv_size(),
         CipherCategory::Aead => method.salt_size(),
@@ -294,7 +348,7 @@ async fn recv_iv(mut conn: &TcpStream, srv_cfg: Arc<ServerConfig>) -> Result<Vec
     let mut iv = vec![0; iv_size];
 
     let now = Instant::now();
-    timeout(srv_cfg.read_timeout(), conn.read_exact(&mut iv)).await?;
+    timeout(read_timeout, conn.read_exact(&mut iv)).await?;
     let duration = now.elapsed();
     trace!(duration = ?duration, "recv iv");
 
@@ -325,10 +379,10 @@ pub async fn resolve_domain<T: DnsClient>(
 
 async fn get_remote_ssserver_addr(
     resolver: &impl DnsClient,
-    cfg: Arc<ServerConfig>,
+    server_addr: &ServerAddr,
     dns_server: (&str, u16),
 ) -> Result<SocketAddr> {
-    let addr = match cfg.addr() {
+    let addr = match server_addr {
         ServerAddr::SocketAddr(addr) => *addr,
         ServerAddr::DomainName(domain, port) => {
             let ip = resolve_domain(resolver, (&dns_server.0, dns_server.1), &domain).await?;
@@ -372,7 +426,7 @@ mod tests {
                 Duration::from_secs(10),
                 10,
             ));
-            let addr = get_remote_ssserver_addr(&dns_client, cfg, (&dns, 53)).await;
+            let addr = get_remote_ssserver_addr(&dns_client, cfg.addr(), (&dns, 53)).await;
             assert_eq!(addr.unwrap(), "127.0.0.1:7789".parse().unwrap());
         });
     }
@@ -391,7 +445,8 @@ mod tests {
                 Duration::from_secs(3),
                 10,
             ));
-            let addr = get_remote_ssserver_addr(&dns_client, cfg, ("208.67.222.222", 53)).await;
+            let addr =
+                get_remote_ssserver_addr(&dns_client, cfg.addr(), ("208.67.222.222", 53)).await;
             assert_eq!(addr.unwrap(), "1.2.3.4:7789".parse().unwrap());
         });
     }

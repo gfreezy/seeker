@@ -1,33 +1,48 @@
 use std::io::Result;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use async_std::io;
 use async_std::net::{SocketAddr, TcpStream};
-use async_std::sync::Arc;
-use bytes::BytesMut;
+use bytes::{Bytes, BytesMut};
 use futures::{AsyncReadExt, AsyncWriteExt, FutureExt};
 use tracing::trace;
 
-use config::{Address, ServerConfig};
-use crypto::{BoxStreamCipher, CryptoMode};
+use config::Address;
+use crypto::{BoxStreamCipher, CipherType, CryptoMode};
 
 use super::{EncryptedReader, EncryptedTcpStream, EncryptedWriter};
 use crate::{recv_iv, send_iv, MAX_PACKET_SIZE};
 use futures::future::BoxFuture;
 
 pub struct StreamEncryptedTcpStream {
-    srv_cfg: Arc<ServerConfig>,
     conn: TcpStream,
+    method: CipherType,
+    read_timeout: Duration,
+    write_timeout: Duration,
+    key: Bytes,
 }
 
 impl StreamEncryptedTcpStream {
-    pub async fn new(srv_cfg: Arc<ServerConfig>, ssserver: SocketAddr) -> Result<Self> {
+    pub async fn new(
+        ssserver: SocketAddr,
+        method: CipherType,
+        key: Bytes,
+        connect_timeout: Duration,
+        read_timeout: Duration,
+        write_timeout: Duration,
+    ) -> Result<Self> {
         let now = Instant::now();
-        let conn = io::timeout(srv_cfg.connect_timeout(), TcpStream::connect(ssserver)).await?;
+        let conn = io::timeout(connect_timeout, TcpStream::connect(ssserver)).await?;
         let duration = now.elapsed();
         trace!(duration = ?duration, addr = %ssserver, "TcpStream::connect");
 
-        Ok(Self { srv_cfg, conn })
+        Ok(Self {
+            conn,
+            method,
+            key,
+            read_timeout,
+            write_timeout,
+        })
     }
 }
 
@@ -37,7 +52,13 @@ impl EncryptedTcpStream for StreamEncryptedTcpStream {
     ) -> BoxFuture<'b, Result<Box<dyn EncryptedWriter<'a> + 'a + Send>>> {
         // We need to send iv first, then we can read the iv from ss server.
         async move {
-            let writer = StreamEncryptedWriter::new(self.srv_cfg.clone(), &self.conn).await?;
+            let writer = StreamEncryptedWriter::new(
+                &self.conn,
+                self.method,
+                self.key.clone(),
+                self.write_timeout,
+            )
+            .await?;
             let w: Box<dyn EncryptedWriter + Send> = Box::new(writer);
             Ok(w)
         }
@@ -49,7 +70,13 @@ impl EncryptedTcpStream for StreamEncryptedTcpStream {
     ) -> BoxFuture<'b, Result<Box<dyn EncryptedReader<'a> + 'a + Send>>> {
         // We need to send iv first, then we can read the iv from ss server.
         async move {
-            let reader = StreamEncryptedReader::new(self.srv_cfg.clone(), &self.conn).await?;
+            let reader = StreamEncryptedReader::new(
+                &self.conn,
+                self.method,
+                self.key.clone(),
+                self.read_timeout,
+            )
+            .await?;
             let w: Box<dyn EncryptedReader + Send> = Box::new(reader);
             Ok(w)
         }
@@ -58,7 +85,7 @@ impl EncryptedTcpStream for StreamEncryptedTcpStream {
 }
 
 pub struct StreamEncryptedWriter<'a> {
-    srv_cfg: Arc<ServerConfig>,
+    write_timeout: Duration,
     conn: &'a TcpStream,
     encrypt_cipher: BoxStreamCipher,
     send_buf: BytesMut,
@@ -66,20 +93,19 @@ pub struct StreamEncryptedWriter<'a> {
 
 impl<'a> StreamEncryptedWriter<'a> {
     pub async fn new(
-        srv_cfg: Arc<ServerConfig>,
         conn: &'a TcpStream,
+        method: CipherType,
+        key: Bytes,
+        write_timeout: Duration,
     ) -> Result<StreamEncryptedWriter<'a>> {
-        let key = srv_cfg.key();
-        let cipher_type = srv_cfg.method();
-
-        let send_iv = send_iv(&conn, srv_cfg.clone()).await?;
-        let encrypt_cipher = crypto::new_stream(cipher_type, &key, &send_iv, CryptoMode::Encrypt);
+        let send_iv = send_iv(&conn, method, write_timeout).await?;
+        let encrypt_cipher = crypto::new_stream(method, &key, &send_iv, CryptoMode::Encrypt);
 
         Ok(StreamEncryptedWriter {
-            srv_cfg: srv_cfg.clone(),
             conn: &conn,
             encrypt_cipher,
             send_buf: BytesMut::with_capacity(MAX_PACKET_SIZE),
+            write_timeout,
         })
     }
 }
@@ -98,11 +124,7 @@ impl EncryptedWriter<'_> for StreamEncryptedWriter<'_> {
         self.send_buf.reserve(reserve_len);
         self.encrypt_cipher.update(buf, &mut self.send_buf)?;
         let now = Instant::now();
-        io::timeout(
-            self.srv_cfg.write_timeout(),
-            self.conn.write_all(&self.send_buf),
-        )
-        .await?;
+        io::timeout(self.write_timeout, self.conn.write_all(&self.send_buf)).await?;
         let duration = now.elapsed();
         let send_size = self.send_buf.len();
         trace!(duration = ?duration, size = send_size, "send to ss server");
@@ -111,7 +133,7 @@ impl EncryptedWriter<'_> for StreamEncryptedWriter<'_> {
 }
 
 pub struct StreamEncryptedReader<'a> {
-    srv_cfg: Arc<ServerConfig>,
+    read_timeout: Duration,
     conn: &'a TcpStream,
     decrypt_cipher: BoxStreamCipher,
     recv_buf: Vec<u8>,
@@ -120,16 +142,15 @@ pub struct StreamEncryptedReader<'a> {
 
 impl<'a> StreamEncryptedReader<'a> {
     pub async fn new(
-        srv_cfg: Arc<ServerConfig>,
         conn: &'a TcpStream,
+        method: CipherType,
+        key: Bytes,
+        read_timeout: Duration,
     ) -> Result<StreamEncryptedReader<'a>> {
-        let key = srv_cfg.key();
-        let cipher_type = srv_cfg.method();
-
-        let recv_iv = recv_iv(&conn, srv_cfg.clone()).await?;
-        let decrypt_cipher = crypto::new_stream(cipher_type, &key, &recv_iv, CryptoMode::Decrypt);
+        let recv_iv = recv_iv(&conn, method, read_timeout).await?;
+        let decrypt_cipher = crypto::new_stream(method, &key, &recv_iv, CryptoMode::Decrypt);
         Ok(StreamEncryptedReader {
-            srv_cfg: srv_cfg.clone(),
+            read_timeout,
             conn: &conn,
             decrypt_cipher,
             recv_buf: vec![0; MAX_PACKET_SIZE],
@@ -142,11 +163,7 @@ impl<'a> StreamEncryptedReader<'a> {
 impl EncryptedReader<'_> for StreamEncryptedReader<'_> {
     async fn recv(&mut self, buf: &mut [u8]) -> Result<usize> {
         let now = Instant::now();
-        let size = io::timeout(
-            self.srv_cfg.read_timeout(),
-            self.conn.read(&mut self.recv_buf),
-        )
-        .await?;
+        let size = io::timeout(self.read_timeout, self.conn.read(&mut self.recv_buf)).await?;
         let duration = now.elapsed();
         trace!(duration = ?duration, size = size, "read from ss server");
 
@@ -176,10 +193,11 @@ mod tests {
     use async_std::prelude::*;
     use async_std::task;
 
-    use config::ServerAddr;
+    use config::{ServerAddr, ServerConfig};
     use crypto::CipherType;
 
     use super::*;
+    use std::sync::Arc;
 
     #[test]
     fn test_encrypted_stream() {
@@ -204,7 +222,13 @@ mod tests {
                 task::sleep(Duration::from_secs(1)).await;
 
                 let conn = TcpStream::connect(BIND_ADDR).await?;
-                let mut writer = StreamEncryptedWriter::new(srv_cfg_clone, &conn).await?;
+                let mut writer = StreamEncryptedWriter::new(
+                    &conn,
+                    srv_cfg_clone.method(),
+                    srv_cfg_clone.key(),
+                    srv_cfg_clone.write_timeout(),
+                )
+                .await?;
                 writer.send_addr(&addr_clone).await?;
                 task::sleep(Duration::from_secs(1)).await;
                 writer.send_all(DATA).await?;
@@ -218,7 +242,13 @@ mod tests {
             let mut buf = vec![0; 1024];
             if let Some(stream) = incoming.next().await {
                 let conn = stream?;
-                let mut reader = StreamEncryptedReader::new(srv_cfg, &conn).await?;
+                let mut reader = StreamEncryptedReader::new(
+                    &conn,
+                    srv_cfg.method(),
+                    srv_cfg.key(),
+                    srv_cfg.read_timeout(),
+                )
+                .await?;
                 let _size = reader.recv(&mut buf).await?;
                 let recv_addr = Address::read_from(&mut buf.as_slice())?;
                 assert_eq!(recv_addr, addr);

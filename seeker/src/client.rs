@@ -183,7 +183,7 @@ impl Client for DirectClient {
 pub struct RuledClient {
     conf: Config,
     rule: ProxyRules,
-    ssclient: Arc<RwLock<SSClient>>,
+    ssclient: Arc<SSClient>,
     direct_client: Arc<DirectClient>,
     proxy_uid: Option<u32>,
     term: Arc<AtomicBool>,
@@ -193,13 +193,14 @@ async fn new_ssclient(conf: &Config, conf_index: usize) -> SSClient {
     let dns = conf.dns_server;
     let dns_server_addr = (dns.ip().to_string(), dns.port());
 
+    info!("new_ssclient: {}", conf_index);
     SSClient::new(
-        Arc::new(
+        Arc::new(RwLock::new(
             conf.server_configs
                 .get(conf_index)
                 .expect("no config at index")
                 .clone(),
-        ),
+        )),
         dns_server_addr.clone(),
     )
     .await
@@ -221,7 +222,7 @@ impl RuledClient {
         RuledClient {
             term: to_terminate.clone(),
             rule: conf.rules.clone(),
-            ssclient: Arc::new(RwLock::new(new_ssclient(&conf, 0).await)),
+            ssclient: Arc::new(new_ssclient(&conf, 0).await),
             direct_client: Arc::new(new_direct_client(&conf).await),
             conf,
             proxy_uid,
@@ -278,26 +279,32 @@ impl Client for RuledClient {
                     .await
             }
             Action::Proxy => {
-                let old_client = self.ssclient.read().await;
-                let connect_errors = old_client.connect_errors();
-                let old_conf_index = self
-                    .conf
-                    .server_configs
-                    .iter()
-                    .position(|s| s.name() == old_client.srv_cfg.name())
-                    .unwrap_or(0);
+                let client = self.ssclient.clone();
+                let connect_errors = client.connect_errors();
+                let old_server_name = client.name().await;
                 if connect_errors > self.conf.max_connect_errors {
+                    let old_conf_index = self
+                        .conf
+                        .server_configs
+                        .iter()
+                        .position(|s| s.name() == old_server_name)
+                        .unwrap_or(0);
                     let next_conf_index = (old_conf_index + 1) % self.conf.server_configs.len();
                     error!(
                         "SSClient '{}' reached max connect errors, change to another server '{}'",
                         self.conf.server_configs[old_conf_index].name(),
                         self.conf.server_configs[next_conf_index].name()
                     );
-                    *self.ssclient.write().await = new_ssclient(&self.conf, next_conf_index).await;
+                    let new_conf = self
+                        .conf
+                        .server_configs
+                        .get(next_conf_index)
+                        .expect("no config at index")
+                        .clone();
+                    client.change_conf(new_conf).await;
+                    error!("new ssclient with new conf");
                 }
                 self.ssclient
-                    .read()
-                    .await
                     .handle_tcp(socket, addr.clone())
                     .instrument(trace_span!("SSClient.handle_tcp", addr = %addr))
                     .await
@@ -313,7 +320,7 @@ impl Client for RuledClient {
         match action {
             Action::Reject => Ok(()),
             Action::Direct => self.direct_client.handle_udp(socket, addr).await,
-            Action::Proxy => self.ssclient.read().await.handle_udp(socket, addr).await,
+            Action::Proxy => self.ssclient.handle_udp(socket, addr).await,
             Action::Probe => unreachable!(),
         }
     }
