@@ -1,15 +1,14 @@
 use std::io::Result;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use async_std::io;
 use async_std::net::{SocketAddr, TcpStream};
-use async_std::sync::Arc;
-use bytes::BytesMut;
+use bytes::{Bytes, BytesMut};
 use futures::{AsyncWriteExt, FutureExt};
 use tracing::trace;
 
-use config::{Address, ServerConfig};
-use crypto::{BoxAeadDecryptor, BoxAeadEncryptor};
+use config::Address;
+use crypto::{BoxAeadDecryptor, BoxAeadEncryptor, CipherType};
 
 use super::{EncryptedReader, EncryptedTcpStream, EncryptedWriter};
 use crate::tcp_io::{aead_decrypted_read, aead_encrypted_write};
@@ -17,18 +16,34 @@ use crate::{recv_iv, send_iv, MAX_PACKET_SIZE};
 use futures::future::BoxFuture;
 
 pub struct AeadEncryptedTcpStream {
-    srv_cfg: Arc<ServerConfig>,
     conn: TcpStream,
+    method: CipherType,
+    key: Bytes,
+    read_timeout: Duration,
+    write_timeout: Duration,
 }
 
 impl AeadEncryptedTcpStream {
-    pub async fn new(srv_cfg: Arc<ServerConfig>, ssserver: SocketAddr) -> Result<Self> {
+    pub async fn new(
+        ssserver: SocketAddr,
+        method: CipherType,
+        key: Bytes,
+        connect_timeout: Duration,
+        read_timeout: Duration,
+        write_timeout: Duration,
+    ) -> Result<Self> {
         let now = Instant::now();
-        let conn = io::timeout(srv_cfg.connect_timeout(), TcpStream::connect(ssserver)).await?;
+        let conn = io::timeout(connect_timeout, TcpStream::connect(ssserver)).await?;
         let duration = now.elapsed();
         trace!(duration = ?duration, addr = %ssserver, "TcpStream::connect");
 
-        Ok(Self { srv_cfg, conn })
+        Ok(Self {
+            conn,
+            method,
+            key,
+            read_timeout,
+            write_timeout,
+        })
     }
 }
 
@@ -38,7 +53,13 @@ impl EncryptedTcpStream for AeadEncryptedTcpStream {
     ) -> BoxFuture<'b, Result<Box<dyn EncryptedWriter<'a> + 'a + Send>>> {
         // We need to send iv first, then we can read the iv from ss server.
         async move {
-            let writer = AeadEncryptedWriter::new(self.srv_cfg.clone(), &self.conn).await?;
+            let writer = AeadEncryptedWriter::new(
+                &self.conn,
+                self.method,
+                self.key.clone(),
+                self.write_timeout,
+            )
+            .await?;
             let w: Box<dyn EncryptedWriter + Send> = Box::new(writer);
             Ok(w)
         }
@@ -50,7 +71,13 @@ impl EncryptedTcpStream for AeadEncryptedTcpStream {
     ) -> BoxFuture<'b, Result<Box<dyn EncryptedReader<'a> + 'a + Send>>> {
         // We need to send iv first, then we can read the iv from ss server.
         async move {
-            let reader = AeadEncryptedReader::new(self.srv_cfg.clone(), &self.conn).await?;
+            let reader = AeadEncryptedReader::new(
+                &self.conn,
+                self.method,
+                self.key.clone(),
+                self.read_timeout,
+            )
+            .await?;
             let w: Box<dyn EncryptedReader + Send> = Box::new(reader);
             Ok(w)
         }
@@ -59,28 +86,31 @@ impl EncryptedTcpStream for AeadEncryptedTcpStream {
 }
 
 pub struct AeadEncryptedWriter<'a> {
-    srv_cfg: Arc<ServerConfig>,
     conn: &'a TcpStream,
     encrypt_cipher: BoxAeadEncryptor,
     send_buf: Vec<u8>,
+    method: CipherType,
+    write_timeout: Duration,
 }
 
 impl<'a> AeadEncryptedWriter<'a> {
     pub async fn new(
-        srv_cfg: Arc<ServerConfig>,
         conn: &'a TcpStream,
+        method: CipherType,
+        key: Bytes,
+        write_timeout: Duration,
     ) -> Result<AeadEncryptedWriter<'a>> {
-        let key = srv_cfg.key();
-        let cipher_type = srv_cfg.method();
+        let cipher_type = method;
 
-        let iv = send_iv(&conn, srv_cfg.clone()).await?;
+        let iv = send_iv(&conn, method, write_timeout).await?;
         let cipher = crypto::new_aead_encryptor(cipher_type, &key, &iv);
 
         Ok(AeadEncryptedWriter {
-            srv_cfg: srv_cfg.clone(),
             conn: &conn,
             encrypt_cipher: cipher,
             send_buf: vec![0; MAX_PACKET_SIZE],
+            method,
+            write_timeout,
         })
     }
 }
@@ -94,7 +124,7 @@ impl EncryptedWriter<'_> for AeadEncryptedWriter<'_> {
     }
 
     async fn send_all(&mut self, buf: &[u8]) -> Result<()> {
-        let cipher_type = self.srv_cfg.method();
+        let cipher_type = self.method;
         let size = aead_encrypted_write(
             &mut self.encrypt_cipher,
             &buf,
@@ -104,7 +134,7 @@ impl EncryptedWriter<'_> for AeadEncryptedWriter<'_> {
         let now = Instant::now();
 
         io::timeout(
-            self.srv_cfg.write_timeout(),
+            self.write_timeout,
             self.conn.write_all(&self.send_buf[..size]),
         )
         .await?;
@@ -116,28 +146,31 @@ impl EncryptedWriter<'_> for AeadEncryptedWriter<'_> {
 }
 
 pub struct AeadEncryptedReader<'a> {
-    srv_cfg: Arc<ServerConfig>,
     conn: &'a TcpStream,
     decrypt_cipher: BoxAeadDecryptor,
     recv_buf: Vec<u8>,
+    method: CipherType,
+    read_timeout: Duration,
 }
 
 impl<'a> AeadEncryptedReader<'a> {
     pub async fn new(
-        srv_cfg: Arc<ServerConfig>,
         conn: &'a TcpStream,
+        method: CipherType,
+        key: Bytes,
+        read_timeout: Duration,
     ) -> Result<AeadEncryptedReader<'a>> {
-        let key = srv_cfg.key();
-        let cipher_type = srv_cfg.method();
+        let cipher_type = method;
 
-        let iv = recv_iv(&conn, srv_cfg.clone()).await?;
+        let iv = recv_iv(&conn, method, read_timeout).await?;
         let decrypt_cipher = crypto::new_aead_decryptor(cipher_type, &key, &iv);
 
         Ok(AeadEncryptedReader {
-            srv_cfg: srv_cfg.clone(),
             conn: &conn,
             decrypt_cipher,
             recv_buf: vec![0; MAX_PACKET_SIZE],
+            method,
+            read_timeout,
         })
     }
 }
@@ -145,11 +178,11 @@ impl<'a> AeadEncryptedReader<'a> {
 #[async_trait::async_trait]
 impl EncryptedReader<'_> for AeadEncryptedReader<'_> {
     async fn recv(&mut self, buf: &mut [u8]) -> Result<usize> {
-        let cipher_type = self.srv_cfg.method();
+        let cipher_type = self.method;
 
         let now = Instant::now();
         let size = io::timeout(
-            self.srv_cfg.read_timeout(),
+            self.read_timeout,
             aead_decrypted_read(
                 &mut self.decrypt_cipher,
                 self.conn,
@@ -173,10 +206,11 @@ mod tests {
     use async_std::prelude::*;
     use async_std::task;
 
-    use config::ServerAddr;
+    use config::{ServerAddr, ServerConfig};
     use crypto::CipherType;
 
     use super::*;
+    use std::sync::Arc;
 
     #[test]
     fn test_encrypted_stream() {
@@ -201,7 +235,13 @@ mod tests {
                 task::sleep(Duration::from_secs(1)).await;
 
                 let conn = TcpStream::connect(BIND_ADDR).await?;
-                let mut writer = AeadEncryptedWriter::new(srv_cfg_clone, &conn).await?;
+                let mut writer = AeadEncryptedWriter::new(
+                    &conn,
+                    srv_cfg_clone.method(),
+                    srv_cfg_clone.key(),
+                    srv_cfg_clone.write_timeout(),
+                )
+                .await?;
                 writer.send_addr(&addr_clone).await?;
                 task::sleep(Duration::from_secs(1)).await;
                 writer.send_all(DATA).await?;
@@ -215,7 +255,13 @@ mod tests {
             let mut buf = vec![0; 1024];
             if let Some(stream) = incoming.next().await {
                 let conn = stream?;
-                let mut reader = AeadEncryptedReader::new(srv_cfg, &conn).await?;
+                let mut reader = AeadEncryptedReader::new(
+                    &conn,
+                    srv_cfg.method(),
+                    srv_cfg.key(),
+                    srv_cfg.read_timeout(),
+                )
+                .await?;
                 let _size = reader.recv(&mut buf).await?;
                 let recv_addr = Address::read_from(&mut buf.as_slice())?;
                 assert_eq!(recv_addr, addr);

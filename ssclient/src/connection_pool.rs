@@ -43,8 +43,7 @@ impl Pool {
             for _ in 0..(self.max_idle - len) {
                 let conn = match self.new_connection().await {
                     Ok(conn) => conn,
-                    Err(e) => {
-                        error!(err = ?e, "new connection");
+                    Err(_) => {
                         continue;
                     }
                 };
@@ -59,7 +58,13 @@ impl Pool {
 
     async fn new_connection(&self) -> Result<EncryptedStremBox> {
         let now = Instant::now();
-        let conn = (self.connector)().await?;
+        let conn = match (self.connector)().await {
+            Ok(conn) => conn,
+            Err(e) => {
+                error!(err = ?e, "new connection");
+                return Err(e);
+            }
+        };
         let duration = now.elapsed();
         trace!(duration = ?duration, "Pool.new_connection");
         Ok(conn)
@@ -125,8 +130,17 @@ mod tests {
                 Arc::new(move || {
                     let srv_cfg_clone = srv_cfg.clone();
                     async move {
-                        let conn: EncryptedStremBox =
-                            Box::new(StreamEncryptedTcpStream::new(srv_cfg_clone, ssserver).await?);
+                        let conn: EncryptedStremBox = Box::new(
+                            StreamEncryptedTcpStream::new(
+                                ssserver,
+                                srv_cfg_clone.method(),
+                                srv_cfg_clone.key(),
+                                srv_cfg_clone.connect_timeout(),
+                                srv_cfg_clone.read_timeout(),
+                                srv_cfg_clone.write_timeout(),
+                            )
+                            .await?,
+                        );
                         Ok(conn)
                     }
                         .boxed()

@@ -82,7 +82,7 @@ impl DnsNetworkClient {
                 match c.run().await {
                     Ok(_) => {}
                     Err(e) if e.kind() == ErrorKind::AddrNotAvailable => {}
-                    Err(e) => panic!(e),
+                    Err(e) => panic!("dns error: {}", e),
                 }
             }
         });
