@@ -1,0 +1,160 @@
+use crate::client::Client;
+use async_std::io;
+use async_std::net::{TcpStream, UdpSocket};
+use async_std::prelude::FutureExt;
+use async_std::task;
+use async_std::task::JoinHandle;
+use config::Address;
+use futures::io::Error;
+use hermesdns::DnsNetworkClient;
+use ssclient::resolve_domain;
+use std::collections::HashMap;
+use std::io::ErrorKind;
+use std::io::Result;
+use std::net::{IpAddr, SocketAddr};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+use tracing::{trace, trace_span};
+use tracing_futures::Instrument;
+use tun::socket::{TunTcpSocket, TunUdpSocket};
+
+pub(crate) struct DirectClient {
+    resolver: DnsNetworkClient,
+    dns_server: (String, u16),
+    connect_timeout: Duration,
+    probe_timeout: Duration,
+}
+
+impl DirectClient {
+    pub async fn new(
+        dns_server: (String, u16),
+        connect_timeout: Duration,
+        probe_timeout: Duration,
+    ) -> Self {
+        DirectClient {
+            resolver: DnsNetworkClient::new(0, connect_timeout).await,
+            dns_server,
+            connect_timeout,
+            probe_timeout,
+        }
+    }
+
+    fn dns_server(&self) -> (&str, u16) {
+        (&self.dns_server.0, self.dns_server.1)
+    }
+
+    async fn resolve_domain(&self, domain: &str) -> Result<Option<IpAddr>> {
+        resolve_domain(&self.resolver, self.dns_server(), domain).await
+    }
+
+    pub(crate) async fn probe_connectivity(&self, addr: Address) -> bool {
+        self.connect(addr, self.probe_timeout).await.is_ok()
+    }
+
+    async fn connect(&self, addr: Address, timeout: Duration) -> Result<TcpStream> {
+        let sock_addr = match addr {
+            Address::SocketAddress(addr) => addr,
+            Address::DomainNameAddress(domain, port) => {
+                let ip = self.resolve_domain(&domain).await?;
+                match ip {
+                    None => {
+                        return Err(Error::new(
+                            ErrorKind::NotFound,
+                            format!("domain {} not found", &domain),
+                        ))
+                    }
+                    Some(ip) => SocketAddr::new(ip, port),
+                }
+            }
+        };
+        let now = Instant::now();
+        let conn = io::timeout(timeout, TcpStream::connect(sock_addr)).await?;
+        let elapsed = now.elapsed();
+        trace!(duration = ?elapsed, "TcpStream::connect");
+        Ok(conn)
+    }
+}
+
+#[async_trait::async_trait]
+impl Client for DirectClient {
+    async fn handle_tcp(&self, mut socket: TunTcpSocket, addr: Address) -> Result<()> {
+        let conn = self.connect(addr, self.connect_timeout).await?;
+        let mut socket_clone = socket.clone();
+        let mut ref_conn = &conn;
+        let mut ref_conn2 = &conn;
+        let a = io::copy(&mut socket_clone, &mut ref_conn);
+        let b = io::copy(&mut ref_conn2, &mut socket);
+        let (ret_a, ret_b) = a.join(b).await;
+        ret_a?;
+        ret_b?;
+        Ok(())
+    }
+
+    #[allow(unreachable_code)]
+    async fn handle_udp(&self, socket: TunUdpSocket, addr: Address) -> Result<()> {
+        let sock_addr = match addr.clone() {
+            Address::SocketAddress(addr) => addr,
+            Address::DomainNameAddress(domain, port) => {
+                let ip = self.resolve_domain(&domain).await?;
+                match ip {
+                    None => {
+                        return Err(Error::new(
+                            ErrorKind::NotFound,
+                            format!("domain {} not found", &domain),
+                        ))
+                    }
+                    Some(ip) => SocketAddr::new(ip, port),
+                }
+            }
+        };
+
+        let mut buf = vec![0; 1024];
+        let mut udp_map = HashMap::new();
+
+        loop {
+            let now = Instant::now();
+            let (recv_from_local_size, local_src) = socket.recv_from(&mut buf).await?;
+            let duration = now.elapsed();
+            let udp_socket = match udp_map.get(&local_src).cloned() {
+                Some(socket) => socket,
+                None => {
+                    let new_udp = Arc::new(UdpSocket::bind("0.0.0.0:0").await?);
+                    let bind_addr = new_udp.local_addr()?;
+                    trace!(addr = %bind_addr, "bind new udp socket");
+                    udp_map.insert(local_src, new_udp.clone());
+
+                    let cloned_socket = socket.clone();
+                    let cloned_new_udp = new_udp.clone();
+                    let _handle: JoinHandle<Result<_>> = task::spawn(async move {
+                        let mut recv_buf = vec![0; 1024];
+                        loop {
+                            let now = Instant::now();
+                            let (recv_from_ss_size, udp_ss_addr) =
+                                cloned_new_udp.recv_from(&mut recv_buf).await?;
+                            let duration = now.elapsed();
+                            trace!(duration = ?duration, size = recv_from_ss_size, src_addr = %udp_ss_addr, local_udp_socket = ?bind_addr, "recv from ss server");
+                            let now = Instant::now();
+                            let send_local_size = cloned_socket
+                                .send_to(&recv_buf[..recv_from_ss_size], &local_src)
+                                .await?;
+                            let duration = now.elapsed();
+                            trace!(duration = ?duration, size = send_local_size, dst_addr = %local_src, local_udp_socket = ?bind_addr, "send to tun socket");
+                        }
+                        Ok(())
+                    }.instrument(trace_span!("ss server to tun socket", socket = %bind_addr)));
+                    new_udp
+                }
+            };
+            let bind_addr = udp_socket.local_addr()?;
+            trace!(duration = ?duration, size = recv_from_local_size, src_addr = %local_src, local_udp_socket = ?bind_addr, "recv from tun socket");
+            let now = Instant::now();
+            let send_ss_size = udp_socket
+                .send_to(&buf[..recv_from_local_size], sock_addr)
+                .await?;
+            let duration = now.elapsed();
+            trace!(duration = ?duration, size = send_ss_size, dst_addr = %sock_addr, local_udp_socket = ?bind_addr, "send to ss server");
+        }
+
+        Ok(())
+    }
+}
