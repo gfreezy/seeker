@@ -3,7 +3,8 @@ mod client;
 
 use std::error::Error;
 
-use crate::client::{Client, RuledClient};
+use crate::client::ruled_client::RuledClient;
+use crate::client::Client;
 use async_std::io::timeout;
 use async_std::task::{block_on, spawn};
 use clap::{App, Arg};
