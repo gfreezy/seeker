@@ -17,7 +17,7 @@ use async_std::sync::{channel, Receiver, Sender};
 use async_std::task;
 use async_trait::async_trait;
 use std::time::Duration;
-use tracing::trace;
+use tracing::{error, trace};
 
 #[async_trait]
 pub trait DnsClient {
@@ -81,8 +81,9 @@ impl DnsNetworkClient {
             loop {
                 match c.run().await {
                     Ok(_) => {}
-                    Err(e) if e.kind() == ErrorKind::AddrNotAvailable => {}
-                    Err(e) => panic!("dns error: {}", e),
+                    Err(e) => {
+                        error!(error=?e, "dns error");
+                    }
                 }
             }
         });
