@@ -198,7 +198,7 @@ impl SSClient {
             Ok(())
         };
 
-        let _: (Result<()>, Result<()>) = send_task.join(recv_task).await;
+        let _: Result<()> = send_task.try_race(recv_task).await;
         Ok(())
     }
 
