@@ -84,9 +84,7 @@ impl Client for DirectClient {
         let mut ref_conn2 = &conn;
         let a = io::copy(&mut socket_clone, &mut ref_conn);
         let b = io::copy(&mut ref_conn2, &mut socket);
-        let (ret_a, ret_b) = a.join(b).await;
-        ret_a?;
-        ret_b?;
+        let _ = a.try_race(b).await?;
         Ok(())
     }
 
