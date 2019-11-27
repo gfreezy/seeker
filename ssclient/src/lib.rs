@@ -1,25 +1,22 @@
-mod connection_pool;
-mod encrypted_stream;
-mod tcp_io;
-mod udp_io;
-
 use std::collections::HashMap;
 use std::io;
+use std::io::ErrorKind;
 use std::io::{Error, Result};
 use std::net::{IpAddr, SocketAddr};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use async_std::io::timeout;
+use async_std::io::{timeout, Read, Write};
 use async_std::net::{TcpStream, UdpSocket};
-use async_std::prelude::FutureExt as _;
+use async_std::prelude::*;
+use async_std::sync::RwLock;
 use async_std::task;
 use async_std::task::JoinHandle;
 use bytes::{Bytes, BytesMut};
-use futures::io::ErrorKind;
-use futures::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, FutureExt, TryFutureExt};
+use futures::TryFutureExt;
 use tracing::{trace, trace_span};
+use tracing_futures::Instrument;
 
 use config::{Address, ServerAddr, ServerConfig};
 use crypto::{CipherCategory, CipherType};
@@ -29,8 +26,11 @@ use tun::socket::TunUdpSocket;
 use crate::connection_pool::{EncryptedStremBox, Pool};
 use crate::encrypted_stream::{AeadEncryptedTcpStream, StreamEncryptedTcpStream};
 use crate::udp_io::{decrypt_payload, encrypt_payload};
-use async_std::sync::RwLock;
-use tracing_futures::Instrument;
+
+mod connection_pool;
+mod encrypted_stream;
+mod tcp_io;
+mod udp_io;
 
 const MAX_PACKET_SIZE: usize = 0x3FFF;
 
@@ -65,54 +65,55 @@ impl SSClient {
                 let dns_server = dns_server_clone.clone();
                 let connect_errors = connect_errors_clone.clone();
 
-                async move {
-                    let srv_cfg = srv_cfg.read().await;
-                    let read_timeout = srv_cfg.read_timeout();
-                    let write_timeout = srv_cfg.write_timeout();
-                    let connect_timeout = srv_cfg.connect_timeout();
-                    let key = srv_cfg.key();
-                    let method = srv_cfg.method();
-                    let server_addr = srv_cfg.addr().clone();
+                Box::pin(
+                    async move {
+                        let srv_cfg = srv_cfg.read().await;
+                        let read_timeout = srv_cfg.read_timeout();
+                        let write_timeout = srv_cfg.write_timeout();
+                        let connect_timeout = srv_cfg.connect_timeout();
+                        let key = srv_cfg.key();
+                        let method = srv_cfg.method();
+                        let server_addr = srv_cfg.addr().clone();
 
-                    trace!(server_addr=?server_addr, "connect to");
-                    let ssserver = get_remote_ssserver_addr(
-                        &*resolver,
-                        &server_addr,
-                        (&dns_server.0, dns_server.1),
-                    )
-                    .await?;
+                        trace!(server_addr=?server_addr, "connect to");
+                        let ssserver = get_remote_ssserver_addr(
+                            &*resolver,
+                            &server_addr,
+                            (&dns_server.0, dns_server.1),
+                        )
+                        .await?;
 
-                    let conn: EncryptedStremBox = match method.category() {
-                        CipherCategory::Stream => Box::new(
-                            StreamEncryptedTcpStream::new(
-                                ssserver,
-                                method,
-                                key,
-                                connect_timeout,
-                                read_timeout,
-                                write_timeout,
-                            )
-                            .await?,
-                        ),
-                        CipherCategory::Aead => Box::new(
-                            AeadEncryptedTcpStream::new(
-                                ssserver,
-                                method,
-                                key,
-                                connect_timeout,
-                                read_timeout,
-                                write_timeout,
-                            )
-                            .await?,
-                        ),
-                    };
-                    Ok(conn)
-                }
-                    .map_err(move |e| {
-                        connect_errors.fetch_add(1, Ordering::SeqCst);
-                        e
-                    })
-                    .boxed()
+                        let conn: EncryptedStremBox = match method.category() {
+                            CipherCategory::Stream => Box::new(
+                                StreamEncryptedTcpStream::new(
+                                    ssserver,
+                                    method,
+                                    key,
+                                    connect_timeout,
+                                    read_timeout,
+                                    write_timeout,
+                                )
+                                .await?,
+                            ),
+                            CipherCategory::Aead => Box::new(
+                                AeadEncryptedTcpStream::new(
+                                    ssserver,
+                                    method,
+                                    key,
+                                    connect_timeout,
+                                    read_timeout,
+                                    write_timeout,
+                                )
+                                .await?,
+                            ),
+                        };
+                        Ok(conn)
+                    }
+                        .map_err(move |e| {
+                            connect_errors.fetch_add(1, Ordering::SeqCst);
+                            e
+                        }),
+                )
             }),
         );
 
@@ -145,7 +146,7 @@ impl SSClient {
         let _ = self.connect_errors.swap(0, Ordering::SeqCst);
     }
 
-    async fn handle_encrypted_tcp_stream<T: AsyncRead + AsyncWrite + Clone + Unpin>(
+    async fn handle_encrypted_tcp_stream<T: Read + Write + Clone + Unpin>(
         &self,
         mut socket: T,
         addr: Address,
@@ -202,7 +203,7 @@ impl SSClient {
         Ok(())
     }
 
-    pub async fn handle_tcp_connection<T: AsyncRead + AsyncWrite + Clone + Unpin>(
+    pub async fn handle_tcp_connection<T: Read + Write + Clone + Unpin>(
         &self,
         socket: T,
         addr: Address,

@@ -1,10 +1,9 @@
+use async_std::io::{Read, Write};
 use async_std::net::driver::Watcher;
-use futures::{AsyncRead, AsyncWrite};
 use std::io;
-use std::io::{Read, Write};
+use std::io::{Read as _, Write as _};
 use std::pin::Pin;
 use std::task::{Context, Poll};
-
 mod sys;
 
 pub(crate) struct TunSocket {
@@ -32,7 +31,7 @@ impl TunSocket {
     }
 }
 
-impl AsyncRead for TunSocket {
+impl Read for TunSocket {
     fn poll_read(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -42,7 +41,7 @@ impl AsyncRead for TunSocket {
     }
 }
 
-impl AsyncRead for &TunSocket {
+impl Read for &TunSocket {
     fn poll_read(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -52,7 +51,7 @@ impl AsyncRead for &TunSocket {
     }
 }
 
-impl AsyncWrite for TunSocket {
+impl Write for TunSocket {
     fn poll_write(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -70,7 +69,7 @@ impl AsyncWrite for TunSocket {
     }
 }
 
-impl AsyncWrite for &TunSocket {
+impl Write for &TunSocket {
     fn poll_write(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
