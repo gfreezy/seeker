@@ -1,6 +1,6 @@
 use crate::socket::to_socket_addr;
 use crate::TUN;
-use futures::{AsyncRead, AsyncWrite};
+use async_std::io::{Read, Write};
 use smoltcp::socket::{SocketHandle, TcpSocket};
 use std::io;
 use std::io::Error;
@@ -65,7 +65,7 @@ impl Drop for TunTcpSocket {
     }
 }
 
-impl AsyncRead for TunTcpSocket {
+impl Read for TunTcpSocket {
     fn poll_read(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -102,7 +102,7 @@ impl AsyncRead for TunTcpSocket {
     }
 }
 
-impl AsyncWrite for TunTcpSocket {
+impl Write for TunTcpSocket {
     fn poll_write(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,

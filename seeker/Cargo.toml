@@ -16,7 +16,6 @@ dnsserver = { path = "../dnsserver" }
 ssclient = { path = "../ssclient" }
 sysconfig = { path = "../sysconfig" }
 tun = { path = "../tun" }
-futures = "0.3.0"
 signal-hook = { version = "0.1.10", features = ["mio-support"] }
 async-trait = "0.1.14"
 hermesdns = { path = "../hermes/hermesdns" }
