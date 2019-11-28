@@ -321,8 +321,8 @@ mod tests {
 
     use async_std::io;
     use async_std::net::TcpStream;
-    use async_std::task;
     use async_std::prelude::*;
+    use async_std::task;
     use smoltcp::wire::Ipv4Address;
 
     use super::*;
