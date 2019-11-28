@@ -663,7 +663,6 @@ dependencies = [
  "async-std",
  "async-trait",
  "chrono",
- "futures",
  "rand",
  "tracing",
 ]
@@ -1265,7 +1264,6 @@ dependencies = [
  "clap",
  "config",
  "dnsserver",
- "futures",
  "hermesdns",
  "libc",
  "signal-hook",
@@ -1594,7 +1592,6 @@ name = "tun"
 version = "0.1.0"
 dependencies = [
  "async-std",
- "futures",
  "lazy_static",
  "libc",
  "managed",

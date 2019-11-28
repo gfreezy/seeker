@@ -3,16 +3,17 @@ use std::time::{Duration, Instant};
 
 use async_std::io;
 use async_std::net::{SocketAddr, TcpStream};
+use async_std::prelude::*;
 use bytes::{Bytes, BytesMut};
-use futures::{AsyncReadExt, AsyncWriteExt, FutureExt};
+use futures::future::BoxFuture;
 use tracing::trace;
 
 use config::Address;
 use crypto::{BoxStreamCipher, CipherType, CryptoMode};
 
-use super::{EncryptedReader, EncryptedTcpStream, EncryptedWriter};
 use crate::{recv_iv, send_iv, MAX_PACKET_SIZE};
-use futures::future::BoxFuture;
+
+use super::{EncryptedReader, EncryptedTcpStream, EncryptedWriter};
 
 pub struct StreamEncryptedTcpStream {
     conn: TcpStream,
@@ -51,7 +52,7 @@ impl EncryptedTcpStream for StreamEncryptedTcpStream {
         &'b self,
     ) -> BoxFuture<'b, Result<Box<dyn EncryptedWriter<'a> + 'a + Send>>> {
         // We need to send iv first, then we can read the iv from ss server.
-        async move {
+        Box::pin(async move {
             let writer = StreamEncryptedWriter::new(
                 &self.conn,
                 self.method,
@@ -61,15 +62,14 @@ impl EncryptedTcpStream for StreamEncryptedTcpStream {
             .await?;
             let w: Box<dyn EncryptedWriter + Send> = Box::new(writer);
             Ok(w)
-        }
-            .boxed()
+        })
     }
 
     fn get_reader<'a, 'b: 'a>(
         &'b self,
     ) -> BoxFuture<'b, Result<Box<dyn EncryptedReader<'a> + 'a + Send>>> {
         // We need to send iv first, then we can read the iv from ss server.
-        async move {
+        Box::pin(async move {
             let reader = StreamEncryptedReader::new(
                 &self.conn,
                 self.method,
@@ -79,8 +79,7 @@ impl EncryptedTcpStream for StreamEncryptedTcpStream {
             .await?;
             let w: Box<dyn EncryptedReader + Send> = Box::new(reader);
             Ok(w)
-        }
-            .boxed()
+        })
     }
 }
 
@@ -187,6 +186,7 @@ impl EncryptedReader<'_> for StreamEncryptedReader<'_> {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
     use std::time::Duration;
 
     use async_std::net::TcpListener;
@@ -197,7 +197,6 @@ mod tests {
     use crypto::CipherType;
 
     use super::*;
-    use std::sync::Arc;
 
     #[test]
     fn test_encrypted_stream() {

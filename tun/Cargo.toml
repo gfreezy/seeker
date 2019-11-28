@@ -11,7 +11,6 @@ tracing = "0.1"
 libc = "0.2.62"
 async-std = { git = "https://github.com/gfreezy/async-std", rev = "3b3f0f9f27e74ec6b7eb027d292ede25350b032d"}
 sysconfig = { path = "../sysconfig" }
-futures = "0.3"
 lazy_static = "1.4.0"
 managed = "0.7.1"
 mio = "0.6.19"

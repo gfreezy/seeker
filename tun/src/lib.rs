@@ -8,7 +8,8 @@ use std::sync::Arc;
 use std::task::{Context, Poll, Waker};
 use std::time::Duration;
 
-use futures::{ready, AsyncRead, AsyncWrite, Stream};
+use async_std::prelude::*;
+use async_std::task::ready;
 use parking_lot::Mutex;
 use smoltcp::socket::{Socket, SocketHandle, SocketSet};
 use smoltcp::time::Instant;
@@ -320,8 +321,8 @@ mod tests {
 
     use async_std::io;
     use async_std::net::TcpStream;
+    use async_std::prelude::*;
     use async_std::task;
-    use futures::{AsyncReadExt, AsyncWriteExt, StreamExt};
     use smoltcp::wire::Ipv4Address;
 
     use super::*;
