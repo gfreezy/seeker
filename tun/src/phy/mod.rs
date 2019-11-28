@@ -93,9 +93,9 @@ mod tests {
     use super::*;
     use async_std::io::timeout;
     use async_std::net::UdpSocket;
+    use async_std::prelude::*;
     use async_std::task;
     use async_std::task::block_on;
-    use async_std::prelude::*;
     use smoltcp::phy::ChecksumCapabilities;
     use smoltcp::wire::*;
     use std::time::Duration;
