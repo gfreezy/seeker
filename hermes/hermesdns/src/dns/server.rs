@@ -235,7 +235,7 @@ mod tests {
 
     use crate::dns::context::tests::create_test_context;
     use crate::ResolveStrategy;
-    use futures::executor::block_on;
+    use async_std::task::block_on;
 
     fn build_query(qname: &str, qtype: QueryType) -> DnsPacket {
         let mut query_packet = DnsPacket::new();

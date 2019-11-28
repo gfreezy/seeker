@@ -322,7 +322,7 @@ mod tests {
     use async_std::io;
     use async_std::net::TcpStream;
     use async_std::task;
-    use futures::{AsyncReadExt, AsyncWriteExt, StreamExt};
+    use async_std::prelude::*;
     use smoltcp::wire::Ipv4Address;
 
     use super::*;
