@@ -7,7 +7,7 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-async-std = { git = "https://github.com/gfreezy/async-std", rev = "3b3f0f9f27e74ec6b7eb027d292ede25350b032d"}
+async-std = { git = "https://github.com/gfreezy/async-std", rev = "0736364"}
 hermesdns = { path = "../hermes/hermesdns" }
 config = { path = "../config" }
 sled = "0.28.0"

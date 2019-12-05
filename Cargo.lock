@@ -57,8 +57,8 @@ dependencies = [
 
 [[package]]
 name = "async-std"
-version = "1.0.1"
-source = "git+https://github.com/gfreezy/async-std?rev=3b3f0f9f27e74ec6b7eb027d292ede25350b032d#3b3f0f9f27e74ec6b7eb027d292ede25350b032d"
+version = "1.2.0"
+source = "git+https://github.com/gfreezy/async-std?rev=0736364#073636444d11f70ceddf1cbe5db265ca19185ddb"
 dependencies = [
  "async-macros",
  "async-task",
