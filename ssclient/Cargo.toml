@@ -38,5 +38,5 @@ features = [
 
 [dependencies.async-std]
 git = "https://github.com/gfreezy/async-std"
-rev = "3b3f0f9f27e74ec6b7eb027d292ede25350b032d"
+rev = "0736364"
 features = ["unstable"]
