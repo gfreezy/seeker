@@ -208,10 +208,10 @@ impl Client for RuledClient {
         {
             let conn = self.connections.lock().unwrap().remove(&index);
             if let Some(conn) = conn {
-                if ret.is_ok() {
-                    println!("Close connection {}, connect time: {}, duration: {}s, addr: {}, action: {:?}", index, conn.connect_time.format("%Y-%m-%d %H:%M:%S").to_string(), (Local::now() - conn.connect_time).num_seconds(), conn.address, conn.action);
+                if let Err(e) = &ret {
+                    println!("Interrupt connection {}: {:?}, connect time: {}, duration: {}s, addr: {}, action: {:?}", e, index, conn.connect_time.format("%Y-%m-%d %H:%M:%S").to_string(), (Local::now() - conn.connect_time).num_seconds(), conn.address, conn.action);
                 } else {
-                    println!("Interrupt connection {}, connect time: {}, duration: {}s, addr: {}, action: {:?}", index, conn.connect_time.format("%Y-%m-%d %H:%M:%S").to_string(), (Local::now() - conn.connect_time).num_seconds(), conn.address, conn.action);
+                    println!("Close connection {}, connect time: {}, duration: {}s, addr: {}, action: {:?}", index, conn.connect_time.format("%Y-%m-%d %H:%M:%S").to_string(), (Local::now() - conn.connect_time).num_seconds(), conn.address, conn.action);
                 }
             }
         }
