@@ -91,7 +91,7 @@ impl Client for DirectClient {
             self.read_timeout,
             io::copy(&mut socket_clone, &mut ref_conn),
         );
-        let b = io::timeout(self.read_timeout, io::copy(&mut ref_conn2, &mut socket));
+        let b = io::timeout(self.write_timeout, io::copy(&mut ref_conn2, &mut socket));
         let _ = a.try_race(b).await?;
         Ok(())
     }
