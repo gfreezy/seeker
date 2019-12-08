@@ -13,7 +13,7 @@ pub enum Rule {
     Match(Action),
 }
 
-#[derive(Eq, PartialEq, Clone, Debug)]
+#[derive(Eq, PartialEq, Copy, Clone, Debug, Hash)]
 pub enum Action {
     Reject,
     Direct,

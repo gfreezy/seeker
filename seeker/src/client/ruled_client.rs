@@ -1,18 +1,33 @@
-use super::direct_client::DirectClient;
-use crate::client::Client;
-use async_std::sync::RwLock;
-use config::rule::{Action, ProxyRules};
-use config::{Address, Config};
-use ssclient::SSClient;
 use std::collections::HashMap;
 use std::io::Result;
 use std::net::SocketAddr;
-use std::sync::atomic::AtomicBool;
-use std::sync::Arc;
-use sysconfig::{list_user_proc_socks, SocketInfo};
+use std::sync::atomic::Ordering::SeqCst;
+use std::sync::atomic::{AtomicBool, AtomicU64};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+use async_std::sync::RwLock;
+use async_std::task;
+use chrono::{DateTime, Local};
 use tracing::{error, info, trace_span};
 use tracing_futures::Instrument;
+
+use config::rule::{Action, ProxyRules};
+use config::{Address, Config};
+use ssclient::SSClient;
+use sysconfig::{list_user_proc_socks, SocketInfo};
 use tun::socket::{TunTcpSocket, TunUdpSocket};
+
+use crate::client::Client;
+
+use super::direct_client::DirectClient;
+
+#[derive(Hash, Debug, Eq, PartialEq)]
+struct Connection {
+    address: Address,
+    connect_time: DateTime<Local>,
+    action: Action,
+}
 
 #[derive(Clone)]
 pub struct RuledClient {
@@ -22,6 +37,8 @@ pub struct RuledClient {
     direct_client: Arc<DirectClient>,
     proxy_uid: Option<u32>,
     term: Arc<AtomicBool>,
+    counter: Arc<AtomicU64>,
+    connections: Arc<Mutex<HashMap<u64, Connection>>>,
 }
 
 async fn new_ssclient(conf: &Config, conf_index: usize) -> SSClient {
@@ -47,21 +64,50 @@ async fn new_direct_client(conf: &Config) -> DirectClient {
     DirectClient::new(
         dns_server_addr,
         conf.direct_connect_timeout,
+        conf.direct_read_timeout,
+        conf.direct_write_timeout,
         conf.probe_timeout,
     )
     .await
 }
 
 impl RuledClient {
-    pub async fn new(conf: Config, proxy_uid: Option<u32>, to_terminate: Arc<AtomicBool>) -> Self {
-        RuledClient {
+    pub async fn new(
+        conf: Config,
+        proxy_uid: Option<u32>,
+        to_terminate: Arc<AtomicBool>,
+    ) -> RuledClient {
+        let c = RuledClient {
             term: to_terminate.clone(),
             rule: conf.rules.clone(),
             ssclient: Arc::new(new_ssclient(&conf, 0).await),
             direct_client: Arc::new(new_direct_client(&conf).await),
             conf,
             proxy_uid,
-        }
+            counter: Arc::new(AtomicU64::new(0)),
+            connections: Arc::new(Mutex::new(HashMap::new())),
+        };
+        let client = c.clone();
+        let _ = task::spawn(async move {
+            loop {
+                {
+                    let guard = client.connections.lock().unwrap();
+                    println!("\nCurrent connections:");
+                    for conn in guard.values() {
+                        println!(
+                            "Connect time: {}, duration: {}s, addr: {}, action: {:?}",
+                            conn.connect_time.format("%Y-%m-%d %H:%M:%S").to_string(),
+                            (Local::now() - conn.connect_time).num_seconds(),
+                            conn.address,
+                            conn.action
+                        );
+                    }
+                    println!()
+                }
+                task::sleep(Duration::from_secs(5)).await;
+            }
+        });
+        c
     }
 
     async fn get_action_for_addr(&self, remote_addr: SocketAddr, addr: &Address) -> Result<Action> {
@@ -105,7 +151,20 @@ impl Client for RuledClient {
             .get_action_for_addr(socket.remote_addr(), &addr)
             .await?;
 
-        match action {
+        let index = self.counter.fetch_add(1, SeqCst);
+        {
+            let mut conn = self.connections.lock().unwrap();
+            conn.insert(
+                index,
+                Connection {
+                    address: addr.clone(),
+                    connect_time: Local::now(),
+                    action,
+                },
+            );
+        }
+
+        let ret = match action {
             Action::Reject => Ok(()),
             Action::Direct => {
                 self.direct_client
@@ -145,11 +204,22 @@ impl Client for RuledClient {
                     .await
             }
             Action::Probe => unreachable!(),
+        };
+        {
+            let conn = self.connections.lock().unwrap().remove(&index);
+            if let Some(conn) = conn {
+                if ret.is_ok() {
+                    println!("Close connection {}, connect time: {}, duration: {}s, addr: {}, action: {:?}", index, conn.connect_time.format("%Y-%m-%d %H:%M:%S").to_string(), (Local::now() - conn.connect_time).num_seconds(), conn.address, conn.action);
+                } else {
+                    println!("Interrupt connection {}, connect time: {}, duration: {}s, addr: {}, action: {:?}", index, conn.connect_time.format("%Y-%m-%d %H:%M:%S").to_string(), (Local::now() - conn.connect_time).num_seconds(), conn.address, conn.action);
+                }
+            }
         }
+        ret
     }
 
     async fn handle_udp(&self, socket: TunUdpSocket, addr: Address) -> Result<()> {
-        // FIXME: `socket.local_addr` is not right
+        // FIXME: `socket.local_addr` is not right, should be socket.remote_addr(). However, Udpsocket doesn't have a `remote_addr`
         let action = self.get_action_for_addr(socket.local_addr(), &addr).await?;
 
         match action {
