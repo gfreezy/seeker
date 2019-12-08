@@ -29,7 +29,9 @@ pub struct Config {
     pub probe_timeout: Duration,
     #[serde(with = "duration")]
     pub direct_connect_timeout: Duration,
+    #[serde(with = "duration")]
     pub direct_read_timeout: Duration,
+    #[serde(with = "duration")]
     pub direct_write_timeout: Duration,
     pub max_connect_errors: usize,
 }
