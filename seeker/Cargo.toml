@@ -19,6 +19,7 @@ tun = { path = "../tun" }
 signal-hook = { version = "0.1.10", features = ["mio-support"] }
 async-trait = "0.1.14"
 hermesdns = { path = "../hermes/hermesdns" }
+chrono = "0.4.10"
 
 [dependencies.smoltcp]
 git = "https://github.com/gfreezy/smoltcp"
