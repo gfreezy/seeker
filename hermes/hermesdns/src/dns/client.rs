@@ -90,7 +90,7 @@ impl DnsNetworkClient {
         client
     }
 
-    pub async fn run(&self) -> Result<((), ())> {
+    pub async fn run(&self) -> Result<()> {
         let addr = format!("0.0.0.0:{}", self.port);
         let socket = Arc::new(UdpSocket::bind(addr).await?);
         let req_resp_map: Arc<Mutex<HashMap<u16, Sender<DnsPacket>>>> =
@@ -121,6 +121,7 @@ impl DnsNetworkClient {
                     eprintln!("invalid udp packet");
                 }
             }
+            Ok::<(), Error>(())
         };
 
         let req_receiver = self.receiver.clone();
@@ -144,10 +145,11 @@ impl DnsNetworkClient {
                         .insert(req.packet.header.id, req.resp);
                 }
             }
-            Ok(())
+            Ok::<(), Error>(())
         };
 
-        read_task.try_join(write_task).await
+        read_task.try_join(write_task).await?;
+        Ok(())
     }
 
     /// Send a DNS query using UDP transport
@@ -193,9 +195,13 @@ impl DnsNetworkClient {
 
         match future::timeout(self.timeout, receiver.recv()).await {
             Ok(Some(qr)) => Ok(qr),
-            _ => {
+            Ok(None) => {
                 let _ = self.total_failed.fetch_add(1, Ordering::Release);
-                Err(Error::new(ErrorKind::InvalidInput, "Lookup failed"))
+                Err(Error::new(ErrorKind::InvalidInput, "Domain not found "))
+            },
+            Err(_) => {
+                let _ = self.total_failed.fetch_add(1, Ordering::Release);
+                Err(ErrorKind::TimedOut.into())
             }
         }
     }

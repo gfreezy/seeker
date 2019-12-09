@@ -422,9 +422,9 @@ mod tests {
 
     #[test]
     fn test_get_remote_ssserver_domain() {
-        let dns = std::env::var("DNS").unwrap_or_else(|_| "223.5.5.5".to_string());
+        let dns = std::env::var("DNS").unwrap_or_else(|_| "114.114.114.114".to_string());
         task::block_on(async {
-            let dns_client = DnsNetworkClient::new(0, Duration::from_secs(3)).await;
+            let dns_client = DnsNetworkClient::new(0, Duration::from_secs(5)).await;
             let cfg = Arc::new(ServerConfig::new(
                 "servername".to_string(),
                 ServerAddr::DomainName("local.allsunday.in".to_string(), 7789),

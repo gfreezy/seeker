@@ -135,6 +135,8 @@ dns_listen: 0.0.0.0:53
 gateway_mode: true
 probe_timeout: 10ms
 direct_connect_timeout: 1s
+direct_read_timeout: 1s
+direct_write_timeout: 1s
 max_connect_errors: 20
 server_configs:
   - name: server1
@@ -259,6 +261,8 @@ rules:
     gateway_mode: true,
     probe_timeout: 10ms,
     direct_connect_timeout: 1s,
+    direct_read_timeout: 1s,
+    direct_write_timeout: 1s,
     max_connect_errors: 20,
 }"#
         )
