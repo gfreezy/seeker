@@ -180,7 +180,7 @@ impl SSClient {
 
                 writer.send_all(&buf[..size]).await?;
             }
-            Ok(())
+            Ok::<(), io::Error>(())
         };
 
         let recv_task = async move {
@@ -196,10 +196,10 @@ impl SSClient {
                 let duration = now.elapsed();
                 trace!(duration = ?duration, size = size, "write to tun socket");
             }
-            Ok(())
+            Ok::<(), io::Error>(())
         };
 
-        let _: Result<()> = send_task.try_race(recv_task).await;
+        let _ = send_task.try_join(recv_task).await?;
         Ok(())
     }
 
@@ -209,8 +209,7 @@ impl SSClient {
         addr: Address,
     ) -> Result<()> {
         let conn = self.pool.get_connection().await?;
-        self.handle_encrypted_tcp_stream(socket, addr, conn).await?;
-        Ok(())
+        self.handle_encrypted_tcp_stream(socket, addr, conn).await
     }
 
     pub async fn handle_udp_connection(
