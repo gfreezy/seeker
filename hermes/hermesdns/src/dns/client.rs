@@ -198,7 +198,7 @@ impl DnsNetworkClient {
             Ok(None) => {
                 let _ = self.total_failed.fetch_add(1, Ordering::Release);
                 Err(Error::new(ErrorKind::InvalidInput, "Domain not found "))
-            },
+            }
             Err(_) => {
                 let _ = self.total_failed.fetch_add(1, Ordering::Release);
                 Err(ErrorKind::TimedOut.into())
