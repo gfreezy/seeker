@@ -21,6 +21,8 @@ pub(crate) struct DirectClient {
     resolver: DnsNetworkClient,
     dns_server: (String, u16),
     connect_timeout: Duration,
+    read_timeout: Duration,
+    write_timeout: Duration,
     probe_timeout: Duration,
 }
 
@@ -28,12 +30,16 @@ impl DirectClient {
     pub async fn new(
         dns_server: (String, u16),
         connect_timeout: Duration,
+        read_timeout: Duration,
+        write_timeout: Duration,
         probe_timeout: Duration,
     ) -> Self {
         DirectClient {
             resolver: DnsNetworkClient::new(0, connect_timeout).await,
             dns_server,
             connect_timeout,
+            read_timeout,
+            write_timeout,
             probe_timeout,
         }
     }
@@ -81,9 +87,12 @@ impl Client for DirectClient {
         let mut socket_clone = socket.clone();
         let mut ref_conn = &conn;
         let mut ref_conn2 = &conn;
-        let a = io::copy(&mut socket_clone, &mut ref_conn);
-        let b = io::copy(&mut ref_conn2, &mut socket);
-        let _ = a.try_race(b).await?;
+        let a = io::timeout(
+            self.read_timeout,
+            io::copy(&mut socket_clone, &mut ref_conn),
+        );
+        let b = io::timeout(self.write_timeout, io::copy(&mut ref_conn2, &mut socket));
+        let _ = a.try_join(b).await?;
         Ok(())
     }
 
@@ -110,7 +119,8 @@ impl Client for DirectClient {
 
         loop {
             let now = Instant::now();
-            let (recv_from_local_size, local_src) = socket.recv_from(&mut buf).await?;
+            let (recv_from_local_size, local_src) =
+                io::timeout(self.read_timeout, socket.recv_from(&mut buf)).await?;
             let duration = now.elapsed();
             let udp_socket = match udp_map.get(&local_src).cloned() {
                 Some(socket) => socket,
@@ -122,17 +132,19 @@ impl Client for DirectClient {
 
                     let cloned_socket = socket.clone();
                     let cloned_new_udp = new_udp.clone();
+                    let read_timeout = self.read_timeout;
+                    let write_timeout = self.write_timeout;
                     let _handle: JoinHandle<Result<_>> = task::spawn(async move {
                         let mut recv_buf = vec![0; 1024];
                         loop {
                             let now = Instant::now();
                             let (recv_from_ss_size, udp_ss_addr) =
-                                cloned_new_udp.recv_from(&mut recv_buf).await?;
+                                io::timeout(read_timeout, cloned_new_udp.recv_from(&mut recv_buf)).await?;
                             let duration = now.elapsed();
                             trace!(duration = ?duration, size = recv_from_ss_size, src_addr = %udp_ss_addr, local_udp_socket = ?bind_addr, "recv from ss server");
                             let now = Instant::now();
-                            let send_local_size = cloned_socket
-                                .send_to(&recv_buf[..recv_from_ss_size], &local_src)
+                            let send_local_size = io::timeout(write_timeout, cloned_socket
+                                .send_to(&recv_buf[..recv_from_ss_size], &local_src))
                                 .await?;
                             let duration = now.elapsed();
                             trace!(duration = ?duration, size = send_local_size, dst_addr = %local_src, local_udp_socket = ?bind_addr, "send to tun socket");
@@ -145,9 +157,11 @@ impl Client for DirectClient {
             let bind_addr = udp_socket.local_addr()?;
             trace!(duration = ?duration, size = recv_from_local_size, src_addr = %local_src, local_udp_socket = ?bind_addr, "recv from tun socket");
             let now = Instant::now();
-            let send_ss_size = udp_socket
-                .send_to(&buf[..recv_from_local_size], sock_addr)
-                .await?;
+            let send_ss_size = io::timeout(
+                self.write_timeout,
+                udp_socket.send_to(&buf[..recv_from_local_size], sock_addr),
+            )
+            .await?;
             let duration = now.elapsed();
             trace!(duration = ?duration, size = send_ss_size, dst_addr = %sock_addr, local_udp_socket = ?bind_addr, "send to ss server");
         }

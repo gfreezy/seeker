@@ -180,7 +180,7 @@ impl SSClient {
 
                 writer.send_all(&buf[..size]).await?;
             }
-            Ok(())
+            Ok::<(), io::Error>(())
         };
 
         let recv_task = async move {
@@ -196,10 +196,10 @@ impl SSClient {
                 let duration = now.elapsed();
                 trace!(duration = ?duration, size = size, "write to tun socket");
             }
-            Ok(())
+            Ok::<(), io::Error>(())
         };
 
-        let _: Result<()> = send_task.try_race(recv_task).await;
+        let _ = send_task.try_join(recv_task).await?;
         Ok(())
     }
 
@@ -209,8 +209,7 @@ impl SSClient {
         addr: Address,
     ) -> Result<()> {
         let conn = self.pool.get_connection().await?;
-        self.handle_encrypted_tcp_stream(socket, addr, conn).await?;
-        Ok(())
+        self.handle_encrypted_tcp_stream(socket, addr, conn).await
     }
 
     pub async fn handle_udp_connection(
@@ -218,12 +217,14 @@ impl SSClient {
         tun_socket: TunUdpSocket,
         addr: Address,
     ) -> Result<()> {
-        let (key, method, server_addr) = {
+        let (key, method, server_addr, read_timeout, write_timeout) = {
             let srv_cfg = self.srv_cfg.read().await;
             let key = srv_cfg.key();
             let method = srv_cfg.method();
             let server_addr = srv_cfg.addr().clone();
-            (key, method, server_addr)
+            let read_timeout = srv_cfg.read_timeout();
+            let write_timeout = srv_cfg.write_timeout();
+            (key, method, server_addr, read_timeout, write_timeout)
         };
         let ssserver = get_remote_ssserver_addr(
             &*self.resolver,
@@ -241,9 +242,11 @@ impl SSClient {
             encrypt_buf.clear();
             buf[..addr.serialized_len()].copy_from_slice(&addr.to_bytes());
             let now = Instant::now();
-            let (recv_from_tun_size, local_src) = tun_socket
-                .recv_from(&mut buf[addr.serialized_len()..])
-                .await?;
+            let (recv_from_tun_size, local_src) = timeout(
+                read_timeout,
+                tun_socket.recv_from(&mut buf[addr.serialized_len()..]),
+            )
+            .await?;
             let duration = now.elapsed();
             let encrypt_size = encrypt_payload(
                 cipher_type,
@@ -270,7 +273,8 @@ impl SSClient {
                             decrypt_buf.clear();
                             let now = Instant::now();
                             let (recv_from_ss_size, udp_ss_addr) =
-                                cloned_new_udp.recv_from(&mut recv_buf).await?;
+                                timeout(read_timeout, cloned_new_udp.recv_from(&mut recv_buf))
+                                    .await?;
                             let duration = now.elapsed();
                             trace!(duration = ?duration, size = recv_from_ss_size, src_addr = %udp_ss_addr, local_udp_socket = ?bind_addr, "recv from ss server");
                             let decrypt_size = decrypt_payload(
@@ -287,12 +291,14 @@ impl SSClient {
                             );
                             let addr = Address::read_from(&mut decrypt_buf.as_ref())?;
                             let now = Instant::now();
-                            let send_local_size = cloned_socket
-                                .send_to(
+                            let send_local_size = timeout(
+                                write_timeout,
+                                cloned_socket.send_to(
                                     &decrypt_buf[addr.serialized_len()..decrypt_size],
                                     &local_src,
-                                )
-                                .await?;
+                                ),
+                            )
+                            .await?;
                             let duration = now.elapsed();
                             trace!(duration = ?duration, size = send_local_size, dst_addr = %local_src, local_udp_socket = ?bind_addr, "send to tun socket");
                         }
@@ -309,9 +315,11 @@ impl SSClient {
                 encrypt_size
             );
             let now = Instant::now();
-            let send_ss_size = udp_socket
-                .send_to(&encrypt_buf[..encrypt_size], ssserver)
-                .await?;
+            let send_ss_size = timeout(
+                write_timeout,
+                udp_socket.send_to(&encrypt_buf[..encrypt_size], ssserver),
+            )
+            .await?;
             let duration = now.elapsed();
             trace!(duration = ?duration, size = send_ss_size, dst_addr = %ssserver, local_udp_socket = ?bind_addr, "send to ss server");
         }
@@ -414,9 +422,9 @@ mod tests {
 
     #[test]
     fn test_get_remote_ssserver_domain() {
-        let dns = std::env::var("DNS").unwrap_or_else(|_| "223.5.5.5".to_string());
+        let dns = std::env::var("DNS").unwrap_or_else(|_| "114.114.114.114".to_string());
         task::block_on(async {
-            let dns_client = DnsNetworkClient::new(0, Duration::from_secs(3)).await;
+            let dns_client = DnsNetworkClient::new(0, Duration::from_secs(5)).await;
             let cfg = Arc::new(ServerConfig::new(
                 "servername".to_string(),
                 ServerAddr::DomainName("local.allsunday.in".to_string(), 7789),
