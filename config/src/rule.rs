@@ -13,7 +13,7 @@ pub enum Rule {
     Match(Action),
 }
 
-#[derive(Eq, PartialEq, Clone, Debug)]
+#[derive(Eq, PartialEq, Copy, Clone, Debug, Hash)]
 pub enum Action {
     Reject,
     Direct,
@@ -37,10 +37,10 @@ impl ProxyRules {
         self.rules
             .iter()
             .filter_map(|rule| match rule {
-                Rule::Domain(d, action) if d == domain => Some(action.clone()),
-                Rule::DomainSuffix(d, action) if domain.ends_with(d) => Some(action.clone()),
-                Rule::DomainKeyword(d, action) if domain.contains(d) => Some(action.clone()),
-                Rule::Match(action) => Some(action.clone()),
+                Rule::Domain(d, action) if d == domain => Some(*action),
+                Rule::DomainSuffix(d, action) if domain.ends_with(d) => Some(*action),
+                Rule::DomainKeyword(d, action) if domain.contains(d) => Some(*action),
+                Rule::Match(action) => Some(*action),
                 _ => None,
             })
             .take(1)
@@ -52,9 +52,7 @@ impl ProxyRules {
         self.rules
             .iter()
             .filter_map(|rule| match rule {
-                Rule::IpCidr(cidr, action) if cidr.contains_addr(&ip.into()) => {
-                    Some(action.clone())
-                }
+                Rule::IpCidr(cidr, action) if cidr.contains_addr(&ip.into()) => Some(*action),
                 _ => None,
             })
             .take(1)
