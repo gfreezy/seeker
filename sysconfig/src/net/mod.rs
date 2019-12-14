@@ -20,7 +20,12 @@ fn run_cmd(cmd: &str, args: &[&str]) -> String {
         .to_string()
 }
 
-#[cfg(any(target_os = "macos", target_os = "ios"))]
+#[cfg(any(
+    target_os = "macos",
+    target_os = "ios",
+    target_os = "freebsd",
+    target_os = "openbsd"
+))]
 const IP_FORWARDING_KEY: &str = "net.inet.ip.forwarding";
 #[cfg(target_os = "linux")]
 const IP_FORWARDING_KEY: &str = "net.ipv4.ip_forward";
@@ -34,7 +39,7 @@ impl IpForward {
     pub fn new() -> Self {
         let output = run_cmd("sysctl", &["-n", IP_FORWARDING_KEY]);
         let option = output.trim().parse::<usize>().unwrap();
-        let _ = run_cmd("sysctl", &["-w", &format!("net.inet.ip.forwarding={}", 1)]);
+        let _ = run_cmd("sysctl", &["-w", &format!("{}={}", IP_FORWARDING_KEY, 1)]);
         IpForward {
             original_option: option,
         }
@@ -47,7 +52,7 @@ impl Drop for IpForward {
             "sysctl",
             &[
                 "-w",
-                &format!("net.inet.ip.forwarding={}", self.original_option),
+                &format!("{}={}", IP_FORWARDING_KEY, self.original_option),
             ],
         );
     }
