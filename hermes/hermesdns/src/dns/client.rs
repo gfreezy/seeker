@@ -148,7 +148,7 @@ impl DnsNetworkClient {
             Ok::<(), Error>(())
         };
 
-        read_task.try_join(write_task).await?;
+        read_task.race(write_task).await?;
         Ok(())
     }
 
