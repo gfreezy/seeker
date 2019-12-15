@@ -120,6 +120,13 @@ OPENSSL_STATIC=yes SODIUM_STATIC=yes SODIUM_BUILD_STATIC=yes cargo build --relea
 
 编译完成后，程序在 `target/release/seeker`。
 
+### musl 编译
+```shell
+docker run -v $PWD:/volume --rm -t -e SODIUM_BUILD_STATIC=yes clux/muslrust cargo build --release
+```
+
+会在 `target/x86_64-unknown-linux-musl/release` 目录下生成 `seeker` 文件。
+
 ## 实现原理
 `seeker` 参考了 `Surge for Mac` 的实现原理，基本如下：
 
