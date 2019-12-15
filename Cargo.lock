@@ -1382,7 +1382,7 @@ checksum = "ab606a9c5e214920bb66c458cd7be8ef094f813f20fe77a54cc7dbfff220d4b7"
 [[package]]
 name = "smoltcp"
 version = "0.5.0"
-source = "git+https://github.com/gfreezy/smoltcp?rev=d64d6b9#d64d6b93c9fc21e8af18f46a4eac3046011137eb"
+source = "git+https://github.com/gfreezy/smoltcp?rev=ef17f0b#ef17f0bdcb1d283c898546e8a76c5cd67d32f428"
 dependencies = [
  "bitflags",
  "byteorder",
