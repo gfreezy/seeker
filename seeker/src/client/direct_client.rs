@@ -1,7 +1,7 @@
 use crate::client::Client;
 use async_std::io;
 use async_std::net::{TcpStream, UdpSocket};
-use async_std::prelude::FutureExt;
+use async_std::prelude::*;
 use async_std::task;
 use async_std::task::JoinHandle;
 use config::Address;
@@ -82,17 +82,46 @@ impl DirectClient {
 
 #[async_trait::async_trait]
 impl Client for DirectClient {
-    async fn handle_tcp(&self, mut socket: TunTcpSocket, addr: Address) -> Result<()> {
+    #[allow(unreachable_code)]
+    async fn handle_tcp(&self, tun_socket: TunTcpSocket, addr: Address) -> Result<()> {
         let conn = self.connect(addr, self.connect_timeout).await?;
-        let mut socket_clone = socket.clone();
+        let mut tun_socket_clone = tun_socket.clone();
+        let mut tun_socket_clone2 = tun_socket.clone();
         let mut ref_conn = &conn;
         let mut ref_conn2 = &conn;
-        let a = io::timeout(
-            self.read_timeout,
-            io::copy(&mut socket_clone, &mut ref_conn),
-        );
-        let b = io::timeout(self.write_timeout, io::copy(&mut ref_conn2, &mut socket));
-        let _ = a.race(b).await?;
+        let a = async {
+            let mut buf = vec![0; 10240];
+            loop {
+                let rs = io::timeout(self.read_timeout,
+                    tun_socket_clone.read(&mut buf)).await?;
+                trace!(read_size = rs, "DirectClient::handle_tcp: read from tun");
+                if rs == 0 {
+                    break
+                }
+                io::timeout(
+                    self.write_timeout,
+                    ref_conn.write_all(&buf[..rs])).await?;
+                trace!(write_size = rs, "DirectClient::handle_tcp: write to remote");
+            }
+            Ok::<(), io::Error>(())
+        };
+        let b = async {
+            let mut buf = vec![0; 10240];
+            loop {
+                let rs = io::timeout(self.read_timeout,
+                                     ref_conn2.read(&mut buf)).await?;
+                trace!(read_size = rs, "DirectClient::handle_tcp: read from remote");
+                if rs == 0 {
+                    break
+                }
+                io::timeout(
+                    self.write_timeout,
+                    tun_socket_clone2.write_all(&buf[..rs])).await?;
+                trace!(write_size = rs, "DirectClient::handle_tcp: write to tun");
+            }
+            Ok::<(), io::Error>(())
+        };
+        a.race(b).await?;
         Ok(())
     }
 
