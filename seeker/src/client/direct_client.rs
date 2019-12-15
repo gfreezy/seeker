@@ -92,15 +92,12 @@ impl Client for DirectClient {
         let a = async {
             let mut buf = vec![0; 10240];
             loop {
-                let rs = io::timeout(self.read_timeout,
-                    tun_socket_clone.read(&mut buf)).await?;
+                let rs = io::timeout(self.read_timeout, tun_socket_clone.read(&mut buf)).await?;
                 trace!(read_size = rs, "DirectClient::handle_tcp: read from tun");
                 if rs == 0 {
-                    break
+                    break;
                 }
-                io::timeout(
-                    self.write_timeout,
-                    ref_conn.write_all(&buf[..rs])).await?;
+                io::timeout(self.write_timeout, ref_conn.write_all(&buf[..rs])).await?;
                 trace!(write_size = rs, "DirectClient::handle_tcp: write to remote");
             }
             Ok::<(), io::Error>(())
@@ -108,15 +105,12 @@ impl Client for DirectClient {
         let b = async {
             let mut buf = vec![0; 10240];
             loop {
-                let rs = io::timeout(self.read_timeout,
-                                     ref_conn2.read(&mut buf)).await?;
+                let rs = io::timeout(self.read_timeout, ref_conn2.read(&mut buf)).await?;
                 trace!(read_size = rs, "DirectClient::handle_tcp: read from remote");
                 if rs == 0 {
-                    break
+                    break;
                 }
-                io::timeout(
-                    self.write_timeout,
-                    tun_socket_clone2.write_all(&buf[..rs])).await?;
+                io::timeout(self.write_timeout, tun_socket_clone2.write_all(&buf[..rs])).await?;
                 trace!(write_size = rs, "DirectClient::handle_tcp: write to tun");
             }
             Ok::<(), io::Error>(())
