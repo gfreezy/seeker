@@ -23,7 +23,7 @@ chrono = "0.4.10"
 
 [dependencies.smoltcp]
 git = "https://github.com/gfreezy/smoltcp"
-rev = "d64d6b9"
+rev = "ef17f0b"
 default-features = false
 features = [
 	"std", "log",
