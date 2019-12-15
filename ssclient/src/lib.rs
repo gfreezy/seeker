@@ -146,6 +146,7 @@ impl SSClient {
         let _ = self.connect_errors.swap(0, Ordering::SeqCst);
     }
 
+    #[allow(unreachable_code)]
     async fn handle_encrypted_tcp_stream<T: Read + Write + Clone + Unpin>(
         &self,
         mut socket: T,
@@ -208,7 +209,10 @@ impl SSClient {
         socket: T,
         addr: Address,
     ) -> Result<()> {
+        let now = Instant::now();
         let conn = self.pool.get_connection().await?;
+        let duration = now.elapsed();
+        trace!(duration = ?duration, "get connection from pool");
         self.handle_encrypted_tcp_stream(socket, addr, conn).await
     }
 
