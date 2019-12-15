@@ -199,7 +199,7 @@ impl SSClient {
             Ok::<(), io::Error>(())
         };
 
-        let _ = send_task.race(recv_task).await?;
+        send_task.race(recv_task).await?;
         Ok(())
     }
 
