@@ -12,9 +12,10 @@ use clap::{App, Arg};
 use config::{Address, Config};
 use dnsserver::create_dns_server;
 use file_rotate::{FileRotate, RotationMode};
+use std::io;
 use std::io::ErrorKind;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use sysconfig::{DNSSetup, IpForward};
 use tracing::{trace, trace_span};
@@ -90,10 +91,39 @@ async fn handle_connection<T: Client + Clone + Send + Sync + 'static>(
     }
 }
 
+#[derive(Clone)]
+struct TracingWriter {
+    file_rotate: Arc<Mutex<FileRotate>>,
+}
+
+impl TracingWriter {
+    fn new(file_rotate: Arc<Mutex<FileRotate>>) -> Self {
+        TracingWriter { file_rotate }
+    }
+}
+
+impl io::Write for TracingWriter {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let mut guard = self.file_rotate.lock().unwrap();
+        guard.write(buf)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        let mut guard = self.file_rotate.lock().unwrap();
+        guard.flush()
+    }
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
+    let logger = Arc::new(Mutex::new(FileRotate::new(
+        "log/tracing.log",
+        RotationMode::Lines(100_000),
+        20,
+    )));
     let my_subscriber = FmtSubscriber::builder()
         .with_env_filter(EnvFilter::from_default_env())
-        .with_writer(|| FileRotate::new("log/tracing.log", RotationMode::Lines(100_000), 20))
+        .with_ansi(false)
+        .with_writer(move || TracingWriter::new(logger.clone()))
         .finish();
     tracing::subscriber::set_global_default(my_subscriber).expect("setting tracing default failed");
 
