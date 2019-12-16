@@ -26,6 +26,7 @@ chmod +x seeker-osx  # or  chmod+x seeker-linux
     OPTIONS:
         -c, --config <FILE>    Sets config file. Sample config at
                                https://github.com/gfreezy/seeker/blob/master/sample_config.yml
+        -l, --log <PATH>       Log file.
         -u, --uid <UID>        User id to proxy.
     ```
    

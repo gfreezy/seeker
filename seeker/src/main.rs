@@ -115,18 +115,6 @@ impl io::Write for TracingWriter {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let logger = Arc::new(Mutex::new(FileRotate::new(
-        "log/tracing.log",
-        RotationMode::Lines(100_000),
-        20,
-    )));
-    let my_subscriber = FmtSubscriber::builder()
-        .with_env_filter(EnvFilter::from_default_env())
-        .with_ansi(false)
-        .with_writer(move || TracingWriter::new(logger.clone()))
-        .finish();
-    tracing::subscriber::set_global_default(my_subscriber).expect("setting tracing default failed");
-
     let version = env!("CARGO_PKG_VERSION");
     let matches = App::new("Seeker")
         .version(version)
@@ -148,10 +136,46 @@ fn main() -> Result<(), Box<dyn Error>> {
                 .help("User id to proxy.")
                 .required(false),
         )
+        .arg(
+            Arg::with_name("log")
+                .short("l")
+                .long("log")
+                .value_name("PATH")
+                .help("Log file.")
+                .required(false),
+        )
         .get_matches();
 
     let path = matches.value_of("config").unwrap();
     let uid = matches.value_of("user_id").map(|uid| uid.parse().unwrap());
+    let log_path = matches.value_of("log");
+
+    if let Some(log_path) = log_path {
+        let logger = Arc::new(Mutex::new(FileRotate::new(
+            log_path,
+            RotationMode::Lines(100_000),
+            20,
+        )));
+        let env_filter = EnvFilter::from_default_env()
+            .add_directive("seeker=trace".parse()?)
+            .add_directive("ssclient=trace".parse()?)
+            .add_directive("hermesdns=trace".parse()?);
+        let my_subscriber = FmtSubscriber::builder()
+            .with_env_filter(env_filter)
+            .with_ansi(false)
+            .with_writer(move || TracingWriter::new(logger.clone()))
+            .finish();
+        tracing::subscriber::set_global_default(my_subscriber)
+            .expect("setting tracing default failed");
+    } else {
+        let my_subscriber = FmtSubscriber::builder()
+            .with_env_filter(EnvFilter::from_default_env())
+            .with_ansi(false)
+            .finish();
+        tracing::subscriber::set_global_default(my_subscriber)
+            .expect("setting tracing default failed");
+    };
+
     let mut config = Config::from_config_file(path);
 
     let term = Arc::new(AtomicBool::new(false));
