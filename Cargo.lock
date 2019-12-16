@@ -421,6 +421,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ea57b42383d091c85abcc2706240b94ab2a8fa1fc81c10ff23c4de06e2a90b5e"
 
 [[package]]
+name = "file-rotate"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "def9c0c6cfa778af7aa7a02256a20508e819a2a450003f224d7f71c8e8c20539"
+
+[[package]]
 name = "filetime"
 version = "0.2.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1264,6 +1270,7 @@ dependencies = [
  "clap",
  "config",
  "dnsserver",
+ "file-rotate",
  "hermesdns",
  "libc",
  "signal-hook",
