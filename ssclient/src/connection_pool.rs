@@ -1,10 +1,11 @@
 use std::collections::VecDeque;
 use std::io::Result;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
-use async_std::sync::Mutex;
-use async_std::sync::{channel, Receiver, Sender};
+use async_std::future;
+use async_std::io;
+use async_std::sync::{channel, Mutex, Receiver, Sender};
 use futures::future::BoxFuture;
 use tracing::{error, trace};
 
@@ -40,10 +41,13 @@ impl Pool {
         let connections = self.connections.clone();
         loop {
             let len = connections.lock().await.len();
-            for _ in 0..(self.max_idle - len) {
+            trace!(size = len, "available connections");
+            for i in 0..(self.max_idle - len) {
+                trace!(i = i, "create new connection");
                 let conn = match self.new_connection().await {
                     Ok(conn) => conn,
-                    Err(_) => {
+                    Err(e) => {
+                        error!(error = ?e, "create new connection error");
                         continue;
                     }
                 };
@@ -58,10 +62,10 @@ impl Pool {
 
     async fn new_connection(&self) -> Result<EncryptedStremBox> {
         let now = Instant::now();
-        let conn = match (self.connector)().await {
+        let conn = match io::timeout(Duration::from_secs(1), (self.connector)()).await {
             Ok(conn) => conn,
             Err(e) => {
-                error!(err = ?e, "new connection");
+                error!(err = ?e, "new connection error");
                 return Err(e);
             }
         };
@@ -71,17 +75,23 @@ impl Pool {
     }
 
     pub(crate) async fn get_connection(&self) -> Result<EncryptedStremBox> {
-        let ret = match self.connections.lock().await.pop_front() {
+        let conn = self.connections.lock().await.pop_front();
+        let ret = match conn {
             Some(conn) => Ok(conn),
-            None => self.new_connection().await,
+            None => {
+                trace!("connection pool empty, create connection directly");
+                self.new_connection().await
+            }
         };
         let size = self.size().await;
         trace!(size = size, "connection pool size");
-        self.sender.send(()).await;
+        future::timeout(Duration::from_secs(5), self.sender.send(()))
+            .await
+            .expect("send timeout");
         match ret {
             Ok(conn) => Ok(conn),
             Err(e) => {
-                error!(err = ?e, "new connection");
+                error!(err = ?e, "create connection directly error when get connection");
                 Err(e)
             }
         }

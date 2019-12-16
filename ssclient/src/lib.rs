@@ -74,6 +74,7 @@ impl SSClient {
                         let key = srv_cfg.key();
                         let method = srv_cfg.method();
                         let server_addr = srv_cfg.addr().clone();
+                        drop(srv_cfg);
 
                         trace!(server_addr=?server_addr, "connect to");
                         let ssserver = get_remote_ssserver_addr(
