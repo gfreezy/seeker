@@ -11,6 +11,7 @@ use async_std::task::{block_on, spawn};
 use clap::{App, Arg};
 use config::{Address, Config};
 use dnsserver::create_dns_server;
+use file_rotate::{FileRotate, RotationMode};
 use std::io::ErrorKind;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -92,6 +93,7 @@ async fn handle_connection<T: Client + Clone + Send + Sync + 'static>(
 fn main() -> Result<(), Box<dyn Error>> {
     let my_subscriber = FmtSubscriber::builder()
         .with_env_filter(EnvFilter::from_default_env())
+        .with_writer(|| FileRotate::new("log/tracing.log", RotationMode::Lines(100_000), 20))
         .finish();
     tracing::subscriber::set_global_default(my_subscriber).expect("setting tracing default failed");
 
