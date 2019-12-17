@@ -1,6 +1,6 @@
 use async_std::sync::Mutex;
 use async_trait::async_trait;
-use hermesdns::{DnsPacket, DnsRecord, DnsResolver, QueryType, TransientTtl};
+use hermesdns::{DnsPacket, DnsRecord, DnsResolver, Hosts, QueryType, TransientTtl};
 use sled::Db;
 use std::any::Any;
 use std::io::Result;
@@ -34,6 +34,7 @@ impl RuleBasedDnsResolver {
 struct Inner {
     db: Db,
     next_ip: u32,
+    hosts: Hosts,
 }
 
 impl Inner {
@@ -51,7 +52,11 @@ impl Inner {
             }
         };
 
-        Self { db, next_ip }
+        Self {
+            db,
+            next_ip,
+            hosts: Hosts::load().expect("load /etc/hosts"),
+        }
     }
 
     fn lookup_host(&self, addr: &str) -> Option<String> {
@@ -72,7 +77,9 @@ impl Inner {
     }
 
     async fn resolve(&mut self, domain: &str) -> Result<DnsPacket> {
-        let ip = if let Some(addr) = self.db.get(domain).expect("get domain") {
+        let ip = if let Some(ip) = self.hosts.get(domain) {
+            ip.to_string()
+        } else if let Some(addr) = self.db.get(domain).expect("get domain") {
             let ip = String::from_utf8(addr.to_vec()).unwrap();
             debug!("resolve from cache, domain: {}, ip: {}", domain, &ip);
             ip
