@@ -76,6 +76,7 @@ impl DnsNetworkClient {
             sender,
             receiver,
         };
+
         let c = client.clone();
         let _ = task::spawn(async move {
             loop {
@@ -90,6 +91,7 @@ impl DnsNetworkClient {
         client
     }
 
+    #[allow(unreachable_code)]
     pub async fn run(&self) -> Result<()> {
         let addr = format!("0.0.0.0:{}", self.port);
         let socket = Arc::new(UdpSocket::bind(addr).await?);
