@@ -670,6 +670,7 @@ dependencies = [
  "chrono",
  "rand",
  "tracing",
+ "tracing-futures",
 ]
 
 [[package]]

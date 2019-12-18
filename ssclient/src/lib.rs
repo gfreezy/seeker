@@ -49,6 +49,7 @@ impl SSClient {
     ) -> SSClient {
         let server_config_clone = server_config.clone();
         let idle_connections = server_config.read().await.idle_connections();
+        let connect_timeout = server_config.read().await.connect_timeout();
         let resolver =
             Arc::new(DnsNetworkClient::new(0, server_config.read().await.read_timeout()).await);
         let resolver_clone = resolver.clone();
@@ -56,7 +57,6 @@ impl SSClient {
         let connect_errors = Arc::new(AtomicUsize::new(0));
         let connect_errors_clone = connect_errors.clone();
         let pool = Pool::new(
-            idle_connections,
             Arc::new(move || {
                 trace!("new connection connect to");
                 let srv_cfg = server_config_clone.clone();
@@ -116,6 +116,8 @@ impl SSClient {
                         }),
                 )
             }),
+            idle_connections,
+            connect_timeout,
         );
 
         let pool_clone = pool.clone();
