@@ -92,24 +92,10 @@ impl RuledClient {
         let client = c.clone();
         let _ = task::spawn(async move {
             loop {
-                {
-                    let guard = client.connections.lock().unwrap();
-                    if guard.is_empty() {
-                        continue;
-                    }
-
-                    println!("\nCurrent connections:");
-                    for conn in guard.values() {
-                        println!(
-                            "Connect time: {}, duration: {}s, addr: {}, action: {:?}",
-                            conn.connect_time.format("%Y-%m-%d %H:%M:%S").to_string(),
-                            (Local::now() - conn.connect_time).num_seconds(),
-                            conn.address,
-                            conn.action
-                        );
-                    }
-                    println!()
-                }
+                println!("\nConnections:");
+                client.ssclient.stats().print_stats().await;
+                client.direct_client.stats().print_stats().await;
+                println!();
                 task::sleep(Duration::from_secs(5)).await;
             }
         });

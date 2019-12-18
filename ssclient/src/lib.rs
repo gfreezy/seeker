@@ -18,15 +18,17 @@ use futures::TryFutureExt;
 use tracing::{trace, trace_span};
 use tracing_futures::Instrument;
 
+use crate::client_stats::ClientStats;
+use crate::connection_pool::{EncryptedStremBox, Pool};
+use crate::encrypted_stream::{AeadEncryptedTcpStream, StreamEncryptedTcpStream};
+use crate::udp_io::{decrypt_payload, encrypt_payload};
+use chrono::Local;
 use config::{Address, ServerAddr, ServerConfig};
 use crypto::{CipherCategory, CipherType};
 use hermesdns::{DnsClient, DnsNetworkClient, QueryType};
 use tun::socket::TunUdpSocket;
 
-use crate::connection_pool::{EncryptedStremBox, Pool};
-use crate::encrypted_stream::{AeadEncryptedTcpStream, StreamEncryptedTcpStream};
-use crate::udp_io::{decrypt_payload, encrypt_payload};
-
+pub mod client_stats;
 mod connection_pool;
 mod encrypted_stream;
 mod tcp_io;
@@ -40,6 +42,7 @@ pub struct SSClient {
     resolver: Arc<DnsNetworkClient>,
     pool: Pool,
     connect_errors: Arc<AtomicUsize>,
+    stats: ClientStats,
 }
 
 impl SSClient {
@@ -58,9 +61,7 @@ impl SSClient {
         let connect_errors_clone = connect_errors.clone();
         let pool = Pool::new(
             Arc::new(move || {
-                trace!("new connection connect to");
                 let srv_cfg = server_config_clone.clone();
-                trace!("get srv_cfg");
                 let resolver = resolver_clone.clone();
                 let dns_server = dns_server_clone.clone();
                 let connect_errors = connect_errors_clone.clone();
@@ -76,7 +77,7 @@ impl SSClient {
                         let server_addr = srv_cfg.addr().clone();
                         drop(srv_cfg);
 
-                        trace!(server_addr=?server_addr, "connect to");
+                        trace!(server_addr=?server_addr, "connect to ssserver");
                         let ssserver = get_remote_ssserver_addr(
                             &*resolver,
                             &server_addr,
@@ -133,6 +134,7 @@ impl SSClient {
             resolver,
             dns_server,
             pool,
+            stats: ClientStats::new(),
         }
     }
 
@@ -149,16 +151,21 @@ impl SSClient {
         let _ = self.connect_errors.swap(0, Ordering::SeqCst);
     }
 
+    pub fn stats(&self) -> &ClientStats {
+        &self.stats
+    }
+
     #[allow(unreachable_code)]
     async fn handle_encrypted_tcp_stream<T: Read + Write + Clone + Unpin>(
         &self,
-        mut socket: T,
+        idx: u64,
+        mut tun_socket: T,
         addr: Address,
         conn: EncryptedStremBox,
     ) -> Result<()> {
         let conn1 = &conn;
         let conn2 = &conn;
-        let mut socket_clone = socket.clone();
+        let mut tun_socket_clone = tun_socket.clone();
         let (read_timeout, write_timeout) = {
             let srv_cfg = self.srv_cfg.read().await;
             (srv_cfg.read_timeout(), srv_cfg.write_timeout())
@@ -174,7 +181,7 @@ impl SSClient {
             let mut buf = vec![0; MAX_PACKET_SIZE];
             loop {
                 let now = Instant::now();
-                let size = timeout(read_timeout, socket_clone.read(&mut buf)).await?;
+                let size = timeout(read_timeout, tun_socket_clone.read(&mut buf)).await?;
                 let duration = now.elapsed();
                 trace!(duration = ?duration, size = size, "read from tun socket");
 
@@ -183,6 +190,12 @@ impl SSClient {
                 }
 
                 writer.send_all(&buf[..size]).await?;
+
+                self.stats
+                    .update_connection_stats(idx, |stats| {
+                        stats.sent_bytes += size as u64;
+                    })
+                    .await;
             }
             Ok::<(), io::Error>(())
         };
@@ -196,9 +209,15 @@ impl SSClient {
                     break;
                 }
                 let now = Instant::now();
-                timeout(write_timeout, socket.write_all(&buf[..size])).await?;
+                timeout(write_timeout, tun_socket.write_all(&buf[..size])).await?;
                 let duration = now.elapsed();
                 trace!(duration = ?duration, size = size, "write to tun socket");
+
+                self.stats
+                    .update_connection_stats(idx, |stats| {
+                        stats.recv_bytes += size as u64;
+                    })
+                    .await;
             }
             Ok::<(), io::Error>(())
         };
@@ -216,7 +235,18 @@ impl SSClient {
         let conn = self.pool.get_connection().await?;
         let duration = now.elapsed();
         trace!(duration = ?duration, "get connection from pool");
-        match self.handle_encrypted_tcp_stream(socket, addr, conn).await {
+        let idx = self.stats.add_connection(addr.clone()).await;
+
+        let ret = self
+            .handle_encrypted_tcp_stream(idx, socket, addr, conn)
+            .await;
+        self.stats
+            .update_connection_stats(idx, |stats| {
+                stats.close_time = Local::now();
+            })
+            .await;
+
+        match ret {
             Ok(()) => Ok(()),
             Err(e) if e.kind() == ErrorKind::TimedOut => Err(e),
             Err(e) => {
