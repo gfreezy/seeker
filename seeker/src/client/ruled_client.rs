@@ -92,6 +92,10 @@ impl RuledClient {
             loop {
                 {
                     let guard = client.connections.lock().unwrap();
+                    if guard.is_empty() {
+                        continue;
+                    }
+
                     println!("\nCurrent connections:");
                     for conn in guard.values() {
                         println!(
