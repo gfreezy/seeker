@@ -17,7 +17,8 @@ use async_std::sync::{channel, Receiver, Sender};
 use async_std::task;
 use async_trait::async_trait;
 use std::time::Duration;
-use tracing::{error, trace};
+use tracing::{error, trace, trace_span};
+use tracing_futures::Instrument;
 
 #[async_trait]
 pub trait DnsClient {
@@ -78,16 +79,19 @@ impl DnsNetworkClient {
         };
 
         let c = client.clone();
-        let _ = task::spawn(async move {
-            loop {
-                match c.run().await {
-                    Ok(_) => {}
-                    Err(e) => {
-                        error!(error=?e, "dns error");
+        let _ = task::spawn(
+            async move {
+                loop {
+                    match c.run().await {
+                        Ok(_) => {}
+                        Err(e) => {
+                            error!(error=?e, "dns error");
+                        }
                     }
                 }
             }
-        });
+                .instrument(trace_span!("background dns runner")),
+        );
         client
     }
 
@@ -120,7 +124,7 @@ impl DnsNetworkClient {
                         resp.send(packet).await;
                     }
                 } else {
-                    eprintln!("invalid udp packet");
+                    error!("invalid udp packet");
                 }
             }
             Ok::<(), Error>(())
@@ -199,11 +203,11 @@ impl DnsNetworkClient {
             Ok(Some(qr)) => Ok(qr),
             Ok(None) => {
                 let _ = self.total_failed.fetch_add(1, Ordering::Release);
-                Err(Error::new(ErrorKind::InvalidInput, "Domain not found "))
+                Err(Error::new(ErrorKind::InvalidInput, "domain not found "))
             }
             Err(_) => {
                 let _ = self.total_failed.fetch_add(1, Ordering::Release);
-                Err(ErrorKind::TimedOut.into())
+                Err(Error::new(ErrorKind::TimedOut, "domain resolve timed out"))
             }
         }
     }

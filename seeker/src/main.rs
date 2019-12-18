@@ -14,6 +14,7 @@ use dnsserver::create_dns_server;
 use file_rotate::{FileRotate, RotationMode};
 use std::io;
 use std::io::ErrorKind;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -151,6 +152,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     let log_path = matches.value_of("log");
 
     if let Some(log_path) = log_path {
+        if let Some(path) = PathBuf::from(log_path).parent() {
+            std::fs::create_dir_all(path)?;
+        }
         let logger = Arc::new(Mutex::new(FileRotate::new(
             log_path,
             RotationMode::Lines(100_000),

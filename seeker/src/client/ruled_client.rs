@@ -26,6 +26,8 @@ use super::direct_client::DirectClient;
 struct Connection {
     address: Address,
     connect_time: DateTime<Local>,
+    sent_bytes: u64,
+    recv_bytes: u64,
     action: Action,
 }
 
@@ -92,6 +94,10 @@ impl RuledClient {
             loop {
                 {
                     let guard = client.connections.lock().unwrap();
+                    if guard.is_empty() {
+                        continue;
+                    }
+
                     println!("\nCurrent connections:");
                     for conn in guard.values() {
                         println!(
@@ -159,6 +165,8 @@ impl Client for RuledClient {
                 Connection {
                     address: addr.clone(),
                     connect_time: Local::now(),
+                    sent_bytes: 0,
+                    recv_bytes: 0,
                     action,
                 },
             );
