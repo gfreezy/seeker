@@ -26,6 +26,8 @@ use super::direct_client::DirectClient;
 struct Connection {
     address: Address,
     connect_time: DateTime<Local>,
+    sent_bytes: u64,
+    recv_bytes: u64,
     action: Action,
 }
 
@@ -163,6 +165,8 @@ impl Client for RuledClient {
                 Connection {
                     address: addr.clone(),
                     connect_time: Local::now(),
+                    sent_bytes: 0,
+                    recv_bytes: 0,
                     action,
                 },
             );
