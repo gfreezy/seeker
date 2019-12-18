@@ -216,7 +216,14 @@ impl SSClient {
         let conn = self.pool.get_connection().await?;
         let duration = now.elapsed();
         trace!(duration = ?duration, "get connection from pool");
-        self.handle_encrypted_tcp_stream(socket, addr, conn).await
+        match self.handle_encrypted_tcp_stream(socket, addr, conn).await {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == ErrorKind::TimedOut => Err(e),
+            Err(e) => {
+                self.connect_errors.fetch_add(1, Ordering::SeqCst);
+                Err(e)
+            }
+        }
     }
 
     pub async fn handle_udp_connection(
