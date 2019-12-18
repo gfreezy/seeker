@@ -4,8 +4,10 @@ use async_std::net::{TcpStream, UdpSocket};
 use async_std::prelude::*;
 use async_std::task;
 use async_std::task::JoinHandle;
+use chrono::Local;
 use config::Address;
 use hermesdns::DnsNetworkClient;
+use ssclient::client_stats::ClientStats;
 use ssclient::resolve_domain;
 use std::collections::HashMap;
 use std::io::Result;
@@ -24,6 +26,7 @@ pub(crate) struct DirectClient {
     read_timeout: Duration,
     write_timeout: Duration,
     probe_timeout: Duration,
+    stats: ClientStats,
 }
 
 impl DirectClient {
@@ -41,11 +44,16 @@ impl DirectClient {
             read_timeout,
             write_timeout,
             probe_timeout,
+            stats: ClientStats::new(),
         }
     }
 
     fn dns_server(&self) -> (&str, u16) {
         (&self.dns_server.0, self.dns_server.1)
+    }
+
+    pub fn stats(&self) -> &ClientStats {
+        &self.stats
     }
 
     async fn resolve_domain(&self, domain: &str) -> Result<Option<IpAddr>> {
@@ -84,11 +92,12 @@ impl DirectClient {
 impl Client for DirectClient {
     #[allow(unreachable_code)]
     async fn handle_tcp(&self, tun_socket: TunTcpSocket, addr: Address) -> Result<()> {
-        let conn = self.connect(addr, self.connect_timeout).await?;
+        let conn = self.connect(addr.clone(), self.connect_timeout).await?;
         let mut tun_socket_clone = tun_socket.clone();
         let mut tun_socket_clone2 = tun_socket.clone();
         let mut ref_conn = &conn;
         let mut ref_conn2 = &conn;
+        let idx = self.stats.add_connection(addr).await;
         let a = async {
             let mut buf = vec![0; 10240];
             loop {
@@ -99,6 +108,11 @@ impl Client for DirectClient {
                 }
                 io::timeout(self.write_timeout, ref_conn.write_all(&buf[..rs])).await?;
                 trace!(write_size = rs, "DirectClient::handle_tcp: write to remote");
+                self.stats
+                    .update_connection_stats(idx, |stats| {
+                        stats.sent_bytes += rs as u64;
+                    })
+                    .await;
             }
             Ok::<(), io::Error>(())
         };
@@ -112,10 +126,21 @@ impl Client for DirectClient {
                 }
                 io::timeout(self.write_timeout, tun_socket_clone2.write_all(&buf[..rs])).await?;
                 trace!(write_size = rs, "DirectClient::handle_tcp: write to tun");
+                self.stats
+                    .update_connection_stats(idx, |stats| {
+                        stats.recv_bytes += rs as u64;
+                    })
+                    .await;
             }
             Ok::<(), io::Error>(())
         };
-        a.race(b).await?;
+        let ret = a.race(b).await;
+        self.stats
+            .update_connection_stats(idx, |stats| {
+                stats.close_time = Local::now();
+            })
+            .await;
+        ret?;
         Ok(())
     }
 
