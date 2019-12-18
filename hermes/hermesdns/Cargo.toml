@@ -11,6 +11,7 @@ rand = "0.7.2"
 chrono = "0.4.9"
 async-trait = "0.1.13"
 tracing = "0.1"
+tracing-futures = { version = "0.1.1", features = ["std-future", "futures-preview"], default-features = false }
 
 [dependencies.async-std]
 git = "https://github.com/gfreezy/async-std"

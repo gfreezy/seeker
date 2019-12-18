@@ -21,17 +21,19 @@ pub(crate) struct Pool {
     max_idle: usize,
     connections: Arc<Mutex<VecDeque<EncryptedStremBox>>>,
     connector: Connector,
+    connect_timeout: Duration,
     sender: Sender<()>,
     receiver: Receiver<()>,
 }
 
 impl Pool {
-    pub(crate) fn new(max_idle: usize, connector: Connector) -> Self {
+    pub(crate) fn new(connector: Connector, max_idle: usize, connect_timeout: Duration) -> Self {
         let (sender, receiver) = channel(1);
         Self {
             max_idle,
             connections: Arc::new(Mutex::new(VecDeque::with_capacity(max_idle))),
             connector,
+            connect_timeout,
             sender,
             receiver,
         }
@@ -40,10 +42,13 @@ impl Pool {
     pub(crate) async fn run_connection_pool(&self) {
         let connections = self.connections.clone();
         loop {
-            let len = connections.lock().await.len();
-            trace!(size = len, "available connections");
-            for i in 0..(self.max_idle - len) {
-                trace!(i = i, "create new connection");
+            let mut len = connections.lock().await.len();
+            while len < self.max_idle {
+                trace!(
+                    current_idle = len,
+                    max_idle = self.max_idle,
+                    "create new connection"
+                );
                 let conn = match self.new_connection().await {
                     Ok(conn) => conn,
                     Err(e) => {
@@ -53,6 +58,7 @@ impl Pool {
                 };
                 let mut conns = connections.lock().await;
                 conns.push_back(conn);
+                len = conns.len();
             }
             if self.receiver.recv().await == None {
                 break;
@@ -62,7 +68,7 @@ impl Pool {
 
     async fn new_connection(&self) -> Result<EncryptedStremBox> {
         let now = Instant::now();
-        let conn = match io::timeout(Duration::from_secs(1), (self.connector)()).await {
+        let conn = match io::timeout(self.connect_timeout, (self.connector)()).await {
             Ok(conn) => conn,
             Err(e) => {
                 error!(err = ?e, "new connection error");
@@ -85,9 +91,11 @@ impl Pool {
         };
         let size = self.size().await;
         trace!(size = size, "connection pool size");
-        future::timeout(Duration::from_secs(5), self.sender.send(()))
-            .await
-            .expect("send timeout");
+        let send_ret = future::timeout(Duration::from_secs(5), self.sender.send(())).await;
+        if let Err(e) = send_ret {
+            error!(error = ?e, "send error");
+        }
+
         match ret {
             Ok(conn) => Ok(conn),
             Err(e) => {
@@ -136,7 +144,6 @@ mod tests {
 
         let ret: Result<()> = task::block_on(async {
             let pool = Pool::new(
-                10,
                 Arc::new(move || {
                     let srv_cfg_clone = srv_cfg.clone();
                     async move {
@@ -155,6 +162,8 @@ mod tests {
                     }
                         .boxed()
                 }),
+                10,
+                Duration::from_secs(5),
             );
             let pool_clone = pool.clone();
             task::spawn(async move {
