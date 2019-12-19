@@ -96,6 +96,8 @@ impl RuledClient {
                 client.ssclient.stats().print_stats().await;
                 client.direct_client.stats().print_stats().await;
                 println!();
+                client.ssclient.stats().recycle_stats().await;
+                client.direct_client.stats().recycle_stats().await;
                 task::sleep(Duration::from_secs(5)).await;
             }
         });
