@@ -63,7 +63,7 @@ impl Hosts {
                 Err(_) => continue,
             };
             for host in &segments[1..] {
-                map.insert(host.to_string(), ip);
+                map.insert((*host).to_string(), ip);
             }
         }
         Ok(Hosts { map })

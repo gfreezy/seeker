@@ -87,7 +87,7 @@ async fn handle_connection<T: Client + Clone + Send + Sync + 'static>(
                     }
                 }
             }
-                .instrument(trace_span!("handle socket", socket = %remote_addr)),
+            .instrument(trace_span!("handle socket", socket = %remote_addr)),
         );
     }
 }

@@ -27,10 +27,16 @@ pub enum TunSocket {
 }
 
 impl TunSocket {
+    /// # Safety
+    ///
+    /// You need to make sure handle have at lease one reference.
     pub unsafe fn new_tcp_socket(handle: SocketHandle) -> TunSocket {
         TunSocket::Tcp(TunTcpSocket::new(handle))
     }
 
+    /// # Safety
+    ///
+    /// You need to make sure handle have at lease one reference.
     pub unsafe fn new_udp_socket(handle: SocketHandle) -> TunSocket {
         TunSocket::Udp(TunUdpSocket::new(handle))
     }
