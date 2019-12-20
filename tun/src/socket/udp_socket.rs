@@ -15,6 +15,9 @@ pub struct TunUdpSocket {
 }
 
 impl TunUdpSocket {
+    /// # Safety
+    ///
+    /// You need to make sure handle have at lease one reference.
     pub unsafe fn new(handle: SocketHandle) -> Self {
         debug!("TunUdpSocket.new: {}", handle);
         TunUdpSocket { handle }

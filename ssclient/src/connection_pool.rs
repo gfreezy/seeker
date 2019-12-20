@@ -160,7 +160,7 @@ mod tests {
                         );
                         Ok(conn)
                     }
-                        .boxed()
+                    .boxed()
                 }),
                 10,
                 Duration::from_secs(5),
