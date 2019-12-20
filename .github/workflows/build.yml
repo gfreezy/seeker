@@ -18,17 +18,17 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v1
-      - name: Install Rust, Clippy and Rustfmt
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          components: rustfmt, clippy
-      - name: Format
-        uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: --all -- --check
+#      - name: Install Rust, Clippy and Rustfmt
+#        uses: actions-rs/toolchain@v1
+#        with:
+#          profile: minimal
+#          toolchain: stable
+#          components: rustfmt, clippy
+#      - name: Format
+#        uses: actions-rs/cargo@v1
+#        with:
+#          command: fmt
+#          args: --all -- --check
       - run: |
           mkdir -p target/release
           echo a > target/release/seeker
@@ -51,7 +51,7 @@ jobs:
         run: echo ::set-output name=CURRENT_TIME::$(date +"%Y-%m-%d %H:%M:%S")
       - name: Create Release
         id: create_release
-        uses: gfreezy/create-release@v1.0.4
+        uses: gfreezy/create-release@v1.0.5
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # This token is provided by Actions, you do not need to create your own token
         with:
