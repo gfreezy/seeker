@@ -52,7 +52,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # This token is provided by Actions, you do not need to create your own token
         with:
-          release_name: ${{ steps.get_current_time.outputs.CURRENT_TIME }}
+          release_name: ${{ steps.get_current_time.outputs.CURRENT_TIME }}@${{ github.sha }}
           tag_name: future_release
           draft: true
           prerelease: false
