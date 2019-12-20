@@ -21,6 +21,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v1
+      - name: Install osx dependencies
+        run: brew install libtool
+        if: matrix.os == 'macos-latest'
 #      - run: |
 #          mkdir -p target/release
 #          echo a > target/release/seeker
