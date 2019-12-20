@@ -31,7 +31,7 @@ jobs:
           args: --all -- --check
       - run: |
           mkdir -p target/release
-          touch  target/release/seeker
+          echo a > target/release/seeker
 #      - name: Clippy
 #        uses: actions-rs/cargo@v1
 #        with:
@@ -49,17 +49,29 @@ jobs:
       - name: Get current time
         id: get_current_time
         run: echo ::set-output name=CURRENT_TIME::$(date +"%Y-%m-%d %H:%M:%S")
-
-      - name: Create Release
-        id: create_release
-        uses: actions/create-release@v1
+      - uses: gfreezy/release-drafter@v5.3.2
+        id: release_drafter
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # This token is provided by Actions, you do not need to create your own token
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          release_name: ${{ steps.get_current_time.outputs.CURRENT_TIME }}
-          tag_name: preview
-          draft: true
-          prerelease: false
+          name-template: 'v$NEXT_PATCH_VERSION 🌈'
+          tag-template: 'v$NEXT_PATCH_VERSION'
+          categories:
+            - title: '🚀 Features'
+              labels:
+                - 'feature'
+                - 'enhancement'
+            - title: '🐛 Bug Fixes'
+              labels:
+                - 'fix'
+                - 'bugfix'
+                - 'bug'
+            - title: '🧰 Maintenance'
+              label: 'chore'
+          template: |
+            ## Changes
+
+            $CHANGES
 
       - name: Upload Release Asset
         id: upload-release-asset
@@ -67,7 +79,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }} # This pulls from the CREATE RELEASE step above, referencing it's ID to get its outputs object, which include a `upload_url`. See this blog post for more info: https://jasonet.co/posts/new-features-of-github-actions/#passing-data-to-future-steps
+          upload_url: ${{ steps.release_drafter.outputs.upload_url }} # This pulls from the CREATE RELEASE step above, referencing it's ID to get its outputs object, which include a `upload_url`. See this blog post for more info: https://jasonet.co/posts/new-features-of-github-actions/#passing-data-to-future-steps
           asset_path: target/release/${{env.BINARY}}
           asset_name: ${{env.BINARY}}-${{matrix.os}}
           asset_content_type: application/octet-stream
