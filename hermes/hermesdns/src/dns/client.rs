@@ -90,7 +90,7 @@ impl DnsNetworkClient {
                     }
                 }
             }
-                .instrument(trace_span!("background dns runner")),
+            .instrument(trace_span!("background dns runner")),
         );
         client
     }

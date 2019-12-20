@@ -111,10 +111,10 @@ impl SSClient {
                         };
                         Ok(conn)
                     }
-                        .map_err(move |e| {
-                            connect_errors.fetch_add(1, Ordering::SeqCst);
-                            e
-                        }),
+                    .map_err(move |e| {
+                        connect_errors.fetch_add(1, Ordering::SeqCst);
+                        e
+                    }),
                 )
             }),
             idle_connections,
@@ -126,7 +126,7 @@ impl SSClient {
             async move {
                 pool_clone.run_connection_pool().await;
             }
-                .instrument(trace_span!("background connection pool")),
+            .instrument(trace_span!("background connection pool")),
         );
         SSClient {
             srv_cfg: server_config.clone(),
