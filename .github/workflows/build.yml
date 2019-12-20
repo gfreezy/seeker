@@ -9,6 +9,9 @@ on:
       - master
 env:
   BINARY: seeker
+  OPENSSL_STATIC: yes
+  SODIUM_STATIC: yes
+  SODIUM_BUILD_STATIC: yes
 
 jobs:
   build:
