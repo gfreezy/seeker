@@ -18,33 +18,30 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v1
-#      - name: Install Rust, Clippy and Rustfmt
-#        uses: actions-rs/toolchain@v1
-#        with:
-#          profile: minimal
-#          toolchain: stable
-#          components: rustfmt, clippy
-#      - name: Format
-#        uses: actions-rs/cargo@v1
-#        with:
-#          command: fmt
-#          args: --all -- --check
-      - run: |
-          mkdir -p target/release
-          echo a > target/release/seeker
-#      - name: Clippy
-#        uses: actions-rs/cargo@v1
-#        with:
-#          command: clippy
-#      - name: Test
-#        uses: actions-rs/cargo@v1
-#        with:
-#          command: test
-#      - name: Build Release
-#        uses: actions-rs/cargo@v1
-#        with:
-#          command: build
-#          args: --release
+      - name: Install Rust, Clippy and Rustfmt
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          components: rustfmt, clippy
+      - name: Format
+        uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: --all -- --check
+      - name: Clippy
+        uses: actions-rs/cargo@v1
+        with:
+          command: clippy
+      - name: Test
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+      - name: Build Release
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --release
 
       - name: Get current time
         id: get_current_time
