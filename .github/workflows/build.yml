@@ -18,33 +18,33 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v1
-      - run: |
-          mkdir -p target/release
-          echo a > target/release/seeker
-#      - name: Install Rust, Clippy and Rustfmt
-#        uses: actions-rs/toolchain@v1
-#        with:
-#          profile: minimal
-#          toolchain: stable
-#          components: rustfmt, clippy
-#      - name: Format
-#        uses: actions-rs/cargo@v1
-#        with:
-#          command: fmt
-#          args: --all -- --check
-#      - name: Clippy
-#        uses: actions-rs/cargo@v1
-#        with:
-#          command: clippy
-#      - name: Test
-#        uses: actions-rs/cargo@v1
-#        with:
-#          command: test
-#      - name: Build Release
-#        uses: actions-rs/cargo@v1
-#        with:
-#          command: build
-#          args: --release
+#      - run: |
+#          mkdir -p target/release
+#          echo a > target/release/seeker
+      - name: Install Rust, Clippy and Rustfmt
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          components: rustfmt, clippy
+      - name: Format
+        uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: --all -- --check
+      - name: Clippy
+        uses: actions-rs/cargo@v1
+        with:
+          command: clippy
+      - name: Test
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+      - name: Build Release
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --release
 
       - name: Get current time
         id: get_current_time
@@ -56,7 +56,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # This token is provided by Actions, you do not need to create your own token
         with:
-          release_name: ${{ steps.get_current_time.outputs.CURRENT_TIME }}@${{ github.sha }}
+          release_name: ${{ github.sha }}@${{ steps.get_current_time.outputs.CURRENT_TIME }}
           tag_name: future_release
           draft: true
           prerelease: false
