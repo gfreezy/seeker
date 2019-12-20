@@ -56,7 +56,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # This token is provided by Actions, you do not need to create your own token
         with:
           release_name: ${{ steps.get_current_time.outputs.CURRENT_TIME }}
-          tag_name: preview
+          tag_name: future-release
           draft: true
           prerelease: false
       - name: Upload Release Asset
