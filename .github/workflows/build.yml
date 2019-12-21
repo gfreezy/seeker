@@ -12,6 +12,7 @@ env:
   OPENSSL_STATIC: yes
   SODIUM_STATIC: yes
   SODIUM_BUILD_STATIC: yes
+  DNS: 8.8.8.8
 
 jobs:
   build:
