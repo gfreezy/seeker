@@ -22,7 +22,7 @@ jobs:
     steps:
       - uses: actions/checkout@v1
       - name: Install osx dependencies
-        run: brew install libtool
+        run: brew install libtool autoconf
         if: matrix.os == 'macos-latest'
 #      - run: |
 #          mkdir -p target/release
