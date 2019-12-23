@@ -46,21 +46,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "async-macros"
-version = "2.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "644a5a8de80f2085a1e7e57cd1544a2a7438f6e003c0790999bd43b92a77cdb2"
-dependencies = [
- "futures-core",
- "pin-utils",
-]
-
-[[package]]
 name = "async-std"
-version = "1.2.0"
-source = "git+https://github.com/gfreezy/async-std?rev=0736364#073636444d11f70ceddf1cbe5db265ca19185ddb"
+version = "1.4.0"
+source = "git+https://github.com/gfreezy/async-std?rev=6d76f399#6d76f399dae04a466b3404092ea62793b0142545"
 dependencies = [
- "async-macros",
  "async-task",
  "broadcaster",
  "crossbeam-channel 0.4.0",
