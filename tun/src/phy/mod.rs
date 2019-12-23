@@ -150,9 +150,9 @@ mod tests {
         let tun_name = "utun6";
         let mut tun_socket = TunSocket::new(tun_name);
         if cfg!(target_os = "macos") {
-            setup_ip(tun_name, "10.0.2.1", "10.0.2.0/24");
+            setup_ip(tun_name, "10.0.3.1", "10.0.3.0/24");
         } else {
-            setup_ip(tun_name, "10.0.2.1/24", "10.0.2.0/24");
+            setup_ip(tun_name, "10.0.3.1/24", "10.0.3.0/24");
         }
 
         let data = "hello".as_bytes();
@@ -165,8 +165,8 @@ mod tests {
             });
             task::sleep(Duration::from_secs(1)).await;
 
-            let src_addr = Ipv4Address::new(10, 0, 2, 10);
-            let dst_addr = Ipv4Address::new(10, 0, 2, 1);
+            let src_addr = Ipv4Address::new(10, 0, 3, 10);
+            let dst_addr = Ipv4Address::new(10, 0, 3, 1);
             let udp_repr = UdpRepr {
                 src_port: 1234,
                 dst_port: 1234,
