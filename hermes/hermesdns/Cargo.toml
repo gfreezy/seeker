@@ -15,5 +15,5 @@ tracing-futures = { version = "0.1.1", features = ["std-future", "futures-previe
 
 [dependencies.async-std]
 git = "https://github.com/gfreezy/async-std"
-rev = "0736364"
+rev = "6d76f399"
 features = ["unstable"]
