@@ -1,5 +1,9 @@
 [workspace]
 members = ["seeker", "dnsserver", "ssclient", "sysconfig", "tun", "config", "crypto", "hermes/hermesdns"]
 
-#[profile.release]
+[profile.release]
+lto = true
+codegen-units = 1
+incremental = false
+opt-level = "z"
 #debug = true
