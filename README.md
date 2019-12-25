@@ -36,6 +36,9 @@ chmod +x seeker-osx  # or  chmod+x seeker-linux
       
 2. `seeker` 启动的时候会自动将本机 DNS 修改为 `127.0.0.1`，退出的时候将 DNS 设置为默认值
 
+## FAQ
+If you encountered `"seeker" cannot be opened because the developer cannot be verified.`, you can go to `System Preferences` -> `Security & Privacy` -> `General` and enable any blocked app from Allow apps downloaded from pane at the bottom of the window.
+ 
 ## Config
 
 * `seeker` 直接使用的 clash 的规则。目前支持 `DOMAIN` `DOMAIN-KEYWORD` `DOMAIN-SUFFIX` `MATCH` 规则，不支持 `IP` 相关的规则。
