@@ -2,7 +2,6 @@
 
 use std::collections::HashMap;
 use std::io::{Error, ErrorKind, Result};
-use std::marker::{Send, Sync};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -60,10 +59,6 @@ struct DnsRequest {
     server: (String, u16),
     resp: Sender<DnsPacket>,
 }
-
-unsafe impl Send for DnsNetworkClient {}
-
-unsafe impl Sync for DnsNetworkClient {}
 
 impl DnsNetworkClient {
     pub async fn new(bind_port: u16, timeout: Duration) -> DnsNetworkClient {
