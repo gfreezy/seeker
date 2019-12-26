@@ -2,9 +2,10 @@ use crate::client::Client;
 use async_std::io;
 use async_std::net::{TcpStream, UdpSocket};
 use async_std::prelude::*;
+use async_std::sync::Mutex;
 use async_std::task;
 use async_std::task::JoinHandle;
-use chrono::Local;
+use chrono::{DateTime, Local};
 use config::Address;
 use hermesdns::DnsNetworkClient;
 use ssclient::client_stats::ClientStats;
@@ -13,6 +14,7 @@ use std::collections::HashMap;
 use std::io::Result;
 use std::io::{Error, ErrorKind};
 use std::net::{IpAddr, SocketAddr};
+use std::ops::Add;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tracing::{trace, trace_span};
@@ -27,6 +29,7 @@ pub(crate) struct DirectClient {
     write_timeout: Duration,
     probe_timeout: Duration,
     stats: ClientStats,
+    prob_cache: Mutex<HashMap<Address, (bool, DateTime<Local>)>>,
 }
 
 impl DirectClient {
@@ -45,6 +48,7 @@ impl DirectClient {
             write_timeout,
             probe_timeout,
             stats: ClientStats::new(),
+            prob_cache: Mutex::new(HashMap::new()),
         }
     }
 
@@ -61,12 +65,29 @@ impl DirectClient {
     }
 
     pub(crate) async fn probe_connectivity(&self, addr: Address) -> bool {
-        self.connect(addr, self.probe_timeout).await.is_ok()
+        let mut guard = self.prob_cache.lock().await;
+        match guard.get(&addr) {
+            Some((connectable, expire)) => {
+                if expire > &Local::now() {
+                    return *connectable;
+                } else {
+                    guard.remove(&addr);
+                }
+            }
+            _ => {}
+        };
+
+        let connectable = self.connect(&addr, self.probe_timeout).await.is_ok();
+        guard.insert(
+            addr,
+            (connectable, Local::now().add(chrono::Duration::hours(1))),
+        );
+        connectable
     }
 
-    async fn connect(&self, addr: Address, timeout: Duration) -> Result<TcpStream> {
+    async fn connect(&self, addr: &Address, timeout: Duration) -> Result<TcpStream> {
         let sock_addr = match addr {
-            Address::SocketAddress(addr) => addr,
+            Address::SocketAddress(addr) => *addr,
             Address::DomainNameAddress(domain, port) => {
                 let ip = self.resolve_domain(&domain).await?;
                 match ip {
@@ -76,7 +97,7 @@ impl DirectClient {
                             format!("domain {} not found", &domain),
                         ))
                     }
-                    Some(ip) => SocketAddr::new(ip, port),
+                    Some(ip) => SocketAddr::new(ip, *port),
                 }
             }
         };
@@ -92,7 +113,7 @@ impl DirectClient {
 impl Client for DirectClient {
     #[allow(unreachable_code)]
     async fn handle_tcp(&self, tun_socket: TunTcpSocket, addr: Address) -> Result<()> {
-        let conn = self.connect(addr.clone(), self.connect_timeout).await?;
+        let conn = self.connect(&addr, self.connect_timeout).await?;
         let mut tun_socket_clone = tun_socket.clone();
         let mut tun_socket_clone2 = tun_socket.clone();
         let mut ref_conn = &conn;

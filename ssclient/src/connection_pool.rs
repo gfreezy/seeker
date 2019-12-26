@@ -6,10 +6,10 @@ use std::time::{Duration, Instant};
 use async_std::future;
 use async_std::io;
 use async_std::sync::{channel, Mutex, Receiver, Sender};
-use futures::future::BoxFuture;
 use tracing::{error, trace};
 
 use crate::encrypted_stream::EncryptedTcpStream;
+use crate::BoxFuture;
 
 pub(crate) type EncryptedStremBox = Box<dyn EncryptedTcpStream + Send + Sync>;
 

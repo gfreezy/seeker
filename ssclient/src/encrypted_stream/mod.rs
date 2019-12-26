@@ -1,3 +1,4 @@
+use crate::BoxFuture;
 use std::io::Result;
 
 #[async_trait::async_trait]
@@ -27,5 +28,4 @@ mod stream_encrypt;
 
 pub use aead_encrypt::{AeadEncryptedReader, AeadEncryptedTcpStream, AeadEncryptedWriter};
 use config::Address;
-use futures::future::BoxFuture;
 pub use stream_encrypt::{StreamEncryptedReader, StreamEncryptedTcpStream, StreamEncryptedWriter};

@@ -10,7 +10,7 @@ edition = "2018"
 tracing = "0.1"
 tracing-core = "0.1"
 tracing-subscriber = "0.1"
-tracing-futures = { version = "0.1.1", features = ["std-future", "futures-preview"], default-features = false }
+tracing-futures = { version = "0.2", features = ["std-future"], default-features = false }
 config = { path = "../config" }
 dnsserver = { path = "../dnsserver" }
 ssclient = { path = "../ssclient" }
