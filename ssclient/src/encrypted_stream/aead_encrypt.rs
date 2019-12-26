@@ -5,14 +5,13 @@ use async_std::io;
 use async_std::net::{SocketAddr, TcpStream};
 use async_std::prelude::*;
 use bytes::{Bytes, BytesMut};
-use futures::future::BoxFuture;
 use tracing::trace;
 
 use config::Address;
 use crypto::{BoxAeadDecryptor, BoxAeadEncryptor, CipherType};
 
 use crate::tcp_io::{aead_decrypted_read, aead_encrypted_write};
-use crate::{recv_iv, send_iv, MAX_PACKET_SIZE};
+use crate::{recv_iv, send_iv, BoxFuture, MAX_PACKET_SIZE};
 
 use super::{EncryptedReader, EncryptedTcpStream, EncryptedWriter};
 

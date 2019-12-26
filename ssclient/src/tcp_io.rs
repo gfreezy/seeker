@@ -1,8 +1,8 @@
 use crate::MAX_PACKET_SIZE;
+use async_std::io::{Read, ReadExt};
 use byteorder::BigEndian;
 use bytes::ByteOrder;
 use crypto::{BoxAeadDecryptor, BoxAeadEncryptor, CipherType};
-use futures::{AsyncRead, AsyncReadExt};
 use std::io::{ErrorKind, Result};
 
 fn buffer_size(tag_size: usize, data: &[u8]) -> usize {
@@ -35,7 +35,7 @@ pub(crate) fn aead_encrypted_write(
     Ok(output_length)
 }
 
-pub(crate) async fn aead_decrypted_read<T: AsyncRead + Unpin>(
+pub(crate) async fn aead_decrypted_read<T: Read + Unpin>(
     cipher: &mut BoxAeadDecryptor,
     mut src: T,
     tmp_buf: &mut [u8],
