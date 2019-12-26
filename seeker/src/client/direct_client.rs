@@ -80,7 +80,7 @@ impl DirectClient {
         let connectable = self.connect(&addr, self.probe_timeout).await.is_ok();
         guard.insert(
             addr,
-            (connectable, Local::now().add(chrono::Duration::hours(1))),
+            (connectable, Local::now().add(chrono::Duration::minutes(5))),
         );
         connectable
     }
