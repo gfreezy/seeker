@@ -6,10 +6,10 @@ use std::time::{Duration, Instant};
 use async_std::future;
 use async_std::io;
 use async_std::sync::{channel, Mutex, Receiver, Sender};
-use futures::future::BoxFuture;
 use tracing::{error, trace};
 
 use crate::encrypted_stream::EncryptedTcpStream;
+use crate::BoxFuture;
 
 pub(crate) type EncryptedStremBox = Box<dyn EncryptedTcpStream + Send + Sync>;
 
@@ -118,7 +118,6 @@ mod tests {
     use std::time::Duration;
 
     use async_std::task;
-    use futures::FutureExt;
 
     use config::{ServerAddr, ServerConfig};
     use crypto::CipherType;
@@ -146,7 +145,7 @@ mod tests {
             let pool = Pool::new(
                 Arc::new(move || {
                     let srv_cfg_clone = srv_cfg.clone();
-                    async move {
+                    Box::pin(async move {
                         let conn: EncryptedStremBox = Box::new(
                             StreamEncryptedTcpStream::new(
                                 ssserver,
@@ -159,8 +158,7 @@ mod tests {
                             .await?,
                         );
                         Ok(conn)
-                    }
-                    .boxed()
+                    })
                 }),
                 10,
                 Duration::from_secs(5),

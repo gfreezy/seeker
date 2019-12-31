@@ -14,7 +14,6 @@ use async_std::sync::RwLock;
 use async_std::task;
 use async_std::task::JoinHandle;
 use bytes::{Bytes, BytesMut};
-use futures::TryFutureExt;
 use tracing::{trace, trace_span};
 use tracing_futures::Instrument;
 
@@ -26,6 +25,8 @@ use chrono::Local;
 use config::{Address, ServerAddr, ServerConfig};
 use crypto::{CipherCategory, CipherType};
 use hermesdns::{DnsClient, DnsNetworkClient, QueryType};
+use std::future::Future;
+use std::pin::Pin;
 use tun::socket::TunUdpSocket;
 
 pub mod client_stats;
@@ -35,6 +36,8 @@ mod tcp_io;
 mod udp_io;
 
 const MAX_PACKET_SIZE: usize = 0x3FFF;
+
+type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + 'a + Send>>;
 
 pub struct SSClient {
     srv_cfg: Arc<RwLock<ServerConfig>>,
@@ -66,8 +69,8 @@ impl SSClient {
                 let dns_server = dns_server_clone.clone();
                 let connect_errors = connect_errors_clone.clone();
 
-                Box::pin(
-                    async move {
+                Box::pin(async move {
+                    let ret = async move {
                         let srv_cfg = srv_cfg.read().await;
                         let read_timeout = srv_cfg.read_timeout();
                         let write_timeout = srv_cfg.write_timeout();
@@ -111,11 +114,12 @@ impl SSClient {
                         };
                         Ok(conn)
                     }
-                    .map_err(move |e| {
+                    .await;
+                    if ret.is_err() {
                         connect_errors.fetch_add(1, Ordering::SeqCst);
-                        e
-                    }),
-                )
+                    }
+                    ret
+                })
             }),
             idle_connections,
             connect_timeout,
