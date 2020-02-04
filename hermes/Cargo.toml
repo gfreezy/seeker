@@ -7,4 +7,4 @@ edition = "2018"
 [dependencies]
 hermesdns = { path = "hermesdns" }
 getopts = "0.2.21"
-async-std = { git = "https://github.com/gfreezy/async-std", rev = "6d76f399"}
+async-std = { git = "https://github.com/gfreezy/async-std", rev = "5d7e1ab8"}
