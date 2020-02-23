@@ -113,7 +113,6 @@ impl DnsNetworkClient {
                 // Construct a DnsPacket from buffer, skipping the packet if parsing
                 // failed
                 if let Ok(packet) = DnsPacket::from_buffer(&mut res_buffer) {
-                    trace!(packet = ?&packet, "get map lock to pop query");
                     let resp = { req_resp_map2.lock().unwrap().remove(&packet.header.id) };
                     if let Some(resp) = resp {
                         resp.send(packet).await;
@@ -138,7 +137,6 @@ impl DnsNetworkClient {
                 )
                 .await?;
                 assert_eq!(size, req_buffer.pos);
-                trace!(query = ?&req.resp, "get map lock to insert query");
                 {
                     req_resp_map
                         .lock()

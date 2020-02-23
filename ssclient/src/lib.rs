@@ -176,16 +176,24 @@ impl SSClient {
         };
 
         let send_task = async move {
-            let mut writer = conn1.get_writer().await?;
+            let mut writer = conn1
+                .get_writer()
+                .instrument(trace_span!("get writer"))
+                .await?;
             let now = Instant::now();
-            writer.send_addr(&addr).await?;
+            writer
+                .send_addr(&addr)
+                .instrument(trace_span!("send addr"))
+                .await?;
             let duration = now.elapsed();
             trace!(duration = ?duration, addr = %addr, "send addr to ssserver");
 
             let mut buf = vec![0; MAX_PACKET_SIZE];
             loop {
                 let now = Instant::now();
-                let size = timeout(read_timeout, tun_socket_clone.read(&mut buf)).await?;
+                let size = timeout(read_timeout, tun_socket_clone.read(&mut buf))
+                    .instrument(trace_span!("read from tun socket"))
+                    .await?;
                 let duration = now.elapsed();
                 trace!(duration = ?duration, size = size, "read from tun socket");
 
@@ -193,7 +201,10 @@ impl SSClient {
                     break;
                 }
 
-                writer.send_all(&buf[..size]).await?;
+                writer
+                    .send_all(&buf[..size])
+                    .instrument(trace_span!("send all to remote socket"))
+                    .await?;
 
                 self.stats
                     .update_connection_stats(idx, |stats| {
@@ -202,18 +213,29 @@ impl SSClient {
                     .await;
             }
             Ok::<(), io::Error>(())
-        };
+        }
+        .instrument(trace_span!(
+            "SSClient.handle_encrypted_tcp_stream[send_task]"
+        ));
 
         let recv_task = async move {
-            let mut reader = conn2.get_reader().await?;
+            let mut reader = conn2
+                .get_reader()
+                .instrument(trace_span!("get reader"))
+                .await?;
             let mut buf = vec![0; MAX_PACKET_SIZE];
             loop {
-                let size = reader.recv(&mut buf).await?;
+                let size = reader
+                    .recv(&mut buf)
+                    .instrument(trace_span!("recv from remote socket"))
+                    .await?;
                 if size == 0 {
                     break;
                 }
                 let now = Instant::now();
-                timeout(write_timeout, tun_socket.write_all(&buf[..size])).await?;
+                timeout(write_timeout, tun_socket.write_all(&buf[..size]))
+                    .instrument(trace_span!("write all to tun socket"))
+                    .await?;
                 let duration = now.elapsed();
                 trace!(duration = ?duration, size = size, "write to tun socket");
 
@@ -224,9 +246,15 @@ impl SSClient {
                     .await;
             }
             Ok::<(), io::Error>(())
-        };
+        }
+        .instrument(trace_span!(
+            "SSClient.handle_encrypted_tcp_stream[recv_task]"
+        ));
 
-        send_task.race(recv_task).await?;
+        send_task
+            .race(recv_task)
+            .instrument(trace_span!("race send task and recv task"))
+            .await?;
         Ok(())
     }
 
@@ -236,13 +264,18 @@ impl SSClient {
         addr: Address,
     ) -> Result<()> {
         let now = Instant::now();
-        let conn = self.pool.get_connection().await?;
+        let conn = self
+            .pool
+            .get_connection()
+            .instrument(trace_span!("pool.get_connection"))
+            .await?;
         let duration = now.elapsed();
         trace!(duration = ?duration, "get connection from pool");
         let idx = self.stats.add_connection(addr.clone()).await;
 
         let ret = self
             .handle_encrypted_tcp_stream(idx, socket, addr, conn)
+            .instrument(trace_span!("SSClient.handle_encrypted_tcp_stream"))
             .await;
         self.stats
             .update_connection_stats(idx, |stats| {

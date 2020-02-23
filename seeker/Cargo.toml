@@ -9,7 +9,7 @@ edition = "2018"
 [dependencies]
 tracing = "0.1"
 tracing-core = "0.1"
-tracing-subscriber = "0.2.0-alpha.6"
+tracing-subscriber = "0.2.1"
 tracing-futures = { version = "0.2", features = ["std-future"], default-features = false }
 config = { path = "../config" }
 dnsserver = { path = "../dnsserver" }
@@ -21,6 +21,7 @@ async-trait = "0.1.14"
 hermesdns = { path = "../hermes/hermesdns" }
 chrono = "0.4.10"
 file-rotate = "0.1.1"
+tracing-opentelemetry = { path = "../../tracing-opentelemetry" }
 
 [dependencies.smoltcp]
 git = "https://github.com/gfreezy/smoltcp"
