@@ -5,7 +5,7 @@ use std::{ptr, sync::Once};
 use bytes::{BufMut, Bytes, BytesMut};
 
 use libc::c_ulonglong;
-use libsodium_ffi::{
+use libsodium_sys::{
     crypto_aead_xchacha20poly1305_ietf_decrypt, crypto_aead_xchacha20poly1305_ietf_encrypt,
     crypto_stream_chacha20_ietf_xor_ic, crypto_stream_chacha20_xor_ic,
     crypto_stream_salsa20_xor_ic, crypto_stream_xsalsa20_xor_ic, sodium_init,
@@ -88,12 +88,12 @@ fn crypto_stream_xor_ic<B: BufMut>(
     data: &[u8],
     out: &mut B,
 ) -> CipherResult<()> {
-    assert!(data.len() <= unsafe { out.bytes_mut().len() });
+    assert!(data.len() <= unsafe { out.bytes_mut() }.len());
 
     let ret = unsafe {
         match t {
             CipherType::ChaCha20 => crypto_stream_chacha20_xor_ic(
-                out.bytes_mut().as_mut_ptr(),
+                out.bytes_mut().as_mut_ptr() as *mut u8,
                 data.as_ptr(),
                 data.len() as c_ulonglong,
                 iv.as_ptr(),
@@ -101,7 +101,7 @@ fn crypto_stream_xor_ic<B: BufMut>(
                 key.as_ptr(),
             ),
             CipherType::ChaCha20Ietf => crypto_stream_chacha20_ietf_xor_ic(
-                out.bytes_mut().as_mut_ptr(),
+                out.bytes_mut().as_mut_ptr() as *mut u8,
                 data.as_ptr(),
                 data.len() as c_ulonglong,
                 iv.as_ptr(),
@@ -109,7 +109,7 @@ fn crypto_stream_xor_ic<B: BufMut>(
                 key.as_ptr(),
             ),
             CipherType::Salsa20 => crypto_stream_salsa20_xor_ic(
-                out.bytes_mut().as_mut_ptr(),
+                out.bytes_mut().as_mut_ptr() as *mut u8,
                 data.as_ptr(),
                 data.len() as c_ulonglong,
                 iv.as_ptr(),
@@ -117,7 +117,7 @@ fn crypto_stream_xor_ic<B: BufMut>(
                 key.as_ptr(),
             ),
             CipherType::XSalsa20 => crypto_stream_xsalsa20_xor_ic(
-                out.bytes_mut().as_mut_ptr(),
+                out.bytes_mut().as_mut_ptr() as *mut u8,
                 data.as_ptr(),
                 data.len() as c_ulonglong,
                 iv.as_ptr(),

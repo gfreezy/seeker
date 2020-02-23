@@ -29,9 +29,8 @@ pub type BoxStreamCipher = Box<dyn StreamCipher + Send + 'static>;
 /// Generate a specific Cipher with key and initialize vector
 #[allow(unused_variables)]
 pub fn new_stream(t: CipherType, key: &[u8], iv: &[u8], mode: CryptoMode) -> BoxStreamCipher {
-    assert_eq!(
-        t.category(),
-        CipherCategory::Stream,
+    assert!(
+        t.category() == CipherCategory::Stream,
         "only allow initializing with stream cipher"
     );
 

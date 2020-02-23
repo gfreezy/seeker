@@ -9,7 +9,7 @@ use std::time::Duration;
 use async_std::sync::RwLock;
 use async_std::task;
 use chrono::{DateTime, Local};
-use tracing::{error, info, trace_span};
+use tracing::{error, info, trace, trace_span};
 use tracing_futures::Instrument;
 
 use config::rule::{Action, ProxyRules};
@@ -143,7 +143,10 @@ impl Client for RuledClient {
     async fn handle_tcp(&self, socket: TunTcpSocket, addr: Address) -> Result<()> {
         let action = self
             .get_action_for_addr(socket.remote_addr(), &addr)
+            .instrument(trace_span!("get action for addr",))
             .await?;
+
+        trace!(action = ?action, "get action for addr");
 
         let index = self.counter.fetch_add(1, SeqCst);
         {

@@ -2,7 +2,7 @@
 
 use std::ptr;
 
-use miscreant::aead::{Aead, Aes128PmacSivAead, Aes256PmacSivAead};
+use miscreant::{Aead, Aes128PmacSivAead, Aes256PmacSivAead};
 
 use crate::{
     aead::{increase_nonce, make_skey},
@@ -82,12 +82,12 @@ impl AeadEncryptor for MiscreantCipher {
         // NOTE: Must swap tag and encrypted text to output
         match self.cipher {
             MiscreantCryptoVariant::Aes128(ref mut cipher) => {
-                cipher.seal_in_place(&self.nonce, b"", &mut buf);
+                cipher.encrypt_in_place(&self.nonce, b"", &mut buf);
                 output[..input.len()].copy_from_slice(&buf[tag_len..]);
                 output[input.len()..].copy_from_slice(&buf[..tag_len]);
             }
             MiscreantCryptoVariant::Aes256(ref mut cipher) => {
-                cipher.seal_in_place(&self.nonce, b"", &mut buf);
+                cipher.encrypt_in_place(&self.nonce, b"", &mut buf);
                 output[..input.len()].copy_from_slice(&buf[tag_len..]);
                 output[input.len()..].copy_from_slice(&buf[..tag_len]);
             }
@@ -109,10 +109,10 @@ impl AeadDecryptor for MiscreantCipher {
 
         let result = match self.cipher {
             MiscreantCryptoVariant::Aes128(ref mut cipher) => {
-                cipher.open_in_place(&self.nonce, b"", &mut buf)
+                cipher.decrypt_in_place(&self.nonce, b"", &mut buf)
             }
             MiscreantCryptoVariant::Aes256(ref mut cipher) => {
-                cipher.open_in_place(&self.nonce, b"", &mut buf)
+                cipher.decrypt_in_place(&self.nonce, b"", &mut buf)
             }
         };
 
