@@ -5,3 +5,5 @@ Procfile
 /dns.db
 config.yml
 /log
+.idea
+.DS_Store
