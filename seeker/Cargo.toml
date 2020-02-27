@@ -21,7 +21,6 @@ async-trait = "0.1.14"
 hermesdns = { path = "../hermes/hermesdns" }
 chrono = "0.4.10"
 file-rotate = "0.1.1"
-tracing-opentelemetry = { path = "../../tracing-opentelemetry" }
 
 [dependencies.smoltcp]
 git = "https://github.com/gfreezy/smoltcp"
