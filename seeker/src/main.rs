@@ -3,9 +3,6 @@ mod client;
 
 use std::error::Error;
 
-use tracing_opentelemetry::OpentelemetryLayer;
-use tracing_subscriber::{Layer, Registry};
-
 use crate::client::ruled_client::RuledClient;
 use crate::client::Client;
 use async_std::io::timeout;
@@ -180,16 +177,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         tracing::subscriber::set_global_default(my_subscriber)
             .expect("setting tracing default failed");
     } else {
-        // Create a new tracing layer
-        let layer = OpentelemetryLayer::default();
-
-        let subscriber = layer.with_subscriber(Registry::default());
-        //
-        //        let subscriber = FmtSubscriber::builder()
-        //            .with_env_filter(EnvFilter::from_default_env())
-        //            .with_ansi(false)
-        //            .compact()
-        //            .finish();
+        let subscriber = FmtSubscriber::builder()
+            .with_env_filter(EnvFilter::from_default_env())
+            .with_ansi(false)
+            .compact()
+            .finish();
 
         tracing::subscriber::set_global_default(subscriber)
             .expect("setting tracing default failed");
