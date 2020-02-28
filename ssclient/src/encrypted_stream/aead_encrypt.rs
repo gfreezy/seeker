@@ -209,7 +209,7 @@ mod tests {
     use async_std::prelude::*;
     use async_std::task;
 
-    use config::{ServerAddr, ServerConfig};
+    use config::{ServerAddr, ShadowsocksServerConfig};
     use crypto::CipherType;
 
     use super::*;
@@ -217,7 +217,7 @@ mod tests {
     #[test]
     fn test_encrypted_stream() {
         const BIND_ADDR: &str = "127.0.0.1:65510";
-        let srv_cfg = Arc::new(ServerConfig::new(
+        let srv_cfg = Arc::new(ShadowsocksServerConfig::new(
             "servername".to_string(),
             ServerAddr::DomainName("sdf".to_string(), 112),
             "pass".to_string(),

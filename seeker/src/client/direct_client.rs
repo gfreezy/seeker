@@ -56,12 +56,12 @@ impl DirectClient {
         (&self.dns_server.0, self.dns_server.1)
     }
 
-    pub fn stats(&self) -> &ClientStats {
-        &self.stats
-    }
-
     async fn resolve_domain(&self, domain: &str) -> Result<Option<IpAddr>> {
         resolve_domain(&self.resolver, self.dns_server(), domain).await
+    }
+
+    pub fn stats(&self) -> &ClientStats {
+        &self.stats
     }
 
     pub(crate) async fn probe_connectivity(&self, addr: Address) -> bool {
