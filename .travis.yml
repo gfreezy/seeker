@@ -8,8 +8,6 @@ cache:
 env:
   global:
     - BIN_NAME=seeker
-    - SODIUM_BUILD_STATIC=yes
-    - SODIUM_STATIC=yes
     - OPENSSL_STATIC=yes
     - DNS=8.8.8.8
 matrix:

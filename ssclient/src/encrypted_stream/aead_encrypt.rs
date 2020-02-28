@@ -21,6 +21,7 @@ pub struct AeadEncryptedTcpStream {
     key: Bytes,
     read_timeout: Duration,
     write_timeout: Duration,
+    connect_timeout: Duration,
 }
 
 impl AeadEncryptedTcpStream {
@@ -43,6 +44,7 @@ impl AeadEncryptedTcpStream {
             key,
             read_timeout,
             write_timeout,
+            connect_timeout,
         })
     }
 }
@@ -57,6 +59,7 @@ impl EncryptedTcpStream for AeadEncryptedTcpStream {
                 &self.conn,
                 self.method,
                 self.key.clone(),
+                self.connect_timeout,
                 self.write_timeout,
             )
             .await?;
@@ -96,11 +99,12 @@ impl<'a> AeadEncryptedWriter<'a> {
         conn: &'a TcpStream,
         method: CipherType,
         key: Bytes,
+        connect_timeout: Duration,
         write_timeout: Duration,
     ) -> Result<AeadEncryptedWriter<'a>> {
         let cipher_type = method;
 
-        let iv = send_iv(&conn, method, write_timeout).await?;
+        let iv = send_iv(&conn, method, connect_timeout).await?;
         let cipher = crypto::new_aead_encryptor(cipher_type, &key, &iv);
 
         Ok(AeadEncryptedWriter {
@@ -237,6 +241,7 @@ mod tests {
                     &conn,
                     srv_cfg_clone.method(),
                     srv_cfg_clone.key(),
+                    srv_cfg_clone.write_timeout(),
                     srv_cfg_clone.write_timeout(),
                 )
                 .await?;
