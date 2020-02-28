@@ -119,7 +119,7 @@ mod tests {
 
     use async_std::task;
 
-    use config::{ServerAddr, ServerConfig};
+    use config::{ServerAddr, ShadowsocksServerConfig};
     use crypto::CipherType;
 
     use crate::connection_pool::Pool;
@@ -129,7 +129,7 @@ mod tests {
 
     #[test]
     fn test_pool() {
-        let srv_cfg = Arc::new(ServerConfig::new(
+        let srv_cfg = Arc::new(ShadowsocksServerConfig::new(
             "srvname".to_string(),
             ServerAddr::DomainName("sdf".to_string(), 112),
             "pass".to_string(),

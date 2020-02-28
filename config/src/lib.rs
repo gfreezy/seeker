@@ -1,9 +1,10 @@
 pub mod rule;
 mod server_config;
 mod socks5;
-pub use server_config::{ServerAddr, ServerConfig};
+pub use server_config::{ServerAddr, ShadowsocksServerConfig};
 pub use socks5::Address;
 
+use crate::server_config::Socks5ServerConfig;
 use rule::ProxyRules;
 use serde::Deserialize;
 use smoltcp::wire::{Ipv4Address, Ipv4Cidr};
@@ -14,7 +15,8 @@ use std::time::Duration;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
-    pub server_configs: Arc<Vec<ServerConfig>>,
+    pub shadowsocks_servers: Arc<Vec<ShadowsocksServerConfig>>,
+    pub socks5_server: Option<Socks5ServerConfig>,
     pub dns_start_ip: Ipv4Addr,
     pub dns_server: SocketAddr,
     pub tun_name: String,
@@ -138,7 +140,7 @@ direct_connect_timeout: 1s
 direct_read_timeout: 1s
 direct_write_timeout: 1s
 max_connect_errors: 20
-server_configs:
+shadowsocks_servers:
   - name: server1
     addr: domain-or-ip-to-ss-server:134
     method: chacha20-ietf
@@ -156,6 +158,12 @@ server_configs:
     write_timeout: 30s
     idle_connections: 10
 
+socks5_server:
+    addr: domain-or-ip-to-ss-server:134
+    connect_timeout: 5s
+    read_timeout: 30s
+    write_timeout: 30s
+    idle_connections: 10
 rules:
   - 'DOMAIN,audio-ssl.itunes.apple.com,DIRECT'
   - 'DOMAIN,gspe1-ssl.ls.apple.com,REJECT'
@@ -172,8 +180,8 @@ rules:
         assert_eq!(
             format!("{:#?}", conf),
             r#"Config {
-    server_configs: [
-        ServerConfig {
+    shadowsocks_servers: [
+        ShadowsocksServerConfig {
             name: "server1",
             addr: DomainName(
                 "domain-or-ip-to-ss-server",
@@ -186,7 +194,7 @@ rules:
             write_timeout: 30s,
             idle_connections: 10,
         },
-        ServerConfig {
+        ShadowsocksServerConfig {
             name: "server2",
             addr: SocketAddr(
                 V4(
@@ -201,6 +209,17 @@ rules:
             idle_connections: 10,
         },
     ],
+    socks5_server: Some(
+        Socks5ServerConfig {
+            addr: DomainName(
+                "domain-or-ip-to-ss-server",
+                134,
+            ),
+            connect_timeout: 5s,
+            read_timeout: 30s,
+            write_timeout: 30s,
+        },
+    ),
     dns_start_ip: 10.0.0.10,
     dns_server: V4(
         223.5.5.5:53,
