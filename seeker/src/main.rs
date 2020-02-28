@@ -33,8 +33,12 @@ async fn handle_connection<T: Client + Clone + Send + Sync + 'static>(
     let (dns_server, resolver) =
         create_dns_server("dns.db", config.dns_listen.clone(), config.dns_start_ip).await;
     println!("Spawn DNS server");
-    spawn(dns_server.run_server());
-    spawn(Tun::bg_send());
+    spawn(
+        dns_server
+            .run_server()
+            .instrument(trace_span!("dns_server.run_server")),
+    );
+    spawn(Tun::bg_send().instrument(trace_span!("Tun::bg_send")));
 
     let mut stream = Tun::listen();
     loop {
@@ -63,6 +67,7 @@ async fn handle_connection<T: Client + Clone + Send + Sync + 'static>(
                 let ip = remote_addr.ip().to_string();
                 let host = resolver_clone
                     .lookup_host(&ip)
+                    .instrument(trace_span!("lookup host", ip = ?ip))
                     .await
                     .map(|s| Address::DomainNameAddress(s, remote_addr.port()))
                     .unwrap_or_else(|| Address::SocketAddress(remote_addr));
@@ -172,11 +177,13 @@ fn main() -> Result<(), Box<dyn Error>> {
         tracing::subscriber::set_global_default(my_subscriber)
             .expect("setting tracing default failed");
     } else {
-        let my_subscriber = FmtSubscriber::builder()
+        let subscriber = FmtSubscriber::builder()
             .with_env_filter(EnvFilter::from_default_env())
             .with_ansi(false)
+            .compact()
             .finish();
-        tracing::subscriber::set_global_default(my_subscriber)
+
+        tracing::subscriber::set_global_default(subscriber)
             .expect("setting tracing default failed");
     };
 

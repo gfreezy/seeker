@@ -17,6 +17,7 @@ use super::{EncryptedReader, EncryptedTcpStream, EncryptedWriter};
 pub struct StreamEncryptedTcpStream {
     conn: TcpStream,
     method: CipherType,
+    connect_timeout: Duration,
     read_timeout: Duration,
     write_timeout: Duration,
     key: Bytes,
@@ -42,6 +43,7 @@ impl StreamEncryptedTcpStream {
             key,
             read_timeout,
             write_timeout,
+            connect_timeout,
         })
     }
 }
@@ -56,6 +58,7 @@ impl EncryptedTcpStream for StreamEncryptedTcpStream {
                 &self.conn,
                 self.method,
                 self.key.clone(),
+                self.connect_timeout,
                 self.write_timeout,
             )
             .await?;
@@ -94,9 +97,10 @@ impl<'a> StreamEncryptedWriter<'a> {
         conn: &'a TcpStream,
         method: CipherType,
         key: Bytes,
+        connect_timeout: Duration,
         write_timeout: Duration,
     ) -> Result<StreamEncryptedWriter<'a>> {
-        let send_iv = send_iv(&conn, method, write_timeout).await?;
+        let send_iv = send_iv(&conn, method, connect_timeout).await?;
         let encrypt_cipher = crypto::new_stream(method, &key, &send_iv, CryptoMode::Encrypt);
 
         Ok(StreamEncryptedWriter {
@@ -224,6 +228,7 @@ mod tests {
                     &conn,
                     srv_cfg_clone.method(),
                     srv_cfg_clone.key(),
+                    srv_cfg_clone.connect_timeout(),
                     srv_cfg_clone.write_timeout(),
                 )
                 .await?;
