@@ -22,7 +22,7 @@ use crate::connection_pool::{EncryptedStremBox, Pool};
 use crate::encrypted_stream::{AeadEncryptedTcpStream, StreamEncryptedTcpStream};
 use crate::udp_io::{decrypt_payload, encrypt_payload};
 use chrono::Local;
-use config::{Address, ServerAddr, ServerConfig};
+use config::{Address, ServerAddr, ShadowsocksServerConfig};
 use crypto::{CipherCategory, CipherType};
 use hermesdns::{DnsClient, DnsNetworkClient, QueryType};
 use std::future::Future;
@@ -40,7 +40,7 @@ const MAX_PACKET_SIZE: usize = 0x3FFF;
 type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + 'a + Send>>;
 
 pub struct SSClient {
-    srv_cfg: Arc<RwLock<ServerConfig>>,
+    srv_cfg: Arc<RwLock<ShadowsocksServerConfig>>,
     dns_server: (String, u16),
     resolver: Arc<DnsNetworkClient>,
     pool: Pool,
@@ -50,7 +50,7 @@ pub struct SSClient {
 
 impl SSClient {
     pub async fn new(
-        server_config: Arc<RwLock<ServerConfig>>,
+        server_config: Arc<RwLock<ShadowsocksServerConfig>>,
         dns_server: (String, u16),
     ) -> SSClient {
         let server_config_clone = server_config.clone();
@@ -150,7 +150,7 @@ impl SSClient {
         self.connect_errors.load(Ordering::SeqCst)
     }
 
-    pub async fn change_conf(&self, conf: ServerConfig) {
+    pub async fn change_conf(&self, conf: ShadowsocksServerConfig) {
         *self.srv_cfg.write().await = conf;
         let _ = self.connect_errors.swap(0, Ordering::SeqCst);
     }
@@ -506,7 +506,7 @@ mod tests {
         let dns = std::env::var("DNS").unwrap_or_else(|_| "114.114.114.114".to_string());
         task::block_on(async {
             let dns_client = DnsNetworkClient::new(0, Duration::from_secs(5)).await;
-            let cfg = Arc::new(ServerConfig::new(
+            let cfg = Arc::new(ShadowsocksServerConfig::new(
                 "servername".to_string(),
                 ServerAddr::DomainName("local.allsunday.in".to_string(), 7789),
                 "pass".to_string(),
@@ -525,7 +525,7 @@ mod tests {
     fn test_get_remote_ssserver_ip() {
         task::block_on(async {
             let dns_client = DnsNetworkClient::new(0, Duration::from_secs(3)).await;
-            let cfg = Arc::new(ServerConfig::new(
+            let cfg = Arc::new(ShadowsocksServerConfig::new(
                 "servername".to_string(),
                 ServerAddr::SocketAddr("1.2.3.4:7789".parse().unwrap()),
                 "pass".to_string(),

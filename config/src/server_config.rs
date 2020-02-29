@@ -83,7 +83,24 @@ impl Display for ServerAddr {
 
 /// Configuration for a server
 #[derive(Clone, Debug, Deserialize)]
-pub struct ServerConfig {
+pub struct Socks5ServerConfig {
+    /// Server address
+    #[serde(with = "server_addr")]
+    pub addr: ServerAddr,
+    /// Connection timeout
+    #[serde(with = "duration")]
+    pub connect_timeout: Duration,
+    /// Read timeout
+    #[serde(with = "duration")]
+    pub read_timeout: Duration,
+    /// Write timeout
+    #[serde(with = "duration")]
+    pub write_timeout: Duration,
+}
+
+/// Configuration for a server
+#[derive(Clone, Debug, Deserialize)]
+pub struct ShadowsocksServerConfig {
     /// Server name
     name: String,
     /// Server address
@@ -139,7 +156,7 @@ mod server_addr {
     }
 }
 
-impl ServerConfig {
+impl ShadowsocksServerConfig {
     /// Creates a new ServerConfig
     pub fn new(
         name: String,
@@ -150,10 +167,10 @@ impl ServerConfig {
         read_timeout: Duration,
         write_timeout: Duration,
         idle_connections: usize,
-    ) -> ServerConfig {
+    ) -> ShadowsocksServerConfig {
         let enc_key = method.bytes_to_key(pwd.as_bytes());
         trace!("Initialize config with pwd: {:?}, key: {:?}", pwd, enc_key);
-        ServerConfig {
+        ShadowsocksServerConfig {
             name,
             addr,
             password: pwd,
@@ -166,8 +183,12 @@ impl ServerConfig {
     }
 
     /// Create a basic config
-    pub fn basic(addr: SocketAddr, password: String, method: CipherType) -> ServerConfig {
-        ServerConfig::new(
+    pub fn basic(
+        addr: SocketAddr,
+        password: String,
+        method: CipherType,
+    ) -> ShadowsocksServerConfig {
+        ShadowsocksServerConfig::new(
             addr.to_string(),
             ServerAddr::SocketAddr(addr),
             password,
