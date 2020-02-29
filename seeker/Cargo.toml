@@ -21,6 +21,7 @@ async-trait = "0.1.14"
 hermesdns = { path = "../hermes/hermesdns" }
 chrono = "0.4.10"
 file-rotate = "0.1.1"
+socks = "0.3.2"
 
 [dependencies.smoltcp]
 git = "https://github.com/gfreezy/smoltcp"

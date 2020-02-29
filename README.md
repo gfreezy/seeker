@@ -49,7 +49,7 @@ If you encountered `"seeker" cannot be opened because the developer cannot be ve
     * `PROBE` 默认尝试直连，如果超时，则走代理。由 `direct_connect_timeout` 控制超时时间
 * 确保系统没有重复的 `tun_name` 
 * 确保 TUN 的网络 `tun_ip` 和 `tun_cidr` 与当前所处网络环境不在一个网段
-
+* `seeker` 支持 socks5 代理和 shadowsocks 代理。当 socks5 与 shadowsocks 同时设置的时候，会优先使用 socks5 代理，并且忽略 shadowsocks 配置。 
 ```yaml
 dns_start_ip: 10.0.0.10
 dns_server: 223.5.5.5:53
@@ -63,7 +63,13 @@ direct_connect_timeout: 1s
 direct_read_timeout: 30s
 direct_write_timeout: 5s
 max_connect_errors: 20
-server_configs:
+socks5_server:
+  addr: domain-or-ip-to-socks5-server:port
+  connect_timeout: 100ms
+  read_timeout: 30s
+  write_timeout: 30s
+
+shadowsocks_server:
   - name: server1
     addr: domain-or-ip-to-ss-server:port
     method: chacha20-ietf
@@ -139,7 +145,7 @@ docker run -v $PWD:/volume --rm -t -e SODIUM_BUILD_STATIC=yes clux/muslrust carg
 2. 有应用请求 DNS 的时候， `seeker` 会为这个域名返回 `10.0.0.0/16` 网段内一个唯一的 IP 
 3. `seeker` 从 TUN 接受到 IP 包后，会在内部组装成 TCP/UDP 数据
 4. `seeker` 会根据规则和网络连接的 uid 判断走代理还是直连
-5. 如果需要走代理，将 TCP/UDP 数据转发到 SS 服务器，从 SS 接受到数据后，在返回给应用；如果直连，则本地建立直接将数据发送到目标地址
+5. 如果需要走代理，将 TCP/UDP 数据转发到 SS 服务器/ socks5 代理，从代理接受到数据后，在返回给应用；如果直连，则本地建立直接将数据发送到目标地址
 
 ## 使用限制
 
