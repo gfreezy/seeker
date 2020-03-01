@@ -253,7 +253,7 @@ mod tests {
                 )
                 .await?;
                 let _size = reader.recv(&mut buf).await?;
-                let recv_addr = Address::read_from(&mut buf.as_slice())?;
+                let recv_addr = Address::read_from(&mut buf.as_slice()).await?;
                 assert_eq!(recv_addr, addr);
                 let size = reader.recv(&mut buf).await?;
                 assert_eq!(&buf[..size], &DATA[..]);
