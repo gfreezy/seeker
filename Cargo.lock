@@ -185,16 +185,6 @@ checksum = "08c48aae112d48ed9f069b33538ea9e3e90aa263cfa3d1c24309612b1f7472de"
 
 [[package]]
 name = "bytes"
-version = "0.4.12"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "206fdffcfa2df7cbe15601ef46c813fce0965eb3286db6b56c583b814b51c81c"
-dependencies = [
- "byteorder",
- "iovec",
-]
-
-[[package]]
-name = "bytes"
 version = "0.5.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "130aac562c0dd69c56b3b1cc8ffd2e17be31d0b6c25b61c96b76231aa23e39e1"
@@ -260,12 +250,13 @@ name = "config"
 version = "0.1.0"
 dependencies = [
  "byteorder",
- "bytes 0.4.12",
+ "bytes",
  "crypto",
  "ring",
  "serde",
  "serde_yaml",
  "smoltcp",
+ "socks5_client",
  "tracing",
 ]
 
@@ -364,7 +355,7 @@ version = "0.1.0"
 dependencies = [
  "byte_string",
  "byteorder",
- "bytes 0.4.12",
+ "bytes",
  "digest",
  "hkdf",
  "hmac",
@@ -1236,7 +1227,7 @@ dependencies = [
  "libc",
  "signal-hook",
  "smoltcp",
- "socks",
+ "socks5_client",
  "ssclient",
  "sysconfig",
  "tracing",
@@ -1402,23 +1393,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "socks"
-version = "0.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e6a64cfa9346d26e836a49fcc1ddfcb4d3df666b6787b6864db61d4918e1cbc2"
-dependencies = [
- "byteorder",
- "libc",
- "winapi 0.2.8",
- "ws2_32-sys",
-]
-
-[[package]]
 name = "socks5_client"
 version = "0.1.0"
 dependencies = [
  "async-std",
- "bytes 0.5.4",
+ "bytes",
 ]
 
 [[package]]
@@ -1440,7 +1419,7 @@ dependencies = [
  "async-std",
  "async-trait",
  "byteorder",
- "bytes 0.4.12",
+ "bytes",
  "chrono",
  "config",
  "crypto",

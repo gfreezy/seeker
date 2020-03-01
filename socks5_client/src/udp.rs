@@ -8,11 +8,11 @@ use std::io::{Error, ErrorKind, Result};
 use std::net::SocketAddr;
 use std::time::Duration;
 
+#[derive(Debug)]
 pub struct Socks5UdpSocket {
     socket: UdpSocket,
     #[allow(dead_code)]
     associate_conn: TcpStream,
-    buffer: Vec<u8>,
 }
 
 impl Socks5UdpSocket {
@@ -51,35 +51,46 @@ impl Socks5UdpSocket {
         Ok(Socks5UdpSocket {
             socket,
             associate_conn: conn,
-            buffer: vec![0; 1500],
         })
     }
 
-    pub async fn send_to(&mut self, buf: &[u8], addr: Address) -> Result<usize> {
-        let udp_header = UdpAssociateHeader::new(0, addr);
+    pub async fn send_to(&self, buf: &[u8], addr: SocketAddr) -> Result<usize> {
+        let mut buffer = vec![0; 1500];
+        let udp_header = UdpAssociateHeader::new(0, Address::SocketAddress(addr));
         let mut size = 0;
-        udp_header.write_to_buf(&mut self.buffer[size..].as_mut());
+        udp_header.write_to_buf(&mut buffer[size..].as_mut());
         size += udp_header.serialized_len();
-        self.buffer[size..size + buf.len()].copy_from_slice(buf);
+        buffer[size..size + buf.len()].copy_from_slice(buf);
         size += buf.len();
-        let send_size = self.socket.send(&self.buffer[..size]).await?;
+        let send_size = self.socket.send(&buffer[..size]).await?;
         assert_eq!(send_size, size);
         Ok(buf.len())
     }
 
-    pub async fn recv_from(&mut self, buf: &mut [u8]) -> Result<(usize, Address)> {
-        let size = self.socket.recv(&mut self.buffer).await?;
-        let udp_header = UdpAssociateHeader::read_from(&mut self.buffer.as_slice()).await?;
+    pub async fn recv_from(&self, buf: &mut [u8]) -> Result<(usize, SocketAddr)> {
+        let mut buffer = vec![0; 1500];
+        let size = self.socket.recv(&mut buffer).await?;
+        let udp_header = UdpAssociateHeader::read_from(&mut buffer.as_slice()).await?;
         if udp_header.frag != 0 {
             return Err(Error::new(ErrorKind::InvalidData, "frag is not allowed"));
         }
         let udp_header_len = udp_header.serialized_len();
         let addr = udp_header.address;
-        buf[..size - udp_header_len].copy_from_slice(&self.buffer[udp_header_len..size]);
-        Ok((size - udp_header_len, addr))
+        buf[..size - udp_header_len].copy_from_slice(&buffer[udp_header_len..size]);
+        let socket_addr = match addr {
+            Address::SocketAddress(socket_addr) => socket_addr,
+            Address::DomainNameAddress(_, _) => {
+                return Err(Error::new(ErrorKind::InvalidData, "invalid addr format"))
+            }
+        };
+        Ok((size - udp_header_len, socket_addr))
+    }
+
+    pub fn local_addr(&self) -> Result<SocketAddr> {
+        self.socket.local_addr()
     }
 }
-//
+
 // #[cfg(test)]
 // mod tests {
 //     use super::*;
@@ -90,9 +101,9 @@ impl Socks5UdpSocket {
 //     fn test_udp() -> Result<()> {
 //         block_on(async {
 //             let server = "127.0.0.1:1086".parse().unwrap();
-//             let mut udp = Socks5UdpSocket::connect(server).await?;
+//             let udp = Socks5UdpSocket::connect(server).await?;
 //             let mut buf = vec![0; 1500];
-//             let to_addr = Address::from_str("127.0.0.1:10240").unwrap();
+//             let to_addr = Address::SocketAddress("118.145.8.14:10240".parse().unwrap());
 //             let size = udp.send_to(b"hello", to_addr.clone()).await?;
 //             let (s, addr) = udp.recv_from(&mut buf).await?;
 //             assert_eq!(s, size);

@@ -252,17 +252,28 @@ impl Client for RuledClient {
     }
 
     async fn handle_udp(&self, socket: TunUdpSocket, addr: Address) -> Result<()> {
-        // FIXME: `socket.local_addr` is not right, should be socket.remote_addr(). However, Udpsocket doesn't have a `remote_addr`
+        // FIXME: `socket.local_addr` is not right, should be socket.remote_addr(). However, Udp socket doesn't have a `remote_addr`
         let action = self.get_action_for_addr(socket.local_addr(), &addr).await?;
 
         match action {
             Action::Reject => Ok(()),
-            Action::Direct => self.direct_client.handle_udp(socket, addr).await,
+            Action::Direct => {
+                self.direct_client
+                    .handle_udp(socket, addr)
+                    .instrument(trace_span!("handl_direct_udp"))
+                    .await
+            }
             Action::Proxy => {
                 if let Some(socks5_client) = &self.socks5_client {
-                    socks5_client.handle_udp(socket, addr).await
+                    socks5_client
+                        .handle_udp(socket, addr)
+                        .instrument(trace_span!("handle_socks_udp"))
+                        .await
                 } else {
-                    self.ssclient.handle_udp(socket, addr).await
+                    self.ssclient
+                        .handle_udp(socket, addr)
+                        .instrument(trace_span!("handl_shadowsocks_udp"))
+                        .await
                 }
             }
             Action::Probe => unreachable!(),

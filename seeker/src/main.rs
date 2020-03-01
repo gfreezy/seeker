@@ -165,10 +165,11 @@ fn main() -> Result<(), Box<dyn Error>> {
             RotationMode::Lines(100_000),
             20,
         )));
-        let env_filter = EnvFilter::from_default_env()
+        let env_filter = EnvFilter::new("seeker=trace")
             .add_directive("seeker=trace".parse()?)
             .add_directive("ssclient=trace".parse()?)
-            .add_directive("hermesdns=trace".parse()?);
+            .add_directive("hermesdns=trace".parse()?)
+            .add_directive("tun=info".parse()?);
         let my_subscriber = FmtSubscriber::builder()
             .with_env_filter(env_filter)
             .with_ansi(false)

@@ -1,8 +1,7 @@
 pub mod rule;
 mod server_config;
-mod socks5;
 pub use server_config::{ServerAddr, ShadowsocksServerConfig};
-pub use socks5::Address;
+pub use socks5_client::Address;
 
 use crate::server_config::Socks5ServerConfig;
 use rule::ProxyRules;
