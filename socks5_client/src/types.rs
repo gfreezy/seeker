@@ -218,14 +218,14 @@ impl Address {
         R: Read + Unpin,
     {
         let mut addr_type_buf = [0u8; 1];
-        let _ = stream.read_exact(&mut addr_type_buf).await?;
+        stream.read_exact(&mut addr_type_buf).await?;
 
         let addr_type = addr_type_buf[0];
         match addr_type {
             consts::SOCKS5_ADDR_TYPE_IPV4 => {
                 let mut buf = BytesMut::with_capacity(6);
                 buf.resize(6, 0);
-                let _ = stream.read_exact(&mut buf).await?;
+                stream.read_exact(&mut buf).await?;
 
                 let mut cursor = buf.to_bytes();
                 let v4addr = Ipv4Addr::new(
@@ -241,7 +241,7 @@ impl Address {
             }
             consts::SOCKS5_ADDR_TYPE_IPV6 => {
                 let mut buf = [0u8; 18];
-                let _ = stream.read_exact(&mut buf).await?;
+                stream.read_exact(&mut buf).await?;
 
                 let mut cursor = Cursor::new(&buf);
                 let v6addr = Ipv6Addr::new(
@@ -262,14 +262,14 @@ impl Address {
             }
             consts::SOCKS5_ADDR_TYPE_DOMAIN_NAME => {
                 let mut length_buf = [0u8; 1];
-                let _ = stream.read_exact(&mut length_buf).await?;
+                stream.read_exact(&mut length_buf).await?;
                 let length = length_buf[0] as usize;
 
                 // Len(Domain) + Len(Port)
                 let buf_length = length + 2;
                 let mut buf = BytesMut::with_capacity(buf_length);
                 buf.resize(buf_length, 0);
-                let _ = stream.read_exact(&mut buf).await?;
+                stream.read_exact(&mut buf).await?;
 
                 let mut cursor = buf.to_bytes();
                 let mut raw_addr = Vec::with_capacity(length);
@@ -471,7 +471,7 @@ impl TcpRequestHeader {
         R: Read + Unpin,
     {
         let mut buf = [0u8; 3];
-        let _ = r.read_exact(&mut buf).await?;
+        r.read_exact(&mut buf).await?;
 
         let ver = buf[0];
         if ver != consts::SOCKS5_VERSION {
@@ -553,7 +553,7 @@ impl TcpResponseHeader {
         R: Read + Unpin,
     {
         let mut buf = [0u8; 3];
-        let _ = r.read_exact(&mut buf).await?;
+        r.read_exact(&mut buf).await?;
 
         let ver = buf[0];
         let reply_code = buf[1];
@@ -626,7 +626,7 @@ impl HandshakeRequest {
         R: Read + Unpin,
     {
         let mut buf = [0u8; 2];
-        let _ = r.read_exact(&mut buf).await?;
+        r.read_exact(&mut buf).await?;
 
         let ver = buf[0];
         let nmet = buf[1];
@@ -641,7 +641,7 @@ impl HandshakeRequest {
         }
 
         let mut methods = vec![0u8; nmet as usize];
-        let _ = r.read_exact(&mut methods).await?;
+        r.read_exact(&mut methods).await?;
 
         Ok(HandshakeRequest { methods })
     }
@@ -695,7 +695,7 @@ impl HandshakeResponse {
         R: Read + Unpin,
     {
         let mut buf = [0u8; 2];
-        let _ = r.read_exact(&mut buf).await?;
+        r.read_exact(&mut buf).await?;
 
         let ver = buf[0];
         let met = buf[1];
@@ -764,7 +764,7 @@ impl UdpAssociateHeader {
         R: Read + Unpin,
     {
         let mut buf = [0u8; 3];
-        let _ = r.read_exact(&mut buf).await?;
+        r.read_exact(&mut buf).await?;
 
         let frag = buf[2];
         let address = Address::read_from(r).await?;

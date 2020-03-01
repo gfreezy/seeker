@@ -180,7 +180,7 @@ impl EncryptedReader<'_> for StreamEncryptedReader<'_> {
             self.decrypt_cipher.finalize(&mut self.recv_output)?;
         }
         let output_len = self.recv_output.len();
-        assert!(buf.len() >= output_len, dbg!(buf.len(), output_len));
+        assert!(buf.len() >= output_len);
         buf[..output_len].copy_from_slice(&self.recv_output);
 
         Ok(output_len)

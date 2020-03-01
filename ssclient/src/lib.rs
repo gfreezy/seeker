@@ -321,7 +321,8 @@ impl SSClient {
 
         loop {
             encrypt_buf.clear();
-            buf[..addr.serialized_len()].copy_from_slice(&addr.to_bytes());
+            addr.write_to_buf(&mut buf);
+
             let now = Instant::now();
             let (recv_from_tun_size, local_src) = timeout(
                 read_timeout,
@@ -370,7 +371,7 @@ impl SSClient {
                                 cipher_type,
                                 decrypt_size
                             );
-                            let addr = Address::read_from(&mut decrypt_buf.as_ref())?;
+                            let addr = Address::read_from(&mut decrypt_buf.as_ref()).await?;
                             let now = Instant::now();
                             let send_local_size = timeout(
                                 write_timeout,
