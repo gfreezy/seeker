@@ -99,6 +99,10 @@ rules:
   - 'MATCH,PROBE'
 ```
 
+## ⚠️使用 Socks5 代理服务器
+使用 socks5 代理的时候，需要将所有直连的域名设置在配置文件里面，如果使用 ss 或者 vmess 之类的，需要将 ss 或 vmess server 
+的域名也加入配置文件。否则有可能会导致死循环，没法正常使用。
+
 ## 代理局域网内其他机器
 1. 打开 `gateway_mode`。`gateway_mode` 开启后， `dns_server` 会自动覆盖为 `0.0.0.0:53`
 
