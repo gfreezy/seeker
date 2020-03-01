@@ -159,7 +159,7 @@ impl SSClient {
         &self.stats
     }
 
-    #[allow(unreachable_code)]
+    #[allow(clippy::cognitive_complexity)]
     async fn handle_encrypted_tcp_stream<T: Read + Write + Clone + Unpin>(
         &self,
         idx: u64,
