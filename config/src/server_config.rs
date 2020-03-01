@@ -158,6 +158,7 @@ mod server_addr {
 
 impl ShadowsocksServerConfig {
     /// Creates a new ServerConfig
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         name: String,
         addr: ServerAddr,

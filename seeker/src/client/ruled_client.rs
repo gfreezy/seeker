@@ -36,6 +36,7 @@ struct Connection {
 pub struct RuledClient {
     conf: Config,
     rule: ProxyRules,
+    extra_directly_servers: Arc<Vec<String>>,
     ssclient: Arc<SSClient>,
     socks5_client: Option<Arc<Socks5Client>>,
     direct_client: Arc<DirectClient>,
@@ -97,9 +98,21 @@ impl RuledClient {
         proxy_uid: Option<u32>,
         to_terminate: Arc<AtomicBool>,
     ) -> RuledClient {
+        let mut extra_directly_servers = vec![];
+
+        // always pass proxy for socks5 server
+        if let Some(socks5_addr) = &conf.socks5_server {
+            extra_directly_servers.push(socks5_addr.addr.to_string());
+        }
+
+        for shadowsocks_server in conf.shadowsocks_servers.iter() {
+            extra_directly_servers.push(shadowsocks_server.addr().to_string());
+        }
+
         let socks5_client = new_socks5_client(&conf).await.map(Arc::new);
         let c = RuledClient {
             term: to_terminate.clone(),
+            extra_directly_servers: Arc::new(extra_directly_servers),
             rule: conf.rules.clone(),
             ssclient: Arc::new(new_ssclient(&conf, 0).await),
             socks5_client,
@@ -130,12 +143,16 @@ impl RuledClient {
         c
     }
 
+    #[allow(clippy::useless_let_if_seq)]
     async fn get_action_for_addr(&self, remote_addr: SocketAddr, addr: &Address) -> Result<Action> {
         let domain = match &addr {
             Address::SocketAddress(a) => a.to_string(),
             Address::DomainNameAddress(domain, _port) => domain.to_string(),
         };
         let mut pass_proxy = false;
+        if self.extra_directly_servers.contains(&domain) {
+            pass_proxy = true;
+        }
         if let Some(uid) = self.proxy_uid {
             if !socket_addr_belong_to_user(remote_addr, uid)? {
                 pass_proxy = true;
