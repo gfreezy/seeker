@@ -145,11 +145,14 @@ impl RuledClient {
 
     #[allow(clippy::useless_let_if_seq)]
     async fn get_action_for_addr(&self, remote_addr: SocketAddr, addr: &Address) -> Result<Action> {
+        let mut pass_proxy = false;
         let domain = match &addr {
-            Address::SocketAddress(a) => a.to_string(),
+            // 如果是 IP 说明是用户手动改了路由表，必须要走代理。
+            Address::SocketAddress(_) => {
+                return Ok(Action::Proxy);
+            }
             Address::DomainNameAddress(domain, _port) => domain.to_string(),
         };
-        let mut pass_proxy = false;
         if self.extra_directly_servers.contains(&domain) {
             pass_proxy = true;
         }
