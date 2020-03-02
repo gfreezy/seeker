@@ -8,13 +8,15 @@ use rule::ProxyRules;
 use serde::Deserialize;
 use smoltcp::wire::{Ipv4Address, Ipv4Cidr};
 use std::fs::File;
+use std::io;
+use std::io::ErrorKind;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
-    pub shadowsocks_servers: Arc<Vec<ShadowsocksServerConfig>>,
+    pub shadowsocks_servers: Option<Arc<Vec<ShadowsocksServerConfig>>>,
     pub socks5_server: Option<Socks5ServerConfig>,
     pub dns_start_ip: Ipv4Addr,
     pub dns_server: SocketAddr,
@@ -111,10 +113,19 @@ fn parse_cidr(s: String) -> Ipv4Cidr {
 }
 
 impl Config {
-    pub fn from_config_file(path: &str) -> Self {
+    pub fn from_config_file(path: &str) -> io::Result<Self> {
         let file = File::open(&path).unwrap();
         let conf: Config = serde_yaml::from_reader(&file).unwrap();
-        conf
+        match (&conf.shadowsocks_servers, &conf.socks5_server) {
+            (None, None) => {
+                return Err(io::Error::new(
+                    ErrorKind::InvalidData,
+                    "shadowsocks_servers and socks5_server should be set one at least.",
+                ))
+            }
+            _ => {}
+        };
+        Ok(conf)
     }
 }
 
