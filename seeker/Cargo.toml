@@ -14,6 +14,7 @@ tracing-futures = { version = "0.2", features = ["std-future"], default-features
 config = { path = "../config" }
 dnsserver = { path = "../dnsserver" }
 ssclient = { path = "../ssclient" }
+socks5_client = { path = "../socks5_client" }
 sysconfig = { path = "../sysconfig" }
 tun = { path = "../tun" }
 signal-hook = { version = "0.1.10", features = ["mio-support"] }
@@ -21,7 +22,6 @@ async-trait = "0.1.14"
 hermesdns = { path = "../hermes/hermesdns" }
 chrono = "0.4.10"
 file-rotate = "0.1.1"
-socks = "0.3.2"
 
 [dependencies.smoltcp]
 git = "https://github.com/gfreezy/smoltcp"

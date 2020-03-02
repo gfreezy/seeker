@@ -1,7 +1,6 @@
 use crate::MAX_PACKET_SIZE;
 use async_std::io::{Read, ReadExt};
-use byteorder::BigEndian;
-use bytes::ByteOrder;
+use byteorder::{BigEndian, ByteOrder};
 use crypto::{BoxAeadDecryptor, BoxAeadEncryptor, CipherType};
 use std::io::{ErrorKind, Result};
 

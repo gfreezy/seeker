@@ -180,7 +180,7 @@ impl EncryptedReader<'_> for StreamEncryptedReader<'_> {
             self.decrypt_cipher.finalize(&mut self.recv_output)?;
         }
         let output_len = self.recv_output.len();
-        assert!(buf.len() >= output_len, dbg!(buf.len(), output_len));
+        assert!(buf.len() >= output_len);
         buf[..output_len].copy_from_slice(&self.recv_output);
 
         Ok(output_len)
@@ -253,7 +253,7 @@ mod tests {
                 )
                 .await?;
                 let _size = reader.recv(&mut buf).await?;
-                let recv_addr = Address::read_from(&mut buf.as_slice())?;
+                let recv_addr = Address::read_from(&mut buf.as_slice()).await?;
                 assert_eq!(recv_addr, addr);
                 let size = reader.recv(&mut buf).await?;
                 assert_eq!(&buf[..size], &DATA[..]);
