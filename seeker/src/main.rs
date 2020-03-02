@@ -30,8 +30,14 @@ async fn handle_connection<T: Client + Clone + Send + Sync + 'static>(
     config: Config,
     term: Arc<AtomicBool>,
 ) {
-    let (dns_server, resolver) =
-        create_dns_server("dns.db", config.dns_listen.clone(), config.dns_start_ip).await;
+    let (dns_server, resolver) = create_dns_server(
+        "dns.db",
+        config.dns_listen.clone(),
+        config.dns_start_ip,
+        config.rules.clone(),
+        (config.dns_server.ip().to_string(), config.dns_server.port()),
+    )
+    .await;
     println!("Spawn DNS server");
     spawn(
         dns_server

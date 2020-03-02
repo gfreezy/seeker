@@ -190,35 +190,37 @@ rules:
         assert_eq!(
             format!("{:#?}", conf),
             r#"Config {
-    shadowsocks_servers: [
-        ShadowsocksServerConfig {
-            name: "server1",
-            addr: DomainName(
-                "domain-or-ip-to-ss-server",
-                134,
-            ),
-            password: "password",
-            method: ChaCha20Ietf,
-            connect_timeout: 5s,
-            read_timeout: 30s,
-            write_timeout: 30s,
-            idle_connections: 10,
-        },
-        ShadowsocksServerConfig {
-            name: "server2",
-            addr: SocketAddr(
-                V4(
-                    192.168.2.3:234,
+    shadowsocks_servers: Some(
+        [
+            ShadowsocksServerConfig {
+                name: "server1",
+                addr: DomainName(
+                    "domain-or-ip-to-ss-server",
+                    134,
                 ),
-            ),
-            password: "password",
-            method: ChaCha20Ietf,
-            connect_timeout: 5s,
-            read_timeout: 30s,
-            write_timeout: 30s,
-            idle_connections: 10,
-        },
-    ],
+                password: "password",
+                method: ChaCha20Ietf,
+                connect_timeout: 5s,
+                read_timeout: 30s,
+                write_timeout: 30s,
+                idle_connections: 10,
+            },
+            ShadowsocksServerConfig {
+                name: "server2",
+                addr: SocketAddr(
+                    V4(
+                        192.168.2.3:234,
+                    ),
+                ),
+                password: "password",
+                method: ChaCha20Ietf,
+                connect_timeout: 5s,
+                read_timeout: 30s,
+                write_timeout: 30s,
+                idle_connections: 10,
+            },
+        ],
+    ),
     socks5_server: Some(
         Socks5ServerConfig {
             addr: DomainName(
