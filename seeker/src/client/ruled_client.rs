@@ -37,7 +37,7 @@ pub struct RuledClient {
     conf: Config,
     rule: ProxyRules,
     extra_directly_servers: Arc<Vec<String>>,
-    ssclient: Arc<SSClient>,
+    ssclient: Option<Arc<SSClient>>,
     socks5_client: Option<Arc<Socks5Client>>,
     direct_client: Arc<DirectClient>,
     proxy_uid: Option<u32>,
@@ -46,21 +46,19 @@ pub struct RuledClient {
     connections: Arc<Mutex<HashMap<u64, Connection>>>,
 }
 
-async fn new_ssclient(conf: &Config, conf_index: usize) -> SSClient {
+async fn new_ssclient(conf: &Config, conf_index: usize) -> Option<SSClient> {
     let dns = conf.dns_server;
     let dns_server_addr = (dns.ip().to_string(), dns.port());
 
     info!("new_ssclient: {}", conf_index);
-    SSClient::new(
-        Arc::new(RwLock::new(
-            conf.shadowsocks_servers
-                .get(conf_index)
-                .expect("no config at index")
-                .clone(),
-        )),
-        dns_server_addr.clone(),
-    )
-    .await
+    let server = conf
+        .shadowsocks_servers
+        .as_ref()?
+        .get(conf_index)
+        .expect("no config at index")
+        .clone();
+
+    Some(SSClient::new(Arc::new(RwLock::new(server)), dns_server_addr.clone()).await)
 }
 
 async fn new_direct_client(conf: &Config) -> DirectClient {
@@ -105,16 +103,19 @@ impl RuledClient {
             extra_directly_servers.push(socks5_addr.addr.to_string());
         }
 
-        for shadowsocks_server in conf.shadowsocks_servers.iter() {
-            extra_directly_servers.push(shadowsocks_server.addr().to_string());
+        if let Some(shadowsocks_servers) = &conf.shadowsocks_servers {
+            for shadowsocks_server in shadowsocks_servers.iter() {
+                extra_directly_servers.push(shadowsocks_server.addr().to_string());
+            }
         }
 
         let socks5_client = new_socks5_client(&conf).await.map(Arc::new);
+        let ssclient = new_ssclient(&conf, 0).await.map(Arc::new);
         let c = RuledClient {
             term: to_terminate.clone(),
             extra_directly_servers: Arc::new(extra_directly_servers),
             rule: conf.rules.clone(),
-            ssclient: Arc::new(new_ssclient(&conf, 0).await),
+            ssclient,
             socks5_client,
             direct_client: Arc::new(new_direct_client(&conf).await),
             conf,
@@ -126,13 +127,17 @@ impl RuledClient {
         let _ = task::spawn(async move {
             loop {
                 println!("\nConnections:");
-                client.ssclient.stats().print_stats().await;
+                if let Some(ssclient) = &client.ssclient {
+                    ssclient.stats().print_stats().await;
+                }
                 client.direct_client.stats().print_stats().await;
                 if let Some(socks5_client) = &client.socks5_client {
                     socks5_client.stats().print_stats().await;
                 }
                 println!();
-                client.ssclient.stats().recycle_stats().await;
+                if let Some(ssclient) = &client.ssclient {
+                    ssclient.stats().recycle_stats().await;
+                }
                 client.direct_client.stats().recycle_stats().await;
                 if let Some(socks5_client) = &client.socks5_client {
                     socks5_client.stats().recycle_stats().await;
@@ -184,32 +189,34 @@ impl RuledClient {
     }
 
     async fn shadowsocks_handle_tcp(&self, socket: TunTcpSocket, addr: Address) -> Result<()> {
-        let client = self.ssclient.clone();
-        let connect_errors = client.connect_errors();
-        let old_server_name = client.name().await;
+        let (ssclient, shadowsocks_servers) = match (&self.ssclient, &self.conf.shadowsocks_servers)
+        {
+            (Some(ssclient), Some(shadowsocks_servers)) => (ssclient.clone(), shadowsocks_servers),
+            _ => {
+                return Ok(());
+            }
+        };
+        let connect_errors = ssclient.connect_errors();
+        let old_server_name = ssclient.name().await;
         if connect_errors > self.conf.max_connect_errors {
-            let old_conf_index = self
-                .conf
-                .shadowsocks_servers
+            let old_conf_index = shadowsocks_servers
                 .iter()
                 .position(|s| s.name() == old_server_name)
                 .unwrap_or(0);
-            let next_conf_index = (old_conf_index + 1) % self.conf.shadowsocks_servers.len();
+            let next_conf_index = (old_conf_index + 1) % shadowsocks_servers.len();
             error!(
                 "SSClient '{}' reached max connect errors, change to another server '{}'",
-                self.conf.shadowsocks_servers[old_conf_index].name(),
-                self.conf.shadowsocks_servers[next_conf_index].name()
+                shadowsocks_servers[old_conf_index].name(),
+                shadowsocks_servers[next_conf_index].name()
             );
-            let new_conf = self
-                .conf
-                .shadowsocks_servers
+            let new_conf = shadowsocks_servers
                 .get(next_conf_index)
                 .expect("no config at index")
                 .clone();
-            client.change_conf(new_conf).await;
+            ssclient.change_conf(new_conf).await;
             error!("new ssclient with new conf");
         }
-        self.ssclient
+        ssclient
             .handle_tcp(socket, addr.clone())
             .instrument(trace_span!("SSClient.handle_tcp", addr = %addr))
             .await
@@ -289,11 +296,13 @@ impl Client for RuledClient {
                         .handle_udp(socket, addr)
                         .instrument(trace_span!("handle_socks_udp"))
                         .await
-                } else {
-                    self.ssclient
+                } else if let Some(client) = &self.ssclient {
+                    client
                         .handle_udp(socket, addr)
                         .instrument(trace_span!("handl_shadowsocks_udp"))
                         .await
+                } else {
+                    Ok(())
                 }
             }
             Action::Probe => unreachable!(),

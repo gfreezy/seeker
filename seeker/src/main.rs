@@ -188,7 +188,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             .expect("setting tracing default failed");
     };
 
-    let mut config = Config::from_config_file(path);
+    let mut config = Config::from_config_file(path)?;
 
     let term = Arc::new(AtomicBool::new(false));
     signal_hook::flag::register(signal_hook::SIGINT, Arc::clone(&term))?;
