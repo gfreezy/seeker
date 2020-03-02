@@ -1,5 +1,5 @@
 [workspace]
-members = ["seeker", "dnsserver", "ssclient", "sysconfig", "tun", "config", "crypto", "hermes/hermesdns"]
+members = ["seeker", "dnsserver", "ssclient", "sysconfig", "tun", "config", "crypto", "hermes/hermesdns", "socks5_client"]
 
 [profile.release]
 lto = true

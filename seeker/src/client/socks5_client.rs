@@ -1,23 +1,27 @@
 use crate::client::Client;
 use async_std::io;
-use async_std::io::prelude::{ReadExt, WriteExt};
-use async_std::net::{SocketAddr, TcpStream};
-use async_std::prelude::FutureExt;
+use async_std::prelude::*;
+use async_std::task;
+use async_std::task::JoinHandle;
 use chrono::Local;
 use config::{Address, ServerAddr};
 use hermesdns::DnsNetworkClient;
+use socks5_client::{Socks5TcpStream, Socks5UdpSocket};
 use ssclient::client_stats::ClientStats;
 use ssclient::resolve_domain;
-use std::io::Result;
-use std::net::IpAddr;
-use std::time::Duration;
-use tracing::trace;
+use std::collections::HashMap;
+use std::io::{Error, ErrorKind, Result};
+use std::net::SocketAddr;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+use tracing::{trace, trace_span};
+use tracing_futures::Instrument;
 use tun::socket::{TunTcpSocket, TunUdpSocket};
 
-pub struct Socks5Client {
+pub(crate) struct Socks5Client {
     resolver: DnsNetworkClient,
     dns_server: (String, u16),
-    socks5_server: ServerAddr,
+    socks5_server: SocketAddr,
     connect_timeout: Duration,
     read_timeout: Duration,
     write_timeout: Duration,
@@ -26,16 +30,27 @@ pub struct Socks5Client {
 
 impl Socks5Client {
     pub async fn new(
-        dns_server: (String, u16),
+        (dns_server, dns_port): (String, u16),
         socks5_server: ServerAddr,
         connect_timeout: Duration,
         read_timeout: Duration,
         write_timeout: Duration,
     ) -> Self {
+        let resolver = DnsNetworkClient::new(0, connect_timeout).await;
+        let addr = match socks5_server {
+            ServerAddr::SocketAddr(addr) => addr,
+            ServerAddr::DomainName(domain, port) => {
+                let ip = resolve_domain(&resolver, (&dns_server, dns_port), &domain)
+                    .await
+                    .expect("resolve socks5 server domain error")
+                    .expect("no ip found");
+                SocketAddr::new(ip, port)
+            }
+        };
         Socks5Client {
-            resolver: DnsNetworkClient::new(0, connect_timeout).await,
-            dns_server,
-            socks5_server,
+            resolver,
+            dns_server: (dns_server, dns_port),
+            socks5_server: addr,
             connect_timeout,
             read_timeout,
             write_timeout,
@@ -43,34 +58,40 @@ impl Socks5Client {
         }
     }
 
-    fn dns_server(&self) -> (&str, u16) {
-        (&self.dns_server.0, self.dns_server.1)
-    }
-
-    async fn resolve_domain(&self, domain: &str) -> Result<Option<IpAddr>> {
-        resolve_domain(&self.resolver, self.dns_server(), domain).await
-    }
-
     pub fn stats(&self) -> &ClientStats {
         &self.stats
     }
 
-    async fn get_server_addr(&self) -> Result<SocketAddr> {
-        Ok(match &self.socks5_server {
-            ServerAddr::SocketAddr(addr) => *addr,
-            ServerAddr::DomainName(domain, port) => {
-                let ip = self.resolve_domain(&domain).await?;
+    async fn connect(&self, addr: Address, timeout: Duration) -> Result<Socks5TcpStream> {
+        let now = Instant::now();
+        let conn = io::timeout(timeout, Socks5TcpStream::connect(self.socks5_server, addr)).await?;
+        let elapsed = now.elapsed();
+        trace!(duration = ?elapsed, "TcpStream::connect");
+        Ok(conn)
+    }
+
+    async fn resolve_addr(&self, addr: &Address) -> Result<SocketAddr> {
+        let sock_addr = match addr {
+            Address::SocketAddress(addr) => *addr,
+            Address::DomainNameAddress(domain, port) => {
+                let ip = resolve_domain(
+                    &self.resolver,
+                    (&self.dns_server.0, self.dns_server.1),
+                    &domain,
+                )
+                .await?;
                 match ip {
                     None => {
-                        return Err(io::Error::new(
-                            io::ErrorKind::NotFound,
+                        return Err(Error::new(
+                            ErrorKind::NotFound,
                             format!("domain {} not found", &domain),
                         ))
                     }
                     Some(ip) => SocketAddr::new(ip, *port),
                 }
             }
-        })
+        };
+        Ok(sock_addr)
     }
 }
 
@@ -78,33 +99,7 @@ impl Socks5Client {
 impl Client for Socks5Client {
     #[allow(unreachable_code)]
     async fn handle_tcp(&self, tun_socket: TunTcpSocket, addr: Address) -> Result<()> {
-        let mut conn = io::timeout(
-            self.connect_timeout,
-            TcpStream::connect(self.get_server_addr().await?),
-        )
-        .await?;
-        const SOCKS5: u8 = 0x05;
-        const NMETHODS: u8 = 1;
-        const NOAUTH: u8 = 0;
-
-        const CONNECT: u8 = 0x01;
-
-        let auth_req = [SOCKS5, NMETHODS, NOAUTH];
-        conn.write_all(&auth_req).await?;
-        let mut auth_req = [0; 2];
-        conn.read_exact(&mut auth_req).await?;
-        if auth_req != [SOCKS5, NOAUTH] {
-            return Err(io::ErrorKind::ConnectionRefused.into());
-        }
-        let mut conn_req = vec![SOCKS5, CONNECT, 0];
-        addr.write_to_buf(&mut conn_req);
-        conn.write_all(&conn_req).await?;
-
-        let mut buf = vec![0; conn_req.len()];
-        let size = conn.read(&mut buf).await?;
-        assert!(size > 4);
-        assert_eq!(buf[1], 0x00);
-
+        let conn = self.connect(addr.clone(), self.connect_timeout).await?;
         let mut tun_socket_clone = tun_socket.clone();
         let mut tun_socket_clone2 = tun_socket.clone();
         let mut ref_conn = &conn;
@@ -114,12 +109,12 @@ impl Client for Socks5Client {
             let mut buf = vec![0; 10240];
             loop {
                 let rs = io::timeout(self.read_timeout, tun_socket_clone.read(&mut buf)).await?;
-                trace!(read_size = rs, "DirectClient::handle_tcp: read from tun");
+                trace!(read_size = rs, "Socks5Client::handle_tcp: read from tun");
                 if rs == 0 {
                     break;
                 }
                 io::timeout(self.write_timeout, ref_conn.write_all(&buf[..rs])).await?;
-                trace!(write_size = rs, "DirectClient::handle_tcp: write to remote");
+                trace!(write_size = rs, "Socks5Client::handle_tcp: write to remote");
                 self.stats
                     .update_connection_stats(idx, |stats| {
                         stats.sent_bytes += rs as u64;
@@ -132,12 +127,12 @@ impl Client for Socks5Client {
             let mut buf = vec![0; 10240];
             loop {
                 let rs = io::timeout(self.read_timeout, ref_conn2.read(&mut buf)).await?;
-                trace!(read_size = rs, "DirectClient::handle_tcp: read from remote");
+                trace!(read_size = rs, "Socks5Client::handle_tcp: read from remote");
                 if rs == 0 {
                     break;
                 }
                 io::timeout(self.write_timeout, tun_socket_clone2.write_all(&buf[..rs])).await?;
-                trace!(write_size = rs, "DirectClient::handle_tcp: write to tun");
+                trace!(write_size = rs, "Socks5Client::handle_tcp: write to tun");
                 self.stats
                     .update_connection_stats(idx, |stats| {
                         stats.recv_bytes += rs as u64;
@@ -157,7 +152,61 @@ impl Client for Socks5Client {
     }
 
     #[allow(unreachable_code)]
-    async fn handle_udp(&self, _socket: TunUdpSocket, _addr: Address) -> Result<()> {
+    async fn handle_udp(&self, socket: TunUdpSocket, addr: Address) -> Result<()> {
+        let mut buf = vec![0; 1500];
+        let mut udp_map = HashMap::new();
+
+        let addr = self.resolve_addr(&addr).await?;
+
+        loop {
+            let now = Instant::now();
+            let (recv_from_local_size, local_src) =
+                io::timeout(self.read_timeout, socket.recv_from(&mut buf)).await?;
+            let local_addr = socket.local_addr();
+            let duration = now.elapsed();
+            trace!(size = recv_from_local_size, local_src = ?local_src, local_addr = ?local_addr, duration = ?duration, "read from tun server");
+            let udp_socket = match udp_map.get(&local_src).cloned() {
+                Some(socket) => socket,
+                None => {
+                    let new_udp = Arc::new(Socks5UdpSocket::connect(self.socks5_server).await?);
+                    let bind_addr = new_udp.local_addr()?;
+                    trace!(addr = %bind_addr, "bind new udp socket");
+                    udp_map.insert(local_src, new_udp.clone());
+
+                    let cloned_socket = socket.clone();
+                    let cloned_new_udp = new_udp.clone();
+                    let read_timeout = self.read_timeout;
+                    let write_timeout = self.write_timeout;
+                    let _handle: JoinHandle<Result<_>> = task::spawn(async move {
+                        let mut recv_buf = vec![0; 1500];
+                        loop {
+                            let now = Instant::now();
+                            let (recv_from_ss_size, udp_ss_addr) =
+                                io::timeout(read_timeout, cloned_new_udp.recv_from(&mut recv_buf)).await?;
+                            let duration = now.elapsed();
+                            trace!(duration = ?duration, size = recv_from_ss_size, src_addr = %udp_ss_addr, local_udp_socket = ?bind_addr, "recv from socks5 server");
+                            let now = Instant::now();
+                            let send_local_size = io::timeout(write_timeout, cloned_socket
+                                .send_to(&recv_buf[..recv_from_ss_size], &local_src))
+                                .await?;
+                            let duration = now.elapsed();
+                            trace!(duration = ?duration, size = send_local_size, dst_addr = %local_src, local_udp_socket = ?bind_addr, "send to tun socket");
+                        }
+                        Ok(())
+                    }.instrument(trace_span!("socks5 server to tun socket", socket = %bind_addr)));
+                    new_udp
+                }
+            };
+            let now = Instant::now();
+            let send_ss_size = io::timeout(
+                self.write_timeout,
+                udp_socket.send_to(&buf[..recv_from_local_size], addr.clone()),
+            )
+            .await?;
+            let duration = now.elapsed();
+            trace!(duration = ?duration, size = send_ss_size, dst_addr = %addr.clone(), "send to socks5 server");
+        }
+
         Ok(())
     }
 }

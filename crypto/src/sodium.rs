@@ -88,7 +88,7 @@ fn crypto_stream_xor_ic<B: BufMut>(
     data: &[u8],
     out: &mut B,
 ) -> CipherResult<()> {
-    assert!(data.len() <= unsafe { out.bytes_mut() }.len());
+    assert!(data.len() <= out.bytes_mut().len());
 
     let ret = unsafe {
         match t {

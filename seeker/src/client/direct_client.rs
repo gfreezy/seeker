@@ -66,15 +66,12 @@ impl DirectClient {
 
     pub(crate) async fn probe_connectivity(&self, addr: Address) -> bool {
         let mut guard = self.prob_cache.lock().await;
-        match guard.get(&addr) {
-            Some((connectable, expire)) => {
-                if expire > &Local::now() {
-                    return *connectable;
-                } else {
-                    guard.remove(&addr);
-                }
+        if let Some((connectable, expire)) = guard.get(&addr) {
+            if expire > &Local::now() {
+                return *connectable;
+            } else {
+                guard.remove(&addr);
             }
-            _ => {}
         };
 
         let connectable = self.connect(&addr, self.probe_timeout).await.is_ok();
@@ -183,7 +180,7 @@ impl Client for DirectClient {
             }
         };
 
-        let mut buf = vec![0; 1024];
+        let mut buf = vec![0; 1500];
         let mut udp_map = HashMap::new();
 
         loop {
