@@ -1,5 +1,6 @@
 pub mod resolver;
 
+use config::rule::ProxyRules;
 use hermesdns::DnsUdpServer;
 use resolver::RuleBasedDnsResolver;
 use std::net::Ipv4Addr;
@@ -9,9 +10,11 @@ pub async fn create_dns_server<P: AsRef<Path>>(
     path: P,
     listen: String,
     start_ip: Ipv4Addr,
+    rules: ProxyRules,
+    dns_server: (String, u16),
 ) -> (DnsUdpServer, RuleBasedDnsResolver) {
     let n = u32::from_be_bytes(start_ip.octets());
-    let resolver = RuleBasedDnsResolver::new(path, n).await;
+    let resolver = RuleBasedDnsResolver::new(path, n, rules, dns_server).await;
     let server = DnsUdpServer::new(listen, Box::new(resolver.clone())).await;
     (server, resolver)
 }
@@ -38,11 +41,14 @@ mod tests {
     #[test]
     fn test_resolve_ip() {
         let dir = tempfile::tempdir().unwrap();
+        let dns = std::env::var("DNS").unwrap_or_else(|_| "223.5.5.5".to_string());
         task::block_on(async {
             let (server, resolver) = create_dns_server(
                 dir.path(),
                 format!("127.0.0.1:{}", LOCAL_UDP_PORT),
                 "10.0.0.1".parse().unwrap(),
+                ProxyRules::new(vec![]),
+                (dns, 53),
             )
             .await;
             task::spawn(server.run_server());
