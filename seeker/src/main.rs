@@ -30,8 +30,14 @@ async fn handle_connection<T: Client + Clone + Send + Sync + 'static>(
     config: Config,
     term: Arc<AtomicBool>,
 ) {
-    let (dns_server, resolver) =
-        create_dns_server("dns.db", config.dns_listen.clone(), config.dns_start_ip).await;
+    let (dns_server, resolver) = create_dns_server(
+        "dns.db",
+        config.dns_listen.clone(),
+        config.dns_start_ip,
+        config.rules.clone(),
+        (config.dns_server.ip().to_string(), config.dns_server.port()),
+    )
+    .await;
     println!("Spawn DNS server");
     spawn(
         dns_server
@@ -188,7 +194,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             .expect("setting tracing default failed");
     };
 
-    let mut config = Config::from_config_file(path);
+    let mut config = Config::from_config_file(path)?;
 
     let term = Arc::new(AtomicBool::new(false));
     signal_hook::flag::register(signal_hook::SIGINT, Arc::clone(&term))?;

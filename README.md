@@ -69,7 +69,7 @@ socks5_server:
   read_timeout: 30s
   write_timeout: 30s
 
-shadowsocks_server:
+shadowsocks_servers:
   - name: server1
     addr: domain-or-ip-to-ss-server:port
     method: chacha20-ietf

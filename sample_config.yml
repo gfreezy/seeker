@@ -1,15 +1,15 @@
-dns_start_ip: 10.0.0.10
+dns_start_ip: 11.0.0.10
 dns_server: 223.5.5.5:53
 tun_name: utun4
-tun_ip: 10.0.0.1
-tun_cidr: 10.0.0.0/16
+tun_ip: 11.0.0.1
+tun_cidr: 11.0.0.0/16
 dns_listen: 0.0.0.0:53
 gateway_mode: true
-probe_timeout: 10ms
-direct_connect_timeout: 1s
-direct_read_timeout: 30s
-direct_write_timeout: 5s
-max_connect_errors: 20
+probe_timeout: 100ms
+direct_connect_timeout: 200ms
+direct_read_timeout: 300s
+direct_write_timeout: 300s
+max_connect_errors: 10
 
 socks5_server:
   addr: domain-or-ip-to-socks5-server:port
@@ -17,7 +17,7 @@ socks5_server:
   read_timeout: 30s
   write_timeout: 30s
 
-shadowsocks_configs:
+shadowsocks_servers:
   - name: server1
     addr: domain-or-ip-to-ss-server:port
     method: chacha20-ietf
