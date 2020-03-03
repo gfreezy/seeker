@@ -12,7 +12,7 @@ chmod +x seeker-osx  # or  chmod+x seeker-linux
 1. 启动 `seeker`
 
     ```bash
-    Seeker 1.0.0
+    Seeker 0.1.1
     gfreezy <gfreezy@gmail.com>
     Tun to Shadowsockets proxy. https://github.com/gfreezy/seeker
     
@@ -37,7 +37,9 @@ chmod +x seeker-osx  # or  chmod+x seeker-linux
 2. `seeker` 启动的时候会自动将本机 DNS 修改为 `127.0.0.1`，退出的时候将 DNS 设置为默认值
 
 ## FAQ
-If you encountered `"seeker" cannot be opened because the developer cannot be verified.`, you can go to `System Preferences` -> `Security & Privacy` -> `General` and enable any blocked app from Allow apps downloaded from pane at the bottom of the window.
+If you encountered `"seeker" cannot be opened because the developer cannot be verified.`, 
+you can go to `System Preferences` -> `Security & Privacy` -> `General` and enable any 
+blocked app from Allow apps downloaded from pane at the bottom of the window.
  
 ## Config
 
@@ -106,7 +108,7 @@ rules:
 ## 指定 IP 或某网段走代理
 修改路由表，将希望走代理的 IP 或者网段路由到虚拟网卡。如果使用了本机 socks5 代理，则必须确保 socks5 不会直连加入路由表的网段，否则会死循环。
 
-比如我希望 `8.8.8.8` 这个 IP 所有流量都走代理，且使用本地 clashx 创建的 socks5 代理：
+比如我希望 `8.8.8.8` 这个 IP 所有流量都走代理，且使用本地 ClashX 创建的 socks5 代理：
 
 1. 将 `8.8.8.8` 路由到 utun4
     
@@ -117,7 +119,7 @@ rules:
 2. 修改 clashx 的规则，增加下面一条
 
     ```
-   - 'IP-CIDR,8.8.8.8/32,DIRECT'
+   - 'IP-CIDR,8.8.8.8/32,rixCloud'
    ```
  
 ## 代理局域网内其他机器
