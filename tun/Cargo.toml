@@ -9,7 +9,7 @@ edition = "2018"
 [dependencies]
 tracing = "0.1"
 libc = "0.2.62"
-async-std = { git = "https://github.com/gfreezy/async-std", rev = "5d7e1ab8"}
+async-std = { git = "https://github.com/gfreezy/async-std", rev = "fb8866c" }
 sysconfig = { path = "../sysconfig" }
 lazy_static = "1.4.0"
 managed = "0.7.1"
