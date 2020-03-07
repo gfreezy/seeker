@@ -256,7 +256,6 @@ dependencies = [
  "serde_yaml",
  "smoltcp",
  "socks5_client",
- "tracing",
 ]
 
 [[package]]

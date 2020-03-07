@@ -10,7 +10,6 @@ use crate::duration;
 use bytes::Bytes;
 use crypto::CipherType;
 use serde::Deserialize;
-use tracing::trace;
 
 /// Server address
 #[derive(Clone, Debug, Deserialize)]
@@ -169,8 +168,6 @@ impl ShadowsocksServerConfig {
         write_timeout: Duration,
         idle_connections: usize,
     ) -> ShadowsocksServerConfig {
-        let enc_key = method.bytes_to_key(pwd.as_bytes());
-        trace!("Initialize config with pwd: {:?}, key: {:?}", pwd, enc_key);
         ShadowsocksServerConfig {
             name,
             addr,
