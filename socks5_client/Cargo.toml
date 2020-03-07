@@ -8,7 +8,4 @@ edition = "2018"
 
 [dependencies]
 bytes = "0.5.4"
-
-[dependencies.async-std]
-git = "https://github.com/gfreezy/async-std"
-rev = "5d7e1ab8"
+async-std = { path = "../../../async-std"}
