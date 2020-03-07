@@ -7,7 +7,6 @@ use std::io::Error;
 use std::net::SocketAddr;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use std::time::Duration;
 use tracing::{debug, info};
 
 #[derive(Debug, Eq, PartialEq, Hash)]
@@ -26,14 +25,14 @@ impl TunTcpSocket {
     }
 
     pub fn local_addr(&self) -> SocketAddr {
-        let mut guard = TUN.try_lock_for(Duration::from_secs(1)).unwrap();
+        let mut guard = TUN.lock();
         let mut_tun = guard.as_mut().expect("no tun setup");
         let socket = mut_tun.sockets.get::<TcpSocket>(self.handle);
         to_socket_addr(socket.local_endpoint())
     }
 
     pub fn remote_addr(&self) -> SocketAddr {
-        let mut guard = TUN.try_lock_for(Duration::from_secs(1)).unwrap();
+        let mut guard = TUN.lock();
         let mut_tun = guard.as_mut().expect("no tun setup");
         let socket = mut_tun.sockets.get::<TcpSocket>(self.handle);
         to_socket_addr(socket.remote_endpoint())
@@ -48,7 +47,7 @@ impl Clone for TunTcpSocket {
     fn clone(&self) -> Self {
         debug!("TunTcpSocket.clone: {}", self.handle);
 
-        let mut guard = TUN.try_lock_for(Duration::from_secs(1)).unwrap();
+        let mut guard = TUN.lock();
         let mut_tun = guard.as_mut().expect("no tun setup");
         mut_tun.sockets.retain(self.handle);
 
@@ -61,7 +60,7 @@ impl Clone for TunTcpSocket {
 impl Drop for TunTcpSocket {
     fn drop(&mut self) {
         debug!("TunTcpSocket.drop: {}", self.handle);
-        let mut guard = TUN.try_lock_for(Duration::from_secs(1)).unwrap();
+        let mut guard = TUN.lock();
         let mut_tun = guard.as_mut().expect("no tun setup");
 
         mut_tun.sockets.release(self.handle);
@@ -74,7 +73,7 @@ impl Read for TunTcpSocket {
         cx: &mut Context<'_>,
         buf: &mut [u8],
     ) -> Poll<Result<usize, Error>> {
-        let mut guard = TUN.try_lock_for(Duration::from_secs(1)).unwrap();
+        let mut guard = TUN.lock();
         let mut_tun = guard.as_mut().expect("no tun setup");
         let mut socket = mut_tun.sockets.get::<TcpSocket>(self.handle);
         debug!("TunTcpSocket.read socket state: {}", socket.state());
@@ -112,7 +111,7 @@ impl Write for TunTcpSocket {
         buf: &[u8],
     ) -> Poll<Result<usize, Error>> {
         debug!("TunTcpSocket.write");
-        let mut guard = TUN.try_lock_for(Duration::from_secs(1)).unwrap();
+        let mut guard = TUN.lock();
         let mut_tun = guard.as_mut().expect("no tun setup");
         let mut socket = mut_tun.sockets.get::<TcpSocket>(self.handle);
         if socket.may_send() {
