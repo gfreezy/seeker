@@ -6,6 +6,7 @@ use async_std::future;
 use async_std::sync::RwLock;
 
 use chrono::{DateTime, Local, TimeZone};
+use config::rule::Action;
 use config::Address;
 use lazy_static::lazy_static;
 use std::sync::atomic::Ordering::SeqCst;
@@ -21,16 +22,18 @@ pub struct ConnectionStats {
     pub close_time: DateTime<Local>,
     pub sent_bytes: u64,
     pub recv_bytes: u64,
+    pub action: Action,
 }
 
 impl ConnectionStats {
-    fn new(addr: Address) -> ConnectionStats {
+    fn new(addr: Address, action: Action) -> ConnectionStats {
         ConnectionStats {
             address: addr,
             open_time: Local::now(),
             close_time: *NEVER,
             sent_bytes: 0,
             recv_bytes: 0,
+            action,
         }
     }
 
@@ -53,12 +56,12 @@ impl ClientStats {
         ClientStats::default()
     }
 
-    pub async fn add_connection(&self, addr: Address) -> u64 {
+    pub async fn add_connection(&self, addr: Address, action: Action) -> u64 {
         let idx = self.counter.fetch_add(1, SeqCst);
         let mut guard = future::timeout(Duration::from_secs(3), self.inner.write())
             .await
             .expect("stats write lock timed out");
-        guard.insert(idx, ConnectionStats::new(addr));
+        guard.insert(idx, ConnectionStats::new(addr, action));
         idx
     }
 
@@ -106,21 +109,23 @@ impl ClientStats {
         for conn in stats.values() {
             if conn.is_open() {
                 println!(
-                    "Connect time: {}, duration: {}s, addr: {}, sent_bytes: {}, recv_bytes: {}",
+                    "Connect time: {}, duration: {}s, addr: {}, sent_bytes: {}, recv_bytes: {}, action: {}",
                     conn.open_time.format("%Y-%m-%d %H:%M:%S").to_string(),
                     (Local::now() - conn.open_time).num_seconds(),
                     conn.address,
                     conn.sent_bytes,
-                    conn.recv_bytes
+                    conn.recv_bytes,
+                    conn.action
                 );
             } else {
                 println!(
-                    "Connect time: {}, close time: {}, addr: {}, sent_bytes: {}, recv_bytes: {}",
+                    "Connect time: {}, close time: {}, addr: {}, sent_bytes: {}, recv_bytes: {}, action: {}",
                     conn.open_time.format("%Y-%m-%d %H:%M:%S").to_string(),
                     conn.close_time.format("%Y-%m-%d %H:%M:%S").to_string(),
                     conn.address,
                     conn.sent_bytes,
-                    conn.recv_bytes
+                    conn.recv_bytes,
+                    conn.action
                 );
             }
         }

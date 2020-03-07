@@ -1,5 +1,7 @@
 use crate::parse_cidr;
+use serde::export::Formatter;
 use smoltcp::wire::Ipv4Cidr;
+use std::fmt;
 use std::net::Ipv4Addr;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -75,6 +77,12 @@ impl FromStr for Action {
             "PROBE" => Action::Probe,
             _ => unreachable!(),
         })
+    }
+}
+
+impl fmt::Display for Action {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", self)
     }
 }
 

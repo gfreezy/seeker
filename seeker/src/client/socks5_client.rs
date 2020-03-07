@@ -4,6 +4,7 @@ use async_std::prelude::*;
 use async_std::task;
 use async_std::task::JoinHandle;
 use chrono::Local;
+use config::rule::Action;
 use config::{Address, ServerAddr};
 use hermesdns::DnsNetworkClient;
 use socks5_client::{Socks5TcpStream, Socks5UdpSocket};
@@ -104,7 +105,7 @@ impl Client for Socks5Client {
         let mut tun_socket_clone2 = tun_socket.clone();
         let mut ref_conn = &conn;
         let mut ref_conn2 = &conn;
-        let idx = self.stats.add_connection(addr).await;
+        let idx = self.stats.add_connection(addr, Action::Proxy).await;
         let a = async {
             let mut buf = vec![0; 10240];
             loop {
