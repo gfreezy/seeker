@@ -6,6 +6,7 @@ use async_std::sync::Mutex;
 use async_std::task;
 use async_std::task::JoinHandle;
 use chrono::{DateTime, Local};
+use config::rule::Action;
 use config::Address;
 use hermesdns::DnsNetworkClient;
 use ssclient::client_stats::ClientStats;
@@ -115,7 +116,7 @@ impl Client for DirectClient {
         let mut tun_socket_clone2 = tun_socket.clone();
         let mut ref_conn = &conn;
         let mut ref_conn2 = &conn;
-        let idx = self.stats.add_connection(addr).await;
+        let idx = self.stats.add_connection(addr, Action::Direct).await;
         let a = async {
             let mut buf = vec![0; 10240];
             loop {
