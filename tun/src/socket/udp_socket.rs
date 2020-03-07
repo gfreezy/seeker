@@ -28,7 +28,7 @@ impl TunUdpSocket {
     }
 
     pub fn local_addr(&self) -> SocketAddr {
-        let mut guard = TUN.try_lock_for(Duration::from_secs(1)).unwrap();
+        let mut guard = TUN.lock();
         let mut_tun = guard.as_mut().expect("no tun setup");
         let socket = mut_tun.sockets.get::<UdpSocket>(self.handle);
         to_socket_addr(socket.endpoint())
@@ -40,7 +40,7 @@ impl TunUdpSocket {
         buf: &mut [u8],
     ) -> Poll<Result<(usize, SocketAddr)>> {
         debug!("TunUdpSocket.read");
-        let mut guard = TUN.try_lock_for(Duration::from_secs(1)).unwrap();
+        let mut guard = TUN.lock();
         let mut_tun = guard.as_mut().expect("no tun setup");
         let mut socket = mut_tun.sockets.get::<UdpSocket>(self.handle);
         if socket.can_recv() {
@@ -66,7 +66,7 @@ impl TunUdpSocket {
         target: &SocketAddr,
     ) -> Poll<Result<usize>> {
         debug!("TunUdpSocket.write");
-        let mut guard = TUN.try_lock_for(Duration::from_secs(1)).unwrap();
+        let mut guard = TUN.lock();
         let mut_tun = guard.as_mut().expect("no tun setup");
         let mut socket = mut_tun.sockets.get::<UdpSocket>(self.handle);
         if socket.can_send() {
@@ -101,7 +101,7 @@ impl TunUdpSocket {
 
 impl Clone for TunUdpSocket {
     fn clone(&self) -> Self {
-        let mut guard = TUN.try_lock_for(Duration::from_secs(1)).unwrap();
+        let mut guard = TUN.lock();
         let mut_tun = guard.as_mut().expect("no tun setup");
         mut_tun.sockets.retain(self.handle);
         TunUdpSocket {
@@ -113,7 +113,7 @@ impl Clone for TunUdpSocket {
 impl Drop for TunUdpSocket {
     fn drop(&mut self) {
         debug!("TunUdpSocket.drop: {}", self.handle);
-        let mut guard = TUN.try_lock_for(Duration::from_secs(1)).unwrap();
+        let mut guard = TUN.lock();
         let mut_tun = guard.as_mut().expect("no tun setup");
         mut_tun.sockets.release(self.handle)
     }
