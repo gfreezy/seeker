@@ -252,7 +252,6 @@ dependencies = [
  "byteorder",
  "bytes",
  "crypto",
- "ring",
  "serde",
  "serde_yaml",
  "smoltcp",
