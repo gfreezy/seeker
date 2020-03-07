@@ -110,7 +110,11 @@ impl RuledClient {
         }
 
         let socks5_client = new_socks5_client(&conf).await.map(Arc::new);
-        let ssclient = new_ssclient(&conf, 0).await.map(Arc::new);
+        let ssclient = if socks5_client.is_none() {
+            new_ssclient(&conf, 0).await.map(Arc::new)
+        } else {
+            None
+        };
         let c = RuledClient {
             term: to_terminate.clone(),
             extra_directly_servers: Arc::new(extra_directly_servers),

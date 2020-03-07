@@ -22,6 +22,7 @@ use crate::connection_pool::{EncryptedStremBox, Pool};
 use crate::encrypted_stream::{AeadEncryptedTcpStream, StreamEncryptedTcpStream};
 use crate::udp_io::{decrypt_payload, encrypt_payload};
 use chrono::Local;
+use config::rule::Action;
 use config::{Address, ServerAddr, ShadowsocksServerConfig};
 use crypto::{CipherCategory, CipherType};
 use hermesdns::{DnsClient, DnsNetworkClient, QueryType};
@@ -271,7 +272,7 @@ impl SSClient {
             .await?;
         let duration = now.elapsed();
         trace!(duration = ?duration, "get connection from pool");
-        let idx = self.stats.add_connection(addr.clone()).await;
+        let idx = self.stats.add_connection(addr.clone(), Action::Proxy).await;
 
         let ret = self
             .handle_encrypted_tcp_stream(idx, socket, addr, conn)
