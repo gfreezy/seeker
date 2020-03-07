@@ -22,6 +22,7 @@ pub struct Config {
     pub dns_server: SocketAddr,
     pub tun_name: String,
     pub tun_ip: Ipv4Addr,
+    pub verbose: bool,
     #[serde(with = "ipv4_cidr")]
     pub tun_cidr: Ipv4Cidr,
     #[serde(with = "rules")]

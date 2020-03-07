@@ -53,6 +53,7 @@ blocked app from Allow apps downloaded from pane at the bottom of the window.
 * 确保 TUN 的网络 `tun_ip` 和 `tun_cidr` 与当前所处网络环境不在一个网段
 * `seeker` 支持 socks5 代理和 shadowsocks 代理。当 socks5 与 shadowsocks 同时设置的时候，会优先使用 socks5 代理，并且忽略 shadowsocks 配置。 
 ```yaml
+verbose: false
 dns_start_ip: 10.0.0.10
 dns_server: 223.5.5.5:53
 tun_name: utun4
