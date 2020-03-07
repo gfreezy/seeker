@@ -23,6 +23,7 @@ crypto = { path = "../crypto" }
 async-trait = "0.1.14"
 chrono = "0.4.10"
 lazy_static = "1.4.0"
+async-std = { path = "../../../async-std" }
 
 [dependencies.smoltcp]
 git = "https://github.com/gfreezy/smoltcp"
@@ -35,8 +36,3 @@ features = [
 	"socket-tcp",
 	"phy-raw_socket",
 ]
-
-[dependencies.async-std]
-git = "https://github.com/gfreezy/async-std"
-rev = "5d7e1ab8"
-features = ["unstable"]

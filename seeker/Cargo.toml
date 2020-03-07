@@ -22,7 +22,7 @@ async-trait = "0.1.14"
 hermesdns = { path = "../hermes/hermesdns" }
 chrono = "0.4.10"
 file-rotate = "0.1.1"
-
+async-std = { path = "../../../async-std" }
 [dependencies.smoltcp]
 git = "https://github.com/gfreezy/smoltcp"
 rev = "ef17f0b"
@@ -40,8 +40,3 @@ version = "2"
 
 [dev-dependencies]
 libc = "0.2.65"
-
-[dependencies.async-std]
-git = "https://github.com/gfreezy/async-std"
-rev = "5d7e1ab8"
-features = ["unstable"]
