@@ -1,3 +1,4 @@
+verbose: false
 dns_start_ip: 11.0.0.10
 dns_server: 223.5.5.5:53
 tun_name: utun4
