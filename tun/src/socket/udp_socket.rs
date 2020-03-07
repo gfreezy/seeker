@@ -6,7 +6,6 @@ use std::io;
 use std::io::Result;
 use std::net::SocketAddr;
 use std::task::{Context, Poll};
-use std::time::Duration;
 use tracing::debug;
 
 #[derive(Debug, Eq, PartialEq, Hash)]

@@ -7,7 +7,6 @@ use std::io::Error;
 use std::net::SocketAddr;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use std::time::Duration;
 use tracing::{debug, info};
 
 #[derive(Debug, Eq, PartialEq, Hash)]
