@@ -87,10 +87,7 @@ impl Tun {
             tun_write_task: None,
             to_terminate,
         };
-        let _ = TUN
-            .try_lock_for(Duration::from_secs(1))
-            .unwrap()
-            .replace(tun);
+        let _ = TUN.lock().replace(tun);
     }
 
     pub fn listen() -> TunListen {
@@ -130,7 +127,7 @@ impl Stream for TunListen {
     type Item = Result<TunSocket>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let mut guard = TUN.try_lock_for(Duration::from_secs(1)).unwrap();
+        let mut guard = TUN.lock();
         let mut_tun = guard.as_mut().expect("no tun setup");
         let size = mut_tun.sockets.iter().count();
         let mut before_handle = Vec::with_capacity(size);
