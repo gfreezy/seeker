@@ -22,11 +22,14 @@ pub struct Config {
     pub dns_server: SocketAddr,
     pub tun_name: String,
     pub tun_ip: Ipv4Addr,
+    #[serde(default)]
+    pub verbose: bool,
     #[serde(with = "ipv4_cidr")]
     pub tun_cidr: Ipv4Cidr,
     #[serde(with = "rules")]
     pub rules: ProxyRules,
     pub dns_listen: String,
+    #[serde(default)]
     pub gateway_mode: bool,
     #[serde(with = "duration")]
     pub probe_timeout: Duration,
@@ -145,6 +148,7 @@ tun_ip: 10.0.0.1
 tun_cidr: 10.0.0.0/16
 dns_listen: 0.0.0.0:53
 gateway_mode: true
+verbose: false
 probe_timeout: 10ms
 direct_connect_timeout: 1s
 direct_read_timeout: 1s
@@ -238,6 +242,7 @@ rules:
     ),
     tun_name: "utun4",
     tun_ip: 10.0.0.1,
+    verbose: false,
     tun_cidr: Cidr {
         address: Address(
             [
