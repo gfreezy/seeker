@@ -115,6 +115,7 @@ impl RuledClient {
         } else {
             None
         };
+        let verbose = conf.verbose;
         let c = RuledClient {
             term: to_terminate.clone(),
             extra_directly_servers: Arc::new(extra_directly_servers),
@@ -127,28 +128,30 @@ impl RuledClient {
             counter: Arc::new(AtomicU64::new(0)),
             connections: Arc::new(Mutex::new(HashMap::new())),
         };
-        let client = c.clone();
-        let _ = task::spawn(async move {
-            loop {
-                println!("\nConnections:");
-                if let Some(ssclient) = &client.ssclient {
-                    ssclient.stats().print_stats().await;
+        if verbose {
+            let client = c.clone();
+            let _ = task::spawn(async move {
+                loop {
+                    println!("\nConnections:");
+                    if let Some(ssclient) = &client.ssclient {
+                        ssclient.stats().print_stats().await;
+                    }
+                    client.direct_client.stats().print_stats().await;
+                    if let Some(socks5_client) = &client.socks5_client {
+                        socks5_client.stats().print_stats().await;
+                    }
+                    println!();
+                    if let Some(ssclient) = &client.ssclient {
+                        ssclient.stats().recycle_stats().await;
+                    }
+                    client.direct_client.stats().recycle_stats().await;
+                    if let Some(socks5_client) = &client.socks5_client {
+                        socks5_client.stats().recycle_stats().await;
+                    }
+                    task::sleep(Duration::from_secs(5)).await;
                 }
-                client.direct_client.stats().print_stats().await;
-                if let Some(socks5_client) = &client.socks5_client {
-                    socks5_client.stats().print_stats().await;
-                }
-                println!();
-                if let Some(ssclient) = &client.ssclient {
-                    ssclient.stats().recycle_stats().await;
-                }
-                client.direct_client.stats().recycle_stats().await;
-                if let Some(socks5_client) = &client.socks5_client {
-                    socks5_client.stats().recycle_stats().await;
-                }
-                task::sleep(Duration::from_secs(5)).await;
-            }
-        });
+            });
+        }
         c
     }
 
@@ -273,9 +276,9 @@ impl Client for RuledClient {
             let conn = self.connections.lock().unwrap().remove(&index);
             if let Some(conn) = conn {
                 if let Err(e) = &ret {
-                    println!("Interrupt connection {}: {:?}, connect time: {}, duration: {}s, addr: {}, action: {:?}", e, index, conn.connect_time.format("%Y-%m-%d %H:%M:%S").to_string(), (Local::now() - conn.connect_time).num_seconds(), conn.address, conn.action);
+                    trace!("Interrupt connection {}: {:?}, connect time: {}, duration: {}s, addr: {}, action: {:?}", e, index, conn.connect_time.format("%Y-%m-%d %H:%M:%S").to_string(), (Local::now() - conn.connect_time).num_seconds(), conn.address, conn.action);
                 } else {
-                    println!("Close connection {}, connect time: {}, duration: {}s, addr: {}, action: {:?}", index, conn.connect_time.format("%Y-%m-%d %H:%M:%S").to_string(), (Local::now() - conn.connect_time).num_seconds(), conn.address, conn.action);
+                    trace!("Close connection {}, connect time: {}, duration: {}s, addr: {}, action: {:?}", index, conn.connect_time.format("%Y-%m-%d %H:%M:%S").to_string(), (Local::now() - conn.connect_time).num_seconds(), conn.address, conn.action);
                 }
             }
         }
