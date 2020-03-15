@@ -62,7 +62,7 @@ mod tests {
 
     #[test]
     fn test_encrypt_and_decrypt_stream() {
-        let cipher_type = CipherType::Aes256Gcm;
+        let cipher_type = CipherType::XChaCha20IetfPoly1305;
         let key = cipher_type.bytes_to_key(b"keasdfsdfy");
         let iv = cipher_type.gen_salt();
         let mut encrypter_cipher = crypto::new_aead_encryptor(cipher_type, &key, &iv);

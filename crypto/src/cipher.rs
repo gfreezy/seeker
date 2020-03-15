@@ -14,6 +14,7 @@ use openssl::nid::Nid;
 #[cfg(feature = "openssl")]
 use openssl::symm;
 use rand::{self, RngCore};
+#[cfg(feature = "use-ring")]
 use ring::aead::{AES_128_GCM, AES_256_GCM, CHACHA20_POLY1305};
 
 /// Cipher result
@@ -157,8 +158,11 @@ const CIPHER_AES_256_PMAC_SIV: &str = "aes-256-pmac-siv";
 
 const CIPHER_PLAIN: &str = "plain";
 
+#[cfg(feature = "use-ring")]
 const CIPHER_AES_128_GCM: &str = "aes-128-gcm";
+#[cfg(feature = "use-ring")]
 const CIPHER_AES_256_GCM: &str = "aes-256-gcm";
+#[cfg(feature = "use-ring")]
 const CIPHER_CHACHA20_IETF_POLY1305: &str = "chacha20-ietf-poly1305";
 #[cfg(feature = "sodium")]
 const CIPHER_XCHACHA20_IETF_POLY1305: &str = "xchacha20-ietf-poly1305";
@@ -242,9 +246,12 @@ pub enum CipherType {
     #[cfg(feature = "sodium")]
     ChaCha20Ietf,
 
+    #[cfg(feature = "use-ring")]
     Aes128Gcm,
+    #[cfg(feature = "use-ring")]
     Aes256Gcm,
 
+    #[cfg(feature = "use-ring")]
     ChaCha20IetfPoly1305,
     #[cfg(feature = "sodium")]
     XChaCha20IetfPoly1305,
@@ -360,9 +367,12 @@ impl CipherType {
             | CipherType::XSalsa20
             | CipherType::ChaCha20Ietf => 32,
 
+            #[cfg(feature = "use-ring")]
             CipherType::Aes128Gcm => AES_128_GCM.key_len(),
+            #[cfg(feature = "use-ring")]
             CipherType::Aes256Gcm => AES_256_GCM.key_len(),
 
+            #[cfg(feature = "use-ring")]
             CipherType::ChaCha20IetfPoly1305 => CHACHA20_POLY1305.key_len(),
 
             #[cfg(feature = "sodium")]
@@ -541,8 +551,11 @@ impl CipherType {
             #[cfg(feature = "sodium")]
             CipherType::ChaCha20Ietf => 12,
 
+            #[cfg(feature = "use-ring")]
             CipherType::Aes128Gcm => AES_128_GCM.nonce_len(),
+            #[cfg(feature = "use-ring")]
             CipherType::Aes256Gcm => AES_256_GCM.nonce_len(),
+            #[cfg(feature = "use-ring")]
             CipherType::ChaCha20IetfPoly1305 => CHACHA20_POLY1305.nonce_len(),
             #[cfg(feature = "sodium")]
             CipherType::XChaCha20IetfPoly1305 => 24,
@@ -574,6 +587,7 @@ impl CipherType {
     /// Get category of cipher
     pub fn category(self) -> CipherCategory {
         match self {
+            #[cfg(feature = "use-ring")]
             CipherType::Aes128Gcm | CipherType::Aes256Gcm | CipherType::ChaCha20IetfPoly1305 => {
                 CipherCategory::Aead
             }
@@ -593,8 +607,11 @@ impl CipherType {
         assert!(self.category() == CipherCategory::Aead);
 
         match self {
+            #[cfg(feature = "use-ring")]
             CipherType::Aes128Gcm => AES_128_GCM.tag_len(),
+            #[cfg(feature = "use-ring")]
             CipherType::Aes256Gcm => AES_256_GCM.tag_len(),
+            #[cfg(feature = "use-ring")]
             CipherType::ChaCha20IetfPoly1305 => CHACHA20_POLY1305.tag_len(),
             #[cfg(feature = "sodium")]
             CipherType::XChaCha20IetfPoly1305 => 16,
@@ -698,9 +715,12 @@ impl FromStr for CipherType {
             #[cfg(feature = "sodium")]
             CIPHER_CHACHA20_IETF => Ok(CipherType::ChaCha20Ietf),
 
+            #[cfg(feature = "use-ring")]
             CIPHER_AES_128_GCM => Ok(CipherType::Aes128Gcm),
+            #[cfg(feature = "use-ring")]
             CIPHER_AES_256_GCM => Ok(CipherType::Aes256Gcm),
 
+            #[cfg(feature = "use-ring")]
             CIPHER_CHACHA20_IETF_POLY1305 => Ok(CipherType::ChaCha20IetfPoly1305),
             #[cfg(feature = "sodium")]
             CIPHER_XCHACHA20_IETF_POLY1305 => Ok(CipherType::XChaCha20IetfPoly1305),
@@ -793,8 +813,11 @@ impl Display for CipherType {
             #[cfg(feature = "sodium")]
             CipherType::ChaCha20Ietf => write!(f, "{}", CIPHER_CHACHA20_IETF),
 
+            #[cfg(feature = "use-ring")]
             CipherType::Aes128Gcm => write!(f, "{}", CIPHER_AES_128_GCM),
+            #[cfg(feature = "use-ring")]
             CipherType::Aes256Gcm => write!(f, "{}", CIPHER_AES_256_GCM),
+            #[cfg(feature = "use-ring")]
             CipherType::ChaCha20IetfPoly1305 => write!(f, "{}", CIPHER_CHACHA20_IETF_POLY1305),
             #[cfg(feature = "sodium")]
             CipherType::XChaCha20IetfPoly1305 => write!(f, "{}", CIPHER_XCHACHA20_IETF_POLY1305),
@@ -813,16 +836,16 @@ mod test_cipher {
 
     #[test]
     fn test_get_cipher() {
-        let key = CipherType::Aes128Cfb.bytes_to_key(b"PassWORD");
-        let iv = CipherType::Aes128Cfb.gen_init_vec();
+        let key = CipherType::ChaCha20.bytes_to_key(b"PassWORD");
+        let iv = CipherType::ChaCha20.gen_init_vec();
         let mut encryptor = new_stream(
-            CipherType::Aes128Cfb,
+            CipherType::ChaCha20,
             &key[0..],
             &iv[0..],
             CryptoMode::Encrypt,
         );
         let mut decryptor = new_stream(
-            CipherType::Aes128Cfb,
+            CipherType::ChaCha20,
             &key[0..],
             &iv[0..],
             CryptoMode::Decrypt,

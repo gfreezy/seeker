@@ -221,7 +221,7 @@ mod tests {
             "servername".to_string(),
             ServerAddr::DomainName("sdf".to_string(), 112),
             "pass".to_string(),
-            CipherType::Aes128Gcm,
+            CipherType::XChaCha20IetfPoly1305,
             Duration::from_secs(3),
             Duration::from_secs(3),
             Duration::from_secs(3),
