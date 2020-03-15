@@ -48,7 +48,7 @@ dependencies = [
 [[package]]
 name = "async-std"
 version = "1.5.0"
-source = "git+https://github.com/gfreezy/async-std?rev=fb8866c#fb8866c5b300d76d6b03234e4145096ee62d56db"
+source = "git+https://github.com/gfreezy/async-std?rev=0cd2685#0cd26858922b34972fe88fab2eef5c0dde2462b0"
 dependencies = [
  "async-task",
  "broadcaster",

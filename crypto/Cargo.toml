@@ -23,7 +23,7 @@ libsodium-sys = { version = "0.2", optional = true }
 ring = { version = "0.16", optional = true }
 
 [features]
-default = ["sodium", "rc4", "aes-cfb", "aes-ctr"]
+default = ["sodium"]
 sodium = ["libsodium-sys"]
 rc4 = ["openssl"]
 aes-cfb = ["openssl"]
