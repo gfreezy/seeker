@@ -140,7 +140,7 @@ mod tests {
 
     #[test]
     fn test_encrypt_and_decrypt_payload_aead() {
-        let cipher_type = CipherType::Aes256Gcm;
+        let cipher_type = CipherType::XChaCha20IetfPoly1305;
         let key = cipher_type.bytes_to_key(b"key");
         let payload = b"payload";
         let mut output = BytesMut::with_capacity(MAX_PACKET_SIZE);

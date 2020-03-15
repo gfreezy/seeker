@@ -119,14 +119,11 @@ impl Config {
     pub fn from_config_file(path: &str) -> io::Result<Self> {
         let file = File::open(&path).unwrap();
         let conf: Config = serde_yaml::from_reader(&file).unwrap();
-        match (&conf.shadowsocks_servers, &conf.socks5_server) {
-            (None, None) => {
-                return Err(io::Error::new(
-                    ErrorKind::InvalidData,
-                    "shadowsocks_servers and socks5_server should be set one at least.",
-                ))
-            }
-            _ => {}
+        if let (None, None) = (&conf.shadowsocks_servers, &conf.socks5_server) {
+            return Err(io::Error::new(
+                ErrorKind::InvalidData,
+                "shadowsocks_servers and socks5_server should be set one at least.",
+            ));
         };
         Ok(conf)
     }
