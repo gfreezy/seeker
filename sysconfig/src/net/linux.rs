@@ -1,7 +1,6 @@
 use crate::net::run_cmd;
 use std::fs::OpenOptions;
 use std::io::{Read, Seek, SeekFrom, Write};
-use std::process::Command;
 use tracing::info;
 
 pub struct DNSSetup {

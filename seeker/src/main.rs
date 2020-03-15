@@ -170,7 +170,6 @@ fn main() -> Result<(), Box<dyn Error>> {
             log_path,
             RotationMode::Lines(100_000),
             20,
-            true,
         )));
         let env_filter = EnvFilter::new("seeker=trace")
             .add_directive("seeker=trace".parse()?)
