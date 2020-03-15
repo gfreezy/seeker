@@ -48,7 +48,7 @@ dependencies = [
 [[package]]
 name = "async-std"
 version = "1.5.0"
-source = "git+https://github.com/gfreezy/async-std?rev=fb8866c#fb8866c5b300d76d6b03234e4145096ee62d56db"
+source = "git+https://github.com/gfreezy/async-std?rev=0cd2685#0cd26858922b34972fe88fab2eef5c0dde2462b0"
 dependencies = [
  "async-task",
  "broadcaster",
@@ -414,7 +414,7 @@ checksum = "e88a8acf291dafb59c2d96e8f59828f3838bb1a70398823ade51a84de6a6deed"
 [[package]]
 name = "file-rotate"
 version = "0.2.0"
-source = "git+https://github.com/gfreezy/file-rotate?rev=e1b2786#e1b2786ec09bc9c7a2381afe67f37e6c06ff33de"
+source = "git+https://github.com/gfreezy/file-rotate?rev=d07b66c#d07b66cc803ea8b0b41bb3927ac21c18b22c687e"
 dependencies = [
  "chrono",
 ]

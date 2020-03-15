@@ -21,8 +21,8 @@ signal-hook = { version = "0.1.10", features = ["mio-support"] }
 async-trait = "0.1.14"
 hermesdns = { path = "../hermes/hermesdns" }
 chrono = "0.4.10"
-file-rotate = { git = "https://github.com/gfreezy/file-rotate", rev = "e1b2786" }
-async-std = { git = "https://github.com/gfreezy/async-std", rev = "fb8866c"  }
+file-rotate = { git = "https://github.com/gfreezy/file-rotate", rev = "d07b66c" }
+async-std = { git = "https://github.com/gfreezy/async-std", rev = "0cd2685"  }
 
 [dependencies.smoltcp]
 git = "https://github.com/gfreezy/smoltcp"

@@ -2,6 +2,7 @@
 
 use crate::cipher::{CipherCategory, CipherResult, CipherType};
 
+#[cfg(feature = "use-ring")]
 use crate::ring::RingAeadCipher;
 #[cfg(feature = "miscreant")]
 use crate::siv::MiscreantCipher;
@@ -45,6 +46,7 @@ pub fn new_aead_encryptor(t: CipherType, key: &[u8], nonce: &[u8]) -> BoxAeadEnc
     assert!(t.category() == CipherCategory::Aead);
 
     match t {
+        #[cfg(feature = "use-ring")]
         CipherType::Aes128Gcm | CipherType::Aes256Gcm | CipherType::ChaCha20IetfPoly1305 => {
             Box::new(RingAeadCipher::new(t, key, nonce, true))
         }
@@ -66,6 +68,7 @@ pub fn new_aead_decryptor(t: CipherType, key: &[u8], nonce: &[u8]) -> BoxAeadDec
     assert!(t.category() == CipherCategory::Aead);
 
     match t {
+        #[cfg(feature = "use-ring")]
         CipherType::Aes128Gcm | CipherType::Aes256Gcm | CipherType::ChaCha20IetfPoly1305 => {
             Box::new(RingAeadCipher::new(t, key, nonce, false))
         }
