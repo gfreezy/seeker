@@ -836,16 +836,16 @@ mod test_cipher {
 
     #[test]
     fn test_get_cipher() {
-        let key = CipherType::Aes128Cfb.bytes_to_key(b"PassWORD");
-        let iv = CipherType::Aes128Cfb.gen_init_vec();
+        let key = CipherType::ChaCha20.bytes_to_key(b"PassWORD");
+        let iv = CipherType::ChaCha20.gen_init_vec();
         let mut encryptor = new_stream(
-            CipherType::Aes128Cfb,
+            CipherType::ChaCha20,
             &key[0..],
             &iv[0..],
             CryptoMode::Encrypt,
         );
         let mut decryptor = new_stream(
-            CipherType::Aes128Cfb,
+            CipherType::ChaCha20,
             &key[0..],
             &iv[0..],
             CryptoMode::Decrypt,

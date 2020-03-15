@@ -592,7 +592,8 @@ impl ResultCode {
             3 => ResultCode::NXDOMAIN,
             4 => ResultCode::NOTIMP,
             5 => ResultCode::REFUSED,
-            0 | _ => ResultCode::NOERROR,
+            0 => ResultCode::NOERROR,
+            _ => unreachable!(),
         }
     }
 }
