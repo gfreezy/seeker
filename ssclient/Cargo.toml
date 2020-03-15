@@ -19,7 +19,7 @@ hermesdns = { path = "../hermes/hermesdns" }
 sysconfig = { path = "../sysconfig" }
 tun = { path = "../tun" }
 config = { path = "../config" }
-crypto = { path = "../crypto", default-features = false, features = ["sodium"] }
+crypto = { path = "../crypto" }
 async-trait = "0.1.14"
 chrono = "0.4.10"
 lazy_static = "1.4.0"
