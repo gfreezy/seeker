@@ -2,8 +2,7 @@
 members = ["seeker", "dnsserver", "ssclient", "sysconfig", "tun", "config", "crypto", "hermes/hermesdns", "socks5_client"]
 
 [profile.release]
-lto = false
-#codegen-units = 1
-#incremental = false
-#opt-level = "z"
-#debug = true
+lto = "fat"
+codegen-units = 1
+incremental = false
+opt-level = "z"
