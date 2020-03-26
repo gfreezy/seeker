@@ -2,10 +2,10 @@ mod tun_socket;
 
 pub use crate::tun_socket::TunSocket;
 use bitvec::vec::BitVec;
-use smoltcp::wire::{IpProtocol, Ipv4Packet, UdpPacket};
+use smoltcp::wire::{IpAddress, IpProtocol, Ipv4Packet, UdpPacket};
 use std::collections::HashMap;
 use std::io::{Read, Write};
-use std::net::{Ipv4Addr, TcpListener, TcpStream};
+use std::net::{IpAddr, Ipv4Addr, TcpListener, TcpStream};
 use std::thread;
 use std::time::{Duration, SystemTime};
 use sysconfig::setup_ip;
@@ -42,15 +42,27 @@ pub fn run() {
                     let assoc = session_manager.get_by_port(dest_port);
                     udp_packet.set_src_port(assoc.dest_port);
                     udp_packet.set_dst_port(assoc.src_port);
-                    ipv4_packet.set_src_addr(assoc.dest_addr.into());
-                    ipv4_packet.set_dst_addr(assoc.src_addr.into());
+                    let new_src_addr = assoc.dest_addr.into();
+                    let new_dst_addr = assoc.src_addr.into();
+                    udp_packet.fill_checksum(
+                        &IpAddress::Ipv4(new_src_addr),
+                        &IpAddress::Ipv4(new_dst_addr),
+                    );
+                    ipv4_packet.set_src_addr(new_src_addr);
+                    ipv4_packet.set_dst_addr(new_dst_addr);
                 } else {
                     let port =
                         session_manager.new_session(src_addr, src_port, dest_addr, dest_port);
                     udp_packet.set_src_port(port);
                     udp_packet.set_dst_port(relay_port);
-                    ipv4_packet.set_src_addr(dest_addr.into());
-                    ipv4_packet.set_dst_addr(relay_addr.into());
+                    let new_src_addr = dest_addr.into();
+                    let new_dst_addr = relay_addr.into();
+                    udp_packet.fill_checksum(
+                        &IpAddress::Ipv4(new_src_addr),
+                        &IpAddress::Ipv4(new_dst_addr),
+                    );
+                    ipv4_packet.set_src_addr(new_src_addr);
+                    ipv4_packet.set_dst_addr(new_dst_addr);
                 }
                 ipv4_packet.fill_checksum();
             }
