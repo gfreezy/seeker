@@ -1,5 +1,6 @@
 use crate::client::Client;
 use async_std::io;
+use async_std::net::TcpStream;
 use async_std::prelude::*;
 use async_std::task;
 use async_std::task::JoinHandle;
@@ -17,7 +18,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tracing::{trace, trace_span};
 use tracing_futures::Instrument;
-use tun::socket::{TunTcpSocket, TunUdpSocket};
+use tun::socket::TunUdpSocket;
 
 pub(crate) struct Socks5Client {
     resolver: DnsNetworkClient,
@@ -99,7 +100,7 @@ impl Socks5Client {
 #[async_trait::async_trait]
 impl Client for Socks5Client {
     #[allow(unreachable_code)]
-    async fn handle_tcp(&self, tun_socket: TunTcpSocket, addr: Address) -> Result<()> {
+    async fn handle_tcp(&self, tun_socket: TcpStream, addr: Address) -> Result<()> {
         let conn = self.connect(addr.clone(), self.connect_timeout).await?;
         let mut tun_socket_clone = tun_socket.clone();
         let mut tun_socket_clone2 = tun_socket.clone();

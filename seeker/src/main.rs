@@ -6,12 +6,14 @@ use std::error::Error;
 use crate::client::ruled_client::RuledClient;
 use crate::client::Client;
 use async_std::io::timeout;
+use async_std::net::{SocketAddrV4, TcpListener};
 use async_std::prelude::*;
 use async_std::task::{block_on, spawn};
 use clap::{App, Arg};
 use config::{Address, Config};
 use dnsserver::create_dns_server;
 use file_rotate::{FileRotate, RotationMode};
+use parking_lot::RwLock;
 use std::io;
 use std::io::ErrorKind;
 use std::path::PathBuf;
@@ -22,11 +24,11 @@ use sysconfig::{DNSSetup, IpForward};
 use tracing::{trace, trace_span};
 use tracing_futures::Instrument;
 use tracing_subscriber::{EnvFilter, FmtSubscriber};
-use tun::socket::TunSocket;
-use tun::Tun;
+use tun_nat::{run_nat, SessionManager};
 
 async fn handle_connection<T: Client + Clone + Send + Sync + 'static>(
     client: T,
+    session_manager: Arc<RwLock<SessionManager>>,
     config: Config,
     term: Arc<AtomicBool>,
 ) {
@@ -44,63 +46,56 @@ async fn handle_connection<T: Client + Clone + Send + Sync + 'static>(
             .run_server()
             .instrument(trace_span!("dns_server.run_server")),
     );
-    spawn(Tun::bg_send().instrument(trace_span!("Tun::bg_send")));
 
-    let mut stream = Tun::listen();
-    loop {
-        let socket = timeout(Duration::from_secs(1), async {
-            stream.next().await.transpose()
-        })
-        .await;
-        let socket: TunSocket = match socket {
-            Ok(Some(s)) => s,
-            Ok(None) => break,
-            Err(e) if e.kind() == ErrorKind::TimedOut => {
-                if term.load(Ordering::Relaxed) {
-                    break;
-                } else {
+    let listener = TcpListener::bind((config.tun_ip, 1300)).await.unwrap();
+
+    let tcp_relay = async {
+        let mut incoming = listener.incoming();
+        loop {
+            let conn = timeout(Duration::from_secs(1), async {
+                incoming.next().await.transpose()
+            })
+            .await;
+            let conn = match conn {
+                Ok(Some(conn)) => conn,
+                Ok(None) => break,
+                Err(e) if e.kind() == ErrorKind::TimedOut => {
+                    if term.load(Ordering::SeqCst) {
+                        break;
+                    }
                     continue;
                 }
-            }
-            Err(e) => panic!(e),
-        };
-        let resolver_clone = resolver.clone();
-        let client_clone = client.clone();
-        let remote_addr = socket.local_addr();
+                Err(e) => return Err(e),
+            };
+            let remote_addr = conn.peer_addr()?;
+            let manager = session_manager.read();
+            let assoc = manager.get_by_port(remote_addr.port());
+            let real_dest_addr = SocketAddrV4::new(assoc.dest_addr, assoc.dest_port);
+            let real_src_addr = SocketAddrV4::new(assoc.src_addr, assoc.src_port);
+            let resolver_clone = resolver.clone();
+            let client_clone = client.clone();
 
-        spawn(
-            async move {
-                let ip = remote_addr.ip().to_string();
+            spawn(async move {
+                let ip = real_dest_addr.ip().to_string();
                 let host = resolver_clone
                     .lookup_host(&ip)
                     .instrument(trace_span!("lookup host", ip = ?ip))
                     .await
-                    .map(|s| Address::DomainNameAddress(s, remote_addr.port()))
-                    .unwrap_or_else(|| Address::SocketAddress(remote_addr));
+                    .map(|s| Address::DomainNameAddress(s, real_dest_addr.port()))
+                    .unwrap_or_else(|| Address::SocketAddress(real_dest_addr.into()));
 
                 trace!(ip = ?ip, host = ?host, "lookup host");
 
-                match socket {
-                    TunSocket::Tcp(socket) => {
-                        let src_addr = socket.remote_addr();
-                        client_clone
-                            .handle_tcp(socket, host.clone())
-                            .instrument(
-                                trace_span!("handle tcp", src_addr = %src_addr, host = %host),
-                            )
-                            .await
-                    }
-                    TunSocket::Udp(socket) => {
-                        client_clone
-                            .handle_udp(socket, host.clone())
-                            .instrument(trace_span!("handle udp", host = %host))
-                            .await
-                    }
-                }
-            }
-            .instrument(trace_span!("handle socket", socket = %remote_addr)),
-        );
-    }
+                client_clone
+                    .handle_tcp(conn, host.clone())
+                    .instrument(trace_span!("handle tcp", src_addr = %real_src_addr, host = %host))
+                    .await
+            });
+        }
+        Ok::<(), io::Error>(())
+    };
+
+    tcp_relay.await.unwrap();
 }
 
 #[derive(Clone)]
@@ -200,12 +195,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     signal_hook::flag::register(signal_hook::SIGINT, Arc::clone(&term))?;
     signal_hook::flag::register(signal_hook::SIGTERM, Arc::clone(&term))?;
 
-    Tun::setup(
-        config.tun_name.clone(),
-        config.tun_ip,
-        config.tun_cidr,
-        term.clone(),
-    );
+    let session_manager = run_nat(&config.tun_name, config.tun_ip, config.tun_cidr, 1300)?;
 
     let _dns_setup = DNSSetup::new();
     let _ip_forward = if config.gateway_mode {
@@ -219,7 +209,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     block_on(async {
         let client = RuledClient::new(config.clone(), uid, term.clone()).await;
 
-        handle_connection(client, config, term.clone()).await;
+        handle_connection(client, session_manager, config, term.clone()).await;
     });
 
     println!("Stop server. Bye bye...");
