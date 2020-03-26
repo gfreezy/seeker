@@ -264,7 +264,7 @@ dependencies = [
  "crypto",
  "serde",
  "serde_yaml",
- "smoltcp 0.5.0",
+ "smoltcp 0.6.0",
  "socks5_client",
 ]
 
@@ -420,15 +420,6 @@ name = "either"
 version = "1.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bb1f6b1ce1c140482ea30ddd3335fc0024ac7ee112895426e0a629a6c20adfe3"
-
-[[package]]
-name = "etherparse"
-version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2fa20922281f9ee5ffcda45e80d56085829279f1270f79fbabc39809a4354807"
-dependencies = [
- "byteorder",
-]
 
 [[package]]
 name = "fake-simd"
@@ -1257,8 +1248,9 @@ dependencies = [
  "file-rotate",
  "hermesdns",
  "libc",
+ "parking_lot 0.10.0",
  "signal-hook",
- "smoltcp 0.5.0",
+ "smoltcp 0.6.0",
  "socks5_client",
  "ssclient",
  "sysconfig",
@@ -1267,6 +1259,7 @@ dependencies = [
  "tracing-futures",
  "tracing-subscriber",
  "tun",
+ "tun_nat",
 ]
 
 [[package]]
@@ -1677,13 +1670,10 @@ name = "tun_nat"
 version = "0.1.0"
 dependencies = [
  "bitvec",
- "etherparse",
- "lazy_static",
  "libc",
- "parking_lot 0.9.0",
+ "parking_lot 0.10.0",
  "smoltcp 0.6.0",
  "sysconfig",
- "tracing",
 ]
 
 [[package]]

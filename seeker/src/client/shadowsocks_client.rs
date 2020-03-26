@@ -1,12 +1,13 @@
 use crate::client::Client;
+use async_std::net::TcpStream;
 use config::Address;
 use ssclient::SSClient;
 use std::io::Result;
-use tun::socket::{TunTcpSocket, TunUdpSocket};
+use tun::socket::TunUdpSocket;
 
 #[async_trait::async_trait]
 impl Client for SSClient {
-    async fn handle_tcp(&self, socket: TunTcpSocket, addr: Address) -> Result<()> {
+    async fn handle_tcp(&self, socket: TcpStream, addr: Address) -> Result<()> {
         self.handle_tcp_connection(socket, addr).await
     }
 

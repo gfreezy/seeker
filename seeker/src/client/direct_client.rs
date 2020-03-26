@@ -20,7 +20,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tracing::{trace, trace_span};
 use tracing_futures::Instrument;
-use tun::socket::{TunTcpSocket, TunUdpSocket};
+use tun::socket::TunUdpSocket;
 
 pub(crate) struct DirectClient {
     resolver: DnsNetworkClient,
@@ -110,17 +110,17 @@ impl DirectClient {
 #[async_trait::async_trait]
 impl Client for DirectClient {
     #[allow(unreachable_code)]
-    async fn handle_tcp(&self, tun_socket: TunTcpSocket, addr: Address) -> Result<()> {
+    async fn handle_tcp(&self, socket: TcpStream, addr: Address) -> Result<()> {
         let conn = self.connect(&addr, self.connect_timeout).await?;
-        let mut tun_socket_clone = tun_socket.clone();
-        let mut tun_socket_clone2 = tun_socket.clone();
+        let mut socket_clone = socket.clone();
+        let mut socket_clone2 = socket.clone();
         let mut ref_conn = &conn;
         let mut ref_conn2 = &conn;
         let idx = self.stats.add_connection(addr, Action::Direct).await;
         let a = async {
             let mut buf = vec![0; 10240];
             loop {
-                let rs = io::timeout(self.read_timeout, tun_socket_clone.read(&mut buf)).await?;
+                let rs = io::timeout(self.read_timeout, socket_clone.read(&mut buf)).await?;
                 trace!(read_size = rs, "DirectClient::handle_tcp: read from tun");
                 if rs == 0 {
                     break;
@@ -143,7 +143,7 @@ impl Client for DirectClient {
                 if rs == 0 {
                     break;
                 }
-                io::timeout(self.write_timeout, tun_socket_clone2.write_all(&buf[..rs])).await?;
+                io::timeout(self.write_timeout, socket_clone2.write_all(&buf[..rs])).await?;
                 trace!(write_size = rs, "DirectClient::handle_tcp: write to tun");
                 self.stats
                     .update_connection_stats(idx, |stats| {

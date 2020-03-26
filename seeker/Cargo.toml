@@ -17,24 +17,15 @@ ssclient = { path = "../ssclient" }
 socks5_client = { path = "../socks5_client" }
 sysconfig = { path = "../sysconfig" }
 tun = { path = "../tun" }
+tun_nat = { path = "../tun_nat" }
 signal-hook = { version = "0.1.10", features = ["mio-support"] }
 async-trait = "0.1.14"
 hermesdns = { path = "../hermes/hermesdns" }
 chrono = "0.4.10"
 file-rotate = { git = "https://github.com/gfreezy/file-rotate", rev = "d07b66c" }
 async-std = { git = "https://github.com/gfreezy/async-std", rev = "0cd2685"  }
-
-[dependencies.smoltcp]
-git = "https://github.com/gfreezy/smoltcp"
-rev = "ef17f0b"
-default-features = false
-features = [
-	"std", "log",
-	"proto-ipv4",
-	"socket-udp",
-	"socket-tcp",
-	"phy-raw_socket",
-]
+smoltcp = "0.6"
+parking_lot = "0.10"
 
 [dependencies.clap]
 version = "2"

@@ -16,12 +16,13 @@ use config::rule::{Action, ProxyRules};
 use config::{Address, Config};
 use ssclient::SSClient;
 use sysconfig::{list_user_proc_socks, SocketInfo};
-use tun::socket::{TunTcpSocket, TunUdpSocket};
+use tun::socket::TunUdpSocket;
 
 use crate::client::Client;
 
 use super::direct_client::DirectClient;
 use crate::client::socks5_client::Socks5Client;
+use async_std::net::TcpStream;
 
 #[derive(Hash, Debug, Eq, PartialEq)]
 struct Connection {
@@ -195,7 +196,7 @@ impl RuledClient {
         Ok(action)
     }
 
-    async fn shadowsocks_handle_tcp(&self, socket: TunTcpSocket, addr: Address) -> Result<()> {
+    async fn shadowsocks_handle_tcp(&self, socket: TcpStream, addr: Address) -> Result<()> {
         let (ssclient, shadowsocks_servers) = match (&self.ssclient, &self.conf.shadowsocks_servers)
         {
             (Some(ssclient), Some(shadowsocks_servers)) => (ssclient.clone(), shadowsocks_servers),
@@ -232,9 +233,9 @@ impl RuledClient {
 
 #[async_trait::async_trait]
 impl Client for RuledClient {
-    async fn handle_tcp(&self, socket: TunTcpSocket, addr: Address) -> Result<()> {
+    async fn handle_tcp(&self, socket: TcpStream, addr: Address) -> Result<()> {
         let action = self
-            .get_action_for_addr(socket.remote_addr(), &addr)
+            .get_action_for_addr(socket.peer_addr()?, &addr)
             .instrument(trace_span!("get action for addr",))
             .await?;
 

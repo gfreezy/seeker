@@ -13,15 +13,4 @@ bytes = "0.5.4"
 crypto = { path = "../crypto" }
 byteorder = "1.3.2"
 socks5_client = { path = "../socks5_client" }
-
-[dependencies.smoltcp]
-git = "https://github.com/gfreezy/smoltcp"
-rev = "ef17f0b"
-default-features = false
-features = [
-	"std", "log",
-	"proto-ipv4",
-	"socket-udp",
-	"socket-tcp",
-	"phy-raw_socket",
-]
+smoltcp = "0.6"

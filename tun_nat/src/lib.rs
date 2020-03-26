@@ -1,78 +1,123 @@
 mod tun_socket;
 
-pub use crate::tun_socket::TunSocket;
+use crate::tun_socket::TunSocket;
 use bitvec::vec::BitVec;
-use smoltcp::wire::{IpAddress, IpProtocol, Ipv4Packet, UdpPacket};
+use parking_lot::RwLock;
+use smoltcp::wire::{IpAddress, IpProtocol, Ipv4Cidr, Ipv4Packet, TcpPacket, UdpPacket};
 use std::collections::HashMap;
+use std::io::Result;
 use std::io::{Read, Write};
-use std::net::{IpAddr, Ipv4Addr, TcpListener, TcpStream};
+use std::net::Ipv4Addr;
+use std::sync::Arc;
 use std::thread;
-use std::time::{Duration, SystemTime};
+use std::time::SystemTime;
 use sysconfig::setup_ip;
 
 const BEGIN_PORT: u16 = 50000;
 const END_PORT: u16 = 60000;
-const EXPIRE_SECONDS: u64 = 10 * 60 * 1000;
+const EXPIRE_SECONDS: u64 = 1 * 60 * 1000;
 
-pub fn run() {
-    let relay_port = 1300;
-    let relay_addr: Ipv4Addr = "11.0.0.1".parse().unwrap();
+macro_rules! route_packet {
+    ($packet_ty: tt, $ipv4_packet: expr, $session_manager: expr, $relay_addr: expr, $relay_port: expr) => {{
+        let src_addr = $ipv4_packet.src_addr().into();
+        let dest_addr = $ipv4_packet.dst_addr().into();
+        let mut packet = $packet_ty::new_checked($ipv4_packet.payload_mut()).unwrap();
+        let src_port = packet.src_port();
+        let dest_port = packet.dst_port();
 
-    let mut tun = TunSocket::new("utun4").unwrap();
-    let tun_name = tun.name().unwrap();
-    setup_ip(&tun_name, "11.0.0.1", "11.0.0.0/16");
+        let (new_src_addr, new_src_port, new_dst_addr, new_dest_port) =
+            if src_addr == $relay_addr && src_port == $relay_port {
+                let session_manager = $session_manager.read();
+                let assoc = session_manager.get_by_port(dest_port);
+                (
+                    assoc.dest_addr.into(),
+                    assoc.dest_port,
+                    assoc.src_addr.into(),
+                    assoc.src_port,
+                )
+            } else {
+                let mut session_manager = $session_manager.write();
+                let port =
+                    session_manager.get_or_create_session(src_addr, src_port, dest_addr, dest_port);
+                session_manager.update_activity_for_port(port);
+                (dest_addr.into(), port, $relay_addr.into(), $relay_port)
+            };
+        packet.set_src_port(new_src_port);
+        packet.set_dst_port(new_dest_port);
+        packet.fill_checksum(
+            &IpAddress::Ipv4(new_src_addr),
+            &IpAddress::Ipv4(new_dst_addr),
+        );
+        $ipv4_packet.set_src_addr(new_src_addr);
+        $ipv4_packet.set_dst_addr(new_dst_addr);
 
-    let mut session_manager = SessionManager::new(BEGIN_PORT, END_PORT);
-    loop {
-        let mut buf = vec![0; 1500];
-        let size = tun.read(&mut buf).unwrap();
-        println!("recv {} bytes", size);
-        let mut ipv4_packet = Ipv4Packet::new_checked(&mut buf[..size]).unwrap();
-        let src_addr = ipv4_packet.src_addr().into();
-        let dest_addr = ipv4_packet.dst_addr().into();
-
-        match ipv4_packet.protocol() {
-            IpProtocol::Udp => {
-                let mut udp_packet = UdpPacket::new_checked(ipv4_packet.payload_mut()).unwrap();
-                let src_port = udp_packet.src_port();
-                let dest_port = udp_packet.dst_port();
-
-                // recv from relay
-                if src_addr == relay_addr && src_port == relay_port {
-                    let assoc = session_manager.get_by_port(dest_port);
-                    udp_packet.set_src_port(assoc.dest_port);
-                    udp_packet.set_dst_port(assoc.src_port);
-                    let new_src_addr = assoc.dest_addr.into();
-                    let new_dst_addr = assoc.src_addr.into();
-                    udp_packet.fill_checksum(
-                        &IpAddress::Ipv4(new_src_addr),
-                        &IpAddress::Ipv4(new_dst_addr),
-                    );
-                    ipv4_packet.set_src_addr(new_src_addr);
-                    ipv4_packet.set_dst_addr(new_dst_addr);
-                } else {
-                    let port =
-                        session_manager.new_session(src_addr, src_port, dest_addr, dest_port);
-                    udp_packet.set_src_port(port);
-                    udp_packet.set_dst_port(relay_port);
-                    let new_src_addr = dest_addr.into();
-                    let new_dst_addr = relay_addr.into();
-                    udp_packet.fill_checksum(
-                        &IpAddress::Ipv4(new_src_addr),
-                        &IpAddress::Ipv4(new_dst_addr),
-                    );
-                    ipv4_packet.set_src_addr(new_src_addr);
-                    ipv4_packet.set_dst_addr(new_dst_addr);
-                }
-                ipv4_packet.fill_checksum();
-            }
-            _ => {}
-        }
-        tun.write(ipv4_packet.as_ref()).unwrap();
-    }
+        $ipv4_packet.fill_checksum();
+        $ipv4_packet
+    }};
 }
 
-struct Association {
+pub fn run_nat(
+    tun_name: &str,
+    tun_ip: Ipv4Addr,
+    tun_cidr: Ipv4Cidr,
+    relay_port: u16,
+) -> Result<Arc<RwLock<SessionManager>>> {
+    let mut tun = TunSocket::new(tun_name)?;
+    let tun_name = tun.name()?;
+    if cfg!(target_os = "macos") {
+        setup_ip(
+            &tun_name,
+            tun_ip.to_string().as_str(),
+            tun_cidr.to_string().as_str(),
+        );
+    } else {
+        let new_ip =
+            Ipv4Cidr::from_netmask(tun_ip.into(), tun_cidr.netmask()).expect("convert netmask");
+        setup_ip(
+            &tun_name,
+            new_ip.to_string().as_str(),
+            tun_cidr.to_string().as_str(),
+        );
+    }
+
+    let relay_addr = tun_ip;
+
+    let session_manager = Arc::new(RwLock::new(SessionManager::new(BEGIN_PORT, END_PORT)));
+    let sesion_mamager_clone = session_manager.clone();
+    let _handle = thread::spawn(move || {
+        let mut buf = vec![0; 2000];
+
+        loop {
+            let size = tun.read(&mut buf).unwrap();
+            let mut ipv4_packet = match Ipv4Packet::new_checked(&mut buf[..size]) {
+                Err(_) => continue,
+                Ok(p) => p,
+            };
+
+            let packet = match ipv4_packet.protocol() {
+                IpProtocol::Udp => route_packet!(
+                    UdpPacket,
+                    ipv4_packet,
+                    session_manager,
+                    relay_addr,
+                    relay_port
+                ),
+                IpProtocol::Tcp => route_packet!(
+                    TcpPacket,
+                    ipv4_packet,
+                    session_manager,
+                    relay_addr,
+                    relay_port
+                ),
+                _ => unreachable!(),
+            };
+            tun.write(packet.as_ref()).unwrap();
+        }
+    });
+    Ok(sesion_mamager_clone)
+}
+
+pub struct Association {
     pub src_addr: Ipv4Addr,
     pub src_port: u16,
     pub dest_addr: Ipv4Addr,
@@ -80,7 +125,7 @@ struct Association {
     last_activity_ts: u64,
 }
 
-struct SessionManager {
+pub struct SessionManager {
     map: HashMap<u16, Association>,
     reverse_map: HashMap<(Ipv4Addr, u16, Ipv4Addr, u16), u16>,
     begin_port: u16,
@@ -116,7 +161,7 @@ impl SessionManager {
         assoc.last_activity_ts = now();
     }
 
-    pub fn new_session(
+    pub fn get_or_create_session(
         &mut self,
         src_addr: Ipv4Addr,
         src_port: u16,
