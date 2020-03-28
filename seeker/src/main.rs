@@ -47,9 +47,8 @@ async fn handle_connection<T: Client + Clone + Send + Sync + 'static>(
             .instrument(trace_span!("dns_server.run_server")),
     );
 
-    let listener = TcpListener::bind((config.tun_ip, 1300)).await.unwrap();
-
     let tcp_relay = async {
+        let listener = TcpListener::bind((config.tun_ip, 1300)).await?;
         let mut incoming = listener.incoming();
         loop {
             let conn = timeout(Duration::from_secs(1), async {
