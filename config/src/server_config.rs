@@ -6,7 +6,7 @@ use std::{
     time::Duration,
 };
 
-use crate::duration;
+use crate::{duration, Address};
 use bytes::Bytes;
 use crypto::CipherType;
 use serde::Deserialize;
@@ -85,7 +85,7 @@ impl Display for ServerAddr {
 pub struct Socks5ServerConfig {
     /// Server address
     #[serde(with = "server_addr")]
-    pub addr: ServerAddr,
+    pub addr: Address,
     /// Connection timeout
     #[serde(with = "duration")]
     pub connect_timeout: Duration,
@@ -104,7 +104,7 @@ pub struct ShadowsocksServerConfig {
     name: String,
     /// Server address
     #[serde(with = "server_addr")]
-    addr: ServerAddr,
+    addr: Address,
     /// Encryption password (key)
     password: String,
     /// Encryption type (method)
@@ -139,18 +139,17 @@ mod cipher_type {
 }
 
 mod server_addr {
-
-    use crate::ServerAddr;
+    use crate::Address;
     use serde::de::Error;
     use serde::{Deserialize, Deserializer};
     use std::str::FromStr;
 
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<ServerAddr, D::Error>
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Address, D::Error>
     where
         D: Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
-        ServerAddr::from_str(&s)
+        Address::from_str(&s)
             .map_err(|_| Error::custom(format!("invalid value: {}, ip:port or domain:port", s)))
     }
 }
@@ -160,7 +159,7 @@ impl ShadowsocksServerConfig {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         name: String,
-        addr: ServerAddr,
+        addr: Address,
         pwd: String,
         method: CipherType,
         connect_timeout: Duration,
@@ -188,7 +187,7 @@ impl ShadowsocksServerConfig {
     ) -> ShadowsocksServerConfig {
         ShadowsocksServerConfig::new(
             addr.to_string(),
-            ServerAddr::SocketAddr(addr),
+            Address::SocketAddress(addr),
             password,
             method,
             Duration::from_secs(30),
@@ -210,12 +209,12 @@ impl ShadowsocksServerConfig {
     }
 
     /// Set server addr
-    pub fn set_addr(&mut self, a: ServerAddr) {
+    pub fn set_addr(&mut self, a: Address) {
         self.addr = a;
     }
 
     /// Get server address
-    pub fn addr(&self) -> &ServerAddr {
+    pub fn addr(&self) -> &Address {
         &self.addr
     }
 

@@ -31,6 +31,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7825f6833612eb2414095684fcf6c635becf3ce97fe48cf6421321e93bfbd53c"
 
 [[package]]
+name = "arc-swap"
+version = "0.4.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d663a8e9a99154b5fb793032533f6328da35e23aac63d5c152279aa8ba356825"
+
+[[package]]
 name = "arrayvec"
 version = "0.4.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -42,35 +48,11 @@ dependencies = [
 [[package]]
 name = "async-std"
 version = "1.5.0"
-source = "git+https://github.com/gfreezy/async-std?rev=0cd2685#0cd26858922b34972fe88fab2eef5c0dde2462b0"
-dependencies = [
- "async-task",
- "broadcaster",
- "crossbeam-channel 0.4.2",
- "crossbeam-deque",
- "crossbeam-utils 0.7.2",
- "futures-core",
- "futures-io",
- "futures-timer",
- "kv-log-macro",
- "log",
- "memchr",
- "mio",
- "mio-uds",
- "num_cpus",
- "once_cell",
- "pin-project-lite",
- "pin-utils",
- "slab",
-]
-
-[[package]]
-name = "async-std"
-version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "538ecb01eb64eecd772087e5b6f7540cbc917f047727339a472dafed2185b267"
 dependencies = [
  "async-task",
+ "broadcaster",
  "crossbeam-channel 0.4.2",
  "crossbeam-deque",
  "crossbeam-utils 0.7.2",
@@ -108,6 +90,17 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "atty"
+version = "0.2.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d9b39be18770d11421cdb1b9947a45dd3f37e93092cbf377614828a319d5fee8"
+dependencies = [
+ "hermit-abi",
+ "libc",
+ "winapi 0.3.8",
 ]
 
 [[package]]
@@ -240,6 +233,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "clap"
+version = "2.33.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5067f5bb2d80ef5d68b4c87db81601f0b75bca627bc2ef76b141d7b846a3c6d9"
+dependencies = [
+ "ansi_term",
+ "atty",
+ "bitflags",
+ "strsim",
+ "textwrap",
+ "unicode-width",
+ "vec_map",
+]
+
+[[package]]
 name = "cloudabi"
 version = "0.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -257,7 +265,7 @@ dependencies = [
  "crypto",
  "serde",
  "serde_yaml",
- "smoltcp 0.6.0",
+ "smoltcp",
  "socks5_client",
 ]
 
@@ -393,7 +401,7 @@ dependencies = [
 name = "dnsserver"
 version = "0.1.0"
 dependencies = [
- "async-std 1.5.0 (git+https://github.com/gfreezy/async-std?rev=0cd2685)",
+ "async-std",
  "async-trait",
  "config",
  "hermesdns",
@@ -419,6 +427,14 @@ name = "fake-simd"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e88a8acf291dafb59c2d96e8f59828f3838bb1a70398823ade51a84de6a6deed"
+
+[[package]]
+name = "file-rotate"
+version = "0.2.0"
+source = "git+https://github.com/gfreezy/file-rotate?rev=d07b66c#d07b66cc803ea8b0b41bb3927ac21c18b22c687e"
+dependencies = [
+ "chrono",
+]
 
 [[package]]
 name = "filetime"
@@ -612,7 +628,7 @@ dependencies = [
 name = "hermesdns"
 version = "0.1.0"
 dependencies = [
- "async-std 1.5.0 (git+https://github.com/gfreezy/async-std?rev=0cd2685)",
+ "async-std",
  "async-trait",
  "chrono",
  "rand",
@@ -1250,6 +1266,32 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d29ab0c6d3fc0ee92fe66e2d99f700eab17a8d57d1c1d3b748380fb20baa78cd"
 
 [[package]]
+name = "seeker"
+version = "0.1.1"
+dependencies = [
+ "async-std",
+ "async-trait",
+ "chrono",
+ "clap",
+ "config",
+ "dnsserver",
+ "file-rotate",
+ "hermesdns",
+ "libc",
+ "parking_lot 0.10.0",
+ "signal-hook",
+ "smoltcp",
+ "socks5_client",
+ "ssclient",
+ "sysconfig",
+ "tracing",
+ "tracing-core",
+ "tracing-futures",
+ "tracing-subscriber",
+ "tun_nat",
+]
+
+[[package]]
 name = "semver"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1338,6 +1380,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "signal-hook"
+version = "0.1.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "10b9f3a1686a29f53cfd91ee5e3db3c12313ec02d33765f02c1a9645a1811e2c"
+dependencies = [
+ "libc",
+ "mio",
+ "signal-hook-registry",
+]
+
+[[package]]
+name = "signal-hook-registry"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "94f478ede9f64724c5d173d7bb56099ec3e2d9fc2774aac65d34b8b890405f41"
+dependencies = [
+ "arc-swap",
+ "libc",
+]
+
+[[package]]
 name = "slab"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1373,18 +1436,6 @@ checksum = "5c2fb2ec9bcd216a5b0d0ccf31ab17b5ed1d627960edff65bbe95d3ce221cefc"
 
 [[package]]
 name = "smoltcp"
-version = "0.5.0"
-source = "git+https://github.com/gfreezy/smoltcp?rev=ef17f0b#ef17f0bdcb1d283c898546e8a76c5cd67d32f428"
-dependencies = [
- "bitflags",
- "byteorder",
- "libc",
- "log",
- "managed",
-]
-
-[[package]]
-name = "smoltcp"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0fe46639fd2ec79eadf8fe719f237a7a0bd4dac5d957f1ca5bbdbc1c3c39e53a"
@@ -1400,7 +1451,7 @@ dependencies = [
 name = "socks5_client"
 version = "0.1.0"
 dependencies = [
- "async-std 1.5.0 (git+https://github.com/gfreezy/async-std?rev=0cd2685)",
+ "async-std",
  "bytes",
 ]
 
@@ -1420,7 +1471,7 @@ checksum = "6e63cff320ae2c57904679ba7cb63280a3dc4613885beafb148ee7bf9aa9042d"
 name = "ssclient"
 version = "0.1.0"
 dependencies = [
- "async-std 1.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "async-std",
  "byteorder",
  "bytes",
  "config",
@@ -1430,6 +1481,12 @@ dependencies = [
  "tracing-futures",
  "tracing-subscriber",
 ]
+
+[[package]]
+name = "strsim"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8ea5119cdb4c55b55d432abb513a0429384878c15dde60cc77b1c99de1a95a6a"
 
 [[package]]
 name = "subtle"
@@ -1489,6 +1546,15 @@ dependencies = [
  "redox_syscall",
  "remove_dir_all",
  "winapi 0.3.8",
+]
+
+[[package]]
+name = "textwrap"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d326610f408c7a4eb6f51c37c330e496b08506c9457c9d34287ecc38809fb060"
+dependencies = [
+ "unicode-width",
 ]
 
 [[package]]
@@ -1593,28 +1659,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "tun"
-version = "0.1.0"
-dependencies = [
- "async-std 1.5.0 (git+https://github.com/gfreezy/async-std?rev=0cd2685)",
- "lazy_static",
- "libc",
- "managed",
- "mio",
- "parking_lot 0.9.0",
- "smoltcp 0.5.0",
- "sysconfig",
- "tracing",
-]
-
-[[package]]
 name = "tun_nat"
 version = "0.1.0"
 dependencies = [
  "bitvec",
  "libc",
  "parking_lot 0.10.0",
- "smoltcp 0.6.0",
+ "smoltcp",
  "sysconfig",
 ]
 
@@ -1629,6 +1680,12 @@ name = "unicode-segmentation"
 version = "1.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e83e153d1053cbb5a118eeff7fd5be06ed99153f00dbcd8ae310c5fb2b22edc0"
+
+[[package]]
+name = "unicode-width"
+version = "0.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "caaa9d531767d1ff2150b9332433f32a24622147e5ebb1f26409d5da67afd479"
 
 [[package]]
 name = "unicode-xid"
@@ -1653,6 +1710,12 @@ name = "vcpkg"
 version = "0.2.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3fc439f2794e98976c88a2a2dafce96b930fe8010b0a256b3c2199a773933168"
+
+[[package]]
+name = "vec_map"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "05c78687fb1a80548ae3250346c3db86a80a7cdd77bda190189f2d0a0987c81a"
 
 [[package]]
 name = "version_check"

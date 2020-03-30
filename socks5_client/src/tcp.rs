@@ -8,6 +8,7 @@ use async_std::task::{Context, Poll};
 use std::io::{Error, ErrorKind, Result};
 use std::pin::Pin;
 
+#[derive(Debug, Clone)]
 pub struct Socks5TcpStream {
     conn: TcpStream,
 }
