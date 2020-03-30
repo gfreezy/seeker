@@ -7,7 +7,7 @@ use smoltcp::wire::{IpAddress, IpProtocol, Ipv4Cidr, Ipv4Packet, TcpPacket, UdpP
 use std::collections::HashMap;
 use std::io::Result;
 use std::io::{Read, Write};
-use std::net::Ipv4Addr;
+use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use std::thread;
 use std::time::SystemTime;
@@ -61,7 +61,7 @@ pub fn run_nat(
     tun_ip: Ipv4Addr,
     tun_cidr: Ipv4Cidr,
     relay_port: u16,
-) -> Result<Arc<RwLock<SessionManager>>> {
+) -> Result<SessionManager> {
     let mut tun = TunSocket::new(tun_name)?;
     let tun_name = tun.name()?;
     if cfg!(target_os = "macos") {
@@ -82,7 +82,7 @@ pub fn run_nat(
 
     let relay_addr = tun_ip;
 
-    let session_manager = Arc::new(RwLock::new(SessionManager::new(BEGIN_PORT, END_PORT)));
+    let session_manager = Arc::new(RwLock::new(InnerSessionManager::new(BEGIN_PORT, END_PORT)));
     let sesion_mamager_clone = session_manager.clone();
     let _handle = thread::spawn(move || {
         let mut buf = vec![0; 2000];
@@ -114,7 +114,9 @@ pub fn run_nat(
             tun.write(packet.as_ref()).unwrap();
         }
     });
-    Ok(sesion_mamager_clone)
+    Ok(SessionManager {
+        inner: sesion_mamager_clone,
+    })
 }
 
 pub struct Association {
@@ -125,20 +127,36 @@ pub struct Association {
     last_activity_ts: u64,
 }
 
+#[derive(Clone)]
 pub struct SessionManager {
+    inner: Arc<RwLock<InnerSessionManager>>,
+}
+
+impl SessionManager {
+    pub fn get_by_port(&self, port: u16) -> (SocketAddr, SocketAddr) {
+        let inner = self.inner.read();
+        let assoc = inner.map.get(&port).unwrap();
+        (
+            SocketAddr::new(assoc.src_addr.into(), assoc.src_port),
+            SocketAddr::new(assoc.dest_addr.into(), assoc.dest_port),
+        )
+    }
+}
+
+struct InnerSessionManager {
     map: HashMap<u16, Association>,
     reverse_map: HashMap<(Ipv4Addr, u16, Ipv4Addr, u16), u16>,
     begin_port: u16,
     available_ports: BitVec,
 }
 
-impl SessionManager {
+impl InnerSessionManager {
     pub fn new(begin_port: u16, end_port: u16) -> Self {
         let range = (end_port - begin_port) as usize;
         let mut ports = BitVec::with_capacity(range);
         ports.resize(range, true);
 
-        SessionManager {
+        InnerSessionManager {
             map: HashMap::new(),
             reverse_map: HashMap::new(),
             available_ports: ports,

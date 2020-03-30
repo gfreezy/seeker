@@ -49,6 +49,7 @@ enum ReadStatus {
 }
 
 /// A bidirectional stream for communicating with ShadowSocks' server
+#[derive(Clone)]
 pub struct SSTcpStream {
     stream: TcpStream,
     dec: Option<DecryptedReader<TcpStream>>,

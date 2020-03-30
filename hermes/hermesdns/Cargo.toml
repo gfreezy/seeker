@@ -12,4 +12,4 @@ chrono = "0.4.11"
 async-trait = "0.1.13"
 tracing = "0.1"
 tracing-futures = { version = "0.2", features = ["std-future"], default-features = false }
-async-std = { git = "https://github.com/gfreezy/async-std", rev = "0cd2685", features = ["unstable"]}
+async-std = { version = "1.5", features = ["unstable"]}

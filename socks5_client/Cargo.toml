@@ -8,4 +8,5 @@ edition = "2018"
 
 [dependencies]
 bytes = "0.5.4"
-async-std = { git = "https://github.com/gfreezy/async-std", rev = "0cd2685" }
+async-std = "1.5"
+
