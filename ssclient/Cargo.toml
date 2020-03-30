@@ -15,6 +15,7 @@ config = { path = "../config" }
 crypto = { path = "../crypto" }
 async-std = "1.5"
 futures = "0.3.4"
+parking_lot = "0.10"
 
 [dev-dependencies]
 tracing-subscriber = "0.2"

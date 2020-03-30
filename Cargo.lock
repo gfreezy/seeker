@@ -1477,6 +1477,7 @@ dependencies = [
  "config",
  "crypto",
  "futures",
+ "parking_lot 0.10.0",
  "tracing",
  "tracing-futures",
  "tracing-subscriber",

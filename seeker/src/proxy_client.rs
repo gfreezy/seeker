@@ -6,7 +6,7 @@ use async_std::task::spawn;
 use config::{Address, Config};
 use dnsserver::create_dns_server;
 use dnsserver::resolver::{resolve_domain, RuleBasedDnsResolver};
-use hermesdns::{DnsNetworkClient, DnsResolver};
+use hermesdns::DnsNetworkClient;
 use socks5_client::Socks5TcpStream;
 use ssclient::SSTcpStream;
 use std::io;
@@ -14,7 +14,7 @@ use std::io::{ErrorKind, Result};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-use tracing::{trace, trace_span};
+use tracing::{error, trace, trace_span};
 use tracing_futures::Instrument;
 use tun_nat::{run_nat, SessionManager};
 
@@ -103,12 +103,7 @@ impl ProxyClient {
     }
 
     async fn run_tcp_relay_server(&self) -> Result<()> {
-        let config = &self.config;
-        let resolver = self.resolver.clone();
-        let term = self.term.clone();
-        let session_manager = self.session_manager.clone();
-
-        let listener = TcpListener::bind((config.tun_ip, 1300)).await?;
+        let listener = TcpListener::bind((self.config.tun_ip, 1300)).await?;
         let mut incoming = listener.incoming();
         loop {
             let conn = timeout(Duration::from_secs(1), async {
@@ -119,38 +114,61 @@ impl ProxyClient {
                 Ok(Some(conn)) => conn,
                 Ok(None) => break,
                 Err(e) if e.kind() == ErrorKind::TimedOut => {
-                    if term.load(Ordering::SeqCst) {
+                    if self.term.load(Ordering::SeqCst) {
                         break;
                     }
                     continue;
                 }
                 Err(e) => return Err(e),
             };
-            let remote_addr = conn.peer_addr()?;
-            let (_real_src_addr, real_dest_addr) = session_manager.get_by_port(remote_addr.port());
-            let resolver_clone = resolver.clone();
-
+            let peer_addr = conn.peer_addr()?;
+            let (real_src_addr, real_dest_addr) =
+                self.session_manager.get_by_port(peer_addr.port());
+            let resolver_clone = self.resolver.clone();
             let proxy_client = self.clone();
-            spawn(async move {
-                let ip = real_dest_addr.ip().to_string();
-                let host = resolver_clone
-                    .lookup_host(&ip)
-                    .instrument(trace_span!("lookup host", ip = ?ip))
-                    .await
-                    .map(|s| Address::DomainNameAddress(s, real_dest_addr.port()))
-                    .unwrap_or_else(|| Address::SocketAddress(real_dest_addr.into()));
 
-                let remote_conn = proxy_client.get_remote_conn(&host).await?;
-                trace!(ip = ?ip, host = ?host, "lookup host");
-                trace!("tunneling");
-                tunnel_tcp_stream(conn, remote_conn).await?;
-                Ok::<(), io::Error>(())
-            });
+            trace!(
+                ?peer_addr,
+                ?real_src_addr,
+                ?real_dest_addr,
+                "new relay connection"
+            );
+            let ip = real_dest_addr.ip().to_string();
+            let host = resolver_clone
+                .lookup_host(&ip)
+                .instrument(trace_span!("lookup host", ip = ?ip))
+                .await
+                .map(|s| Address::DomainNameAddress(s, real_dest_addr.port()))
+                .unwrap_or_else(|| Address::SocketAddress(real_dest_addr.into()));
+            trace!(ip = ?ip, host = ?host, "lookup host");
+            match proxy_client.get_remote_conn(&host).await {
+                Ok(remote_conn) => {
+                    spawn(
+                        async move {
+                            trace!("tunneling");
+                            tunnel_tcp_stream(conn, remote_conn).await?;
+                            Ok::<(), io::Error>(())
+                        }
+                        .instrument(trace_span!(
+                            "tunnel",
+                            ?peer_addr,
+                            ?real_src_addr,
+                            ?real_dest_addr,
+                            ?host,
+                        )),
+                    );
+                }
+                Err(e) => {
+                    error!(?e, "get remote conn error");
+                }
+            }
         }
         Ok::<(), io::Error>(())
     }
 
-    pub async fn run(&self) {}
+    pub async fn run(&self) {
+        self.run_tcp_relay_server().await.unwrap()
+    }
 }
 
 async fn tunnel_tcp_stream<T1: Read + Write + Unpin + Clone, T2: Read + Write + Unpin + Clone>(
@@ -163,6 +181,9 @@ async fn tunnel_tcp_stream<T1: Read + Write + Unpin + Clone, T2: Read + Write + 
         let mut buf = vec![0; 1500];
         loop {
             let size = conn1.read(&mut buf).await?;
+            if size == 0 {
+                break Ok(());
+            }
             conn2.write_all(&buf[..size]).await?;
         }
     };
@@ -170,6 +191,9 @@ async fn tunnel_tcp_stream<T1: Read + Write + Unpin + Clone, T2: Read + Write + 
         let mut buf = vec![0; 1500];
         loop {
             let size = conn2_clone.read(&mut buf).await?;
+            if size == 0 {
+                break Ok(());
+            }
             conn1_clone.write_all(&buf[..size]).await?;
         }
     };
