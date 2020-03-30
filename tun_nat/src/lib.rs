@@ -109,7 +109,7 @@ pub fn run_nat(
                     relay_addr,
                     relay_port
                 ),
-                _ => unreachable!(),
+                _ => continue,
             };
             tun.write(packet.as_ref()).unwrap();
         }

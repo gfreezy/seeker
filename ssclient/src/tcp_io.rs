@@ -24,7 +24,9 @@ use self::{
 };
 use async_std::net::TcpStream;
 use config::Address;
+use parking_lot::Mutex;
 use std::net::SocketAddr;
+use std::sync::Arc;
 use std::time::Duration;
 
 enum DecryptedReader<T> {
@@ -52,9 +54,9 @@ enum ReadStatus {
 #[derive(Clone)]
 pub struct SSTcpStream {
     stream: TcpStream,
-    dec: Option<DecryptedReader<TcpStream>>,
-    enc: EncryptedWriter<TcpStream>,
-    read_status: ReadStatus,
+    dec: Option<Arc<Mutex<DecryptedReader<TcpStream>>>>,
+    enc: Arc<Mutex<EncryptedWriter<TcpStream>>>,
+    read_status: Arc<Mutex<ReadStatus>>,
 }
 
 impl SSTcpStream {
@@ -100,8 +102,13 @@ impl SSTcpStream {
         let mut ss_stream = SSTcpStream {
             stream,
             dec: None,
-            enc,
-            read_status: ReadStatus::WaitIv(vec![0u8; prev_len], 0usize, method, key),
+            enc: Arc::new(Mutex::new(enc)),
+            read_status: Arc::new(Mutex::new(ReadStatus::WaitIv(
+                vec![0u8; prev_len],
+                0usize,
+                method,
+                key,
+            ))),
         };
 
         let mut addr_buf = BytesMut::with_capacity(addr.serialized_len());
@@ -145,8 +152,13 @@ impl SSTcpStream {
         SSTcpStream {
             stream,
             dec: None,
-            enc,
-            read_status: ReadStatus::WaitIv(vec![0u8; prev_len], 0usize, method, key),
+            enc: Arc::new(Mutex::new(enc)),
+            read_status: Arc::new(Mutex::new(ReadStatus::WaitIv(
+                vec![0u8; prev_len],
+                0usize,
+                method,
+                key,
+            ))),
         }
     }
 
@@ -156,7 +168,9 @@ impl SSTcpStream {
     }
 
     fn poll_read_handshake(&mut self, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        if let ReadStatus::WaitIv(ref mut buf, ref mut pos, method, ref key) = self.read_status {
+        if let ReadStatus::WaitIv(ref mut buf, ref mut pos, method, ref key) =
+            *self.read_status.lock()
+        {
             trace!("wait iv");
             while *pos < buf.len() {
                 let n = ready!(Pin::new(&mut self.stream).poll_read(cx, &mut buf[*pos..]))?;
@@ -188,8 +202,8 @@ impl SSTcpStream {
                 }
             };
 
-            self.dec = Some(dec);
-            self.read_status = ReadStatus::Established;
+            self.dec = Some(Arc::new(Mutex::new(dec)));
+            *self.read_status.lock() = ReadStatus::Established;
         }
 
         Poll::Ready(Ok(()))
@@ -203,7 +217,7 @@ impl SSTcpStream {
         let this = self.get_mut();
         ready!(this.poll_read_handshake(ctx))?;
 
-        match *this.dec.as_mut().unwrap() {
+        match *this.dec.as_ref().unwrap().lock() {
             DecryptedReader::Aead(ref mut r) => Pin::new(r).poll_read(ctx, buf),
             DecryptedReader::Stream(ref mut r) => Pin::new(r).poll_read(ctx, buf),
         }
@@ -215,7 +229,7 @@ impl SSTcpStream {
         buf: &[u8],
     ) -> Poll<io::Result<usize>> {
         let this = self.get_mut();
-        match this.enc {
+        match *this.enc.lock() {
             EncryptedWriter::Aead(ref mut w) => Pin::new(w).poll_write(ctx, buf),
             EncryptedWriter::Stream(ref mut w) => Pin::new(w).poll_write(ctx, buf),
         }

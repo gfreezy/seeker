@@ -15,7 +15,7 @@ pub enum Connection {
 
 impl Read for Connection {
     fn poll_read(
-        self: Pin<&mut Self>,
+        mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
         buf: &mut [u8],
     ) -> Poll<Result<usize>> {
@@ -27,7 +27,11 @@ impl Read for Connection {
     }
 }
 impl Write for Connection {
-    fn poll_write(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<Result<usize>> {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<Result<usize>> {
         match &mut *self {
             Connection::Direct(conn) => Pin::new(conn).poll_write(cx, buf),
             Connection::Socks5(conn) => Pin::new(conn).poll_write(cx, buf),
@@ -35,7 +39,7 @@ impl Write for Connection {
         }
     }
 
-    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<()>> {
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<()>> {
         match &mut *self {
             Connection::Direct(conn) => Pin::new(conn).poll_flush(cx),
             Connection::Socks5(conn) => Pin::new(conn).poll_flush(cx),
@@ -43,7 +47,7 @@ impl Write for Connection {
         }
     }
 
-    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<()>> {
+    fn poll_close(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<()>> {
         match &mut *self {
             Connection::Direct(conn) => Pin::new(conn).poll_close(cx),
             Connection::Socks5(conn) => Pin::new(conn).poll_close(cx),
