@@ -222,7 +222,10 @@ impl ProxyClient {
         let mut incoming = listener.incoming();
         while let Some(Ok(conn)) = incoming.next().await {
             let peer_addr = conn.peer_addr()?;
-            let (real_src, real_dest) = self.session_manager.get_by_port(peer_addr.port());
+            let (real_src, real_dest) = match self.session_manager.get_by_port(peer_addr.port()) {
+                Some(s) => s,
+                None => continue,
+            };
 
             trace!(?peer_addr, ?real_src, ?real_dest, "new relay connection");
             let ip = real_dest.ip().to_string();
@@ -280,14 +283,17 @@ impl ProxyClient {
         &self,
         port: u16,
     ) -> Option<(ProxyUdpSocket, SocketAddr)> {
-        let (real_src, real_dest) = self.session_manager.get_by_port(port);
+        let (real_src, real_dest) = self.session_manager.get_by_port(port)?;
         trace!(?real_src, ?real_dest, "new udp relay packet");
 
         self.udp_manager.read().get(&port).cloned()
     }
 
     async fn new_udp_socket(&self, port: u16) -> Result<(ProxyUdpSocket, SocketAddr)> {
-        let (real_src, real_dest) = self.session_manager.get_by_port(port);
+        let (real_src, real_dest) = match self.session_manager.get_by_port(port) {
+            Some(s) => s,
+            None => return Err(io::ErrorKind::AddrNotAvailable.into()),
+        };
         trace!(?real_src, ?real_dest, "new udp relay packet");
 
         if let Some(r) = self.udp_manager.read().get(&port) {

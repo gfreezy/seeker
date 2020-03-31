@@ -25,34 +25,41 @@ macro_rules! route_packet {
         let src_port = packet.src_port();
         let dest_port = packet.dst_port();
 
-        let (new_src_addr, new_src_port, new_dst_addr, new_dest_port) =
+        if let Some((new_src_addr, new_src_port, new_dst_addr, new_dest_port)) =
             if src_addr == $relay_addr && src_port == $relay_port {
                 let session_manager = $session_manager.read();
-                let assoc = session_manager.get_by_port(dest_port);
-                (
-                    assoc.dest_addr.into(),
-                    assoc.dest_port,
-                    assoc.src_addr.into(),
-                    assoc.src_port,
-                )
+                if let Some(assoc) = session_manager.get_by_port(dest_port) {
+                    Some((
+                        assoc.dest_addr.into(),
+                        assoc.dest_port,
+                        assoc.src_addr.into(),
+                        assoc.src_port,
+                    ))
+                } else {
+                    None
+                }
             } else {
                 let mut session_manager = $session_manager.write();
                 let port =
                     session_manager.get_or_create_session(src_addr, src_port, dest_addr, dest_port);
                 session_manager.update_activity_for_port(port);
-                (dest_addr.into(), port, $relay_addr.into(), $relay_port)
-            };
-        packet.set_src_port(new_src_port);
-        packet.set_dst_port(new_dest_port);
-        packet.fill_checksum(
-            &IpAddress::Ipv4(new_src_addr),
-            &IpAddress::Ipv4(new_dst_addr),
-        );
-        $ipv4_packet.set_src_addr(new_src_addr);
-        $ipv4_packet.set_dst_addr(new_dst_addr);
+                Some((dest_addr.into(), port, $relay_addr.into(), $relay_port))
+            }
+        {
+            packet.set_src_port(new_src_port);
+            packet.set_dst_port(new_dest_port);
+            packet.fill_checksum(
+                &IpAddress::Ipv4(new_src_addr),
+                &IpAddress::Ipv4(new_dst_addr),
+            );
+            $ipv4_packet.set_src_addr(new_src_addr);
+            $ipv4_packet.set_dst_addr(new_dst_addr);
 
-        $ipv4_packet.fill_checksum();
-        $ipv4_packet
+            $ipv4_packet.fill_checksum();
+            Some($ipv4_packet)
+        } else {
+            None
+        }
     }};
 }
 
@@ -94,7 +101,7 @@ pub fn run_nat(
                 Ok(p) => p,
             };
 
-            let packet = match ipv4_packet.protocol() {
+            if let Some(packet) = match ipv4_packet.protocol() {
                 IpProtocol::Udp => route_packet!(
                     UdpPacket,
                     ipv4_packet,
@@ -110,8 +117,9 @@ pub fn run_nat(
                     relay_port
                 ),
                 _ => continue,
-            };
-            tun.write(packet.as_ref()).unwrap();
+            } {
+                tun.write(packet.as_ref()).unwrap();
+            }
         }
     });
     Ok(SessionManager {
@@ -133,13 +141,16 @@ pub struct SessionManager {
 }
 
 impl SessionManager {
-    pub fn get_by_port(&self, port: u16) -> (SocketAddr, SocketAddr) {
+    pub fn get_by_port(&self, port: u16) -> Option<(SocketAddr, SocketAddr)> {
         let inner = self.inner.read();
-        let assoc = inner.map.get(&port).unwrap();
-        (
-            SocketAddr::new(assoc.src_addr.into(), assoc.src_port),
-            SocketAddr::new(assoc.dest_addr.into(), assoc.dest_port),
-        )
+        if let Some(assoc) = inner.map.get(&port) {
+            Some((
+                SocketAddr::new(assoc.src_addr.into(), assoc.src_port),
+                SocketAddr::new(assoc.dest_addr.into(), assoc.dest_port),
+            ))
+        } else {
+            None
+        }
     }
 }
 
@@ -170,13 +181,14 @@ impl InnerSessionManager {
         index as u16 + self.begin_port
     }
 
-    pub fn get_by_port(&self, port: u16) -> &Association {
-        self.map.get(&port).unwrap()
+    pub fn get_by_port(&self, port: u16) -> Option<&Association> {
+        self.map.get(&port)
     }
 
     pub fn update_activity_for_port(&mut self, port: u16) {
-        let assoc = self.map.get_mut(&port).unwrap();
-        assoc.last_activity_ts = now();
+        if let Some(assoc) = self.map.get_mut(&port) {
+            assoc.last_activity_ts = now();
+        }
     }
 
     pub fn get_or_create_session(
