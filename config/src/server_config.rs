@@ -3,10 +3,9 @@ use std::{
     net::SocketAddr,
     str::FromStr,
     string::ToString,
-    time::Duration,
 };
 
-use crate::{duration, Address};
+use crate::Address;
 use bytes::Bytes;
 use crypto::CipherType;
 use serde::Deserialize;
@@ -86,15 +85,6 @@ pub struct Socks5ServerConfig {
     /// Server address
     #[serde(with = "server_addr")]
     pub addr: Address,
-    /// Connection timeout
-    #[serde(with = "duration")]
-    pub connect_timeout: Duration,
-    /// Read timeout
-    #[serde(with = "duration")]
-    pub read_timeout: Duration,
-    /// Write timeout
-    #[serde(with = "duration")]
-    pub write_timeout: Duration,
 }
 
 /// Configuration for a server
@@ -110,17 +100,6 @@ pub struct ShadowsocksServerConfig {
     /// Encryption type (method)
     #[serde(with = "cipher_type")]
     method: CipherType,
-    /// Connection timeout
-    #[serde(with = "duration")]
-    connect_timeout: Duration,
-    /// Read timeout
-    #[serde(with = "duration")]
-    read_timeout: Duration,
-    /// Write timeout
-    #[serde(with = "duration")]
-    write_timeout: Duration,
-    /// Max idle connections
-    idle_connections: usize,
 }
 
 mod cipher_type {
@@ -162,20 +141,12 @@ impl ShadowsocksServerConfig {
         addr: Address,
         pwd: String,
         method: CipherType,
-        connect_timeout: Duration,
-        read_timeout: Duration,
-        write_timeout: Duration,
-        idle_connections: usize,
     ) -> ShadowsocksServerConfig {
         ShadowsocksServerConfig {
             name,
             addr,
             password: pwd,
             method,
-            connect_timeout,
-            read_timeout,
-            write_timeout,
-            idle_connections,
         }
     }
 
@@ -190,10 +161,6 @@ impl ShadowsocksServerConfig {
             Address::SocketAddress(addr),
             password,
             method,
-            Duration::from_secs(30),
-            Duration::from_secs(30),
-            Duration::from_secs(30),
-            10,
         )
     }
 
@@ -231,25 +198,5 @@ impl ShadowsocksServerConfig {
     /// Get method
     pub fn method(&self) -> CipherType {
         self.method
-    }
-
-    /// Get connect timeout
-    pub fn connect_timeout(&self) -> Duration {
-        self.connect_timeout
-    }
-
-    /// Get read timeout
-    pub fn read_timeout(&self) -> Duration {
-        self.read_timeout
-    }
-
-    /// Get write timeout
-    pub fn write_timeout(&self) -> Duration {
-        self.write_timeout
-    }
-
-    /// Get idle connections
-    pub fn idle_connections(&self) -> usize {
-        self.idle_connections
     }
 }

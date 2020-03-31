@@ -7,7 +7,7 @@ use hermesdns::{
 use sled::Db;
 use std::any::Any;
 use std::io::Result;
-use std::net::Ipv4Addr;
+use std::net::{IpAddr, Ipv4Addr};
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
@@ -39,6 +39,14 @@ impl RuleBasedDnsResolver {
 
     pub async fn lookup_host(&self, addr: &str) -> Option<String> {
         self.inner.lock().await.lookup_host(addr).await
+    }
+
+    pub async fn lookup_real_ip(&self, addr: &str) -> Option<IpAddr> {
+        self.inner
+            .lock()
+            .await
+            .lookup_host_and_resolve_real_ip(addr)
+            .await
     }
 }
 
@@ -87,6 +95,19 @@ impl Inner {
             .get(addr.as_bytes())
             .unwrap()
             .map(|host| String::from_utf8(host.to_vec()).unwrap())
+    }
+
+    async fn lookup_host_and_resolve_real_ip(&self, addr: &str) -> Option<IpAddr> {
+        let domain = self.lookup_host(addr).await?;
+        let ip = resolve_domain(
+            &self.resolver,
+            (&self.dns_server.0, self.dns_server.1),
+            &domain,
+        )
+        .await
+        .ok()
+        .flatten()?;
+        ip.parse().ok()
     }
 
     fn gen_ipaddr(&mut self) -> String {
