@@ -62,33 +62,23 @@ tun_cidr: 10.0.0.0/16
 dns_listen: 0.0.0.0:53
 gateway_mode: true
 probe_timeout: 10ms
-direct_connect_timeout: 1s
-direct_read_timeout: 30s
-direct_write_timeout: 5s
+connect_timeout: 1s
+read_timeout: 30s
+write_timeout: 5s
 max_connect_errors: 20
+
 socks5_server:
   addr: domain-or-ip-to-socks5-server:port
-  connect_timeout: 100ms
-  read_timeout: 30s
-  write_timeout: 30s
 
 shadowsocks_servers:
   - name: server1
     addr: domain-or-ip-to-ss-server:port
     method: chacha20-ietf
     password: password
-    connect_timeout: 5s
-    read_timeout: 30s
-    write_timeout: 30s
-    idle_connections: 10
   - name: server2
     addr: domain-or-ip-to-ss-server:port
     method: chacha20-ietf
     password: password
-    connect_timeout: 5s
-    read_timeout: 30s
-    write_timeout: 30s
-    idle_connections: 10
 
 rules:
   - 'DOMAIN,audio-ssl.itunes.apple.com,DIRECT'

@@ -1,7 +1,6 @@
 mod aead;
 mod stream;
 
-use async_std::io::timeout;
 use async_std::io::{Read, Write};
 use async_std::prelude::*;
 use std::io::{ErrorKind, Result};
@@ -27,7 +26,6 @@ use config::Address;
 use parking_lot::Mutex;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::time::Duration;
 
 enum DecryptedReader<T> {
     Aead(AeadDecryptedReader<T>),
@@ -66,9 +64,8 @@ impl SSTcpStream {
         server_addr: SocketAddr,
         method: CipherType,
         key: Bytes,
-        connect_timeout: Duration,
     ) -> Result<SSTcpStream> {
-        let stream = timeout(connect_timeout, TcpStream::connect(server_addr)).await?;
+        let stream = TcpStream::connect(server_addr).await?;
         let prev_len = match method.category() {
             CipherCategory::Stream => method.iv_size(),
             CipherCategory::Aead => method.salt_size(),
@@ -113,7 +110,7 @@ impl SSTcpStream {
 
         let mut addr_buf = BytesMut::with_capacity(addr.serialized_len());
         addr.write_to_buf(&mut addr_buf);
-        timeout(connect_timeout, ss_stream.write_all(&addr_buf)).await?;
+        ss_stream.write_all(&addr_buf).await?;
         trace!("proxy handshake");
         Ok(ss_stream)
     }

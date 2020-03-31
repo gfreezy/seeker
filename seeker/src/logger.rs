@@ -29,6 +29,12 @@ impl io::Write for TracingWriter {
 }
 
 pub fn setup_logger(log_path: Option<&str>) -> Result<(), Box<dyn Error>> {
+    let env_filter = EnvFilter::new("seeker=trace")
+        .add_directive("seeker=trace".parse()?)
+        .add_directive("ssclient=trace".parse()?)
+        .add_directive("hermesdns=trace".parse()?)
+        .add_directive("tun=info".parse()?);
+
     if let Some(log_path) = log_path {
         if let Some(path) = PathBuf::from(log_path).parent() {
             std::fs::create_dir_all(path)?;
@@ -38,11 +44,6 @@ pub fn setup_logger(log_path: Option<&str>) -> Result<(), Box<dyn Error>> {
             RotationMode::Lines(100_000),
             20,
         )));
-        let env_filter = EnvFilter::new("seeker=trace")
-            .add_directive("seeker=trace".parse()?)
-            .add_directive("ssclient=trace".parse()?)
-            .add_directive("hermesdns=trace".parse()?)
-            .add_directive("tun=info".parse()?);
         let my_subscriber = FmtSubscriber::builder()
             .with_env_filter(env_filter)
             .with_ansi(false)
@@ -52,8 +53,7 @@ pub fn setup_logger(log_path: Option<&str>) -> Result<(), Box<dyn Error>> {
             .expect("setting tracing default failed");
     } else {
         let subscriber = FmtSubscriber::builder()
-            .with_env_filter(EnvFilter::from_default_env())
-            .with_ansi(false)
+            .with_env_filter(env_filter)
             .compact()
             .finish();
 

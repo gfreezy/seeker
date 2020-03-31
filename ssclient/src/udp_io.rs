@@ -22,8 +22,6 @@ pub struct SSUdpSocket {
     socket: UdpSocket,
     method: CipherType,
     key: Bytes,
-    recv_buf: Vec<u8>,
-    decrypt_buf: BytesMut,
 }
 
 impl SSUdpSocket {
@@ -36,24 +34,15 @@ impl SSUdpSocket {
         let local_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 0);
         let socket = UdpSocket::bind(local_addr).await?;
         socket.connect(server_addr).await?;
-        let decrypt_buf = BytesMut::with_capacity(MAXIMUM_UDP_PAYLOAD_SIZE);
-        let recv_buf = vec![0u8; MAXIMUM_UDP_PAYLOAD_SIZE];
 
         Ok(SSUdpSocket {
-            decrypt_buf,
-            recv_buf,
             socket,
             method,
             key,
         })
     }
     pub fn bind(socket: UdpSocket, method: CipherType, key: Bytes) -> SSUdpSocket {
-        let decrypt_buf = BytesMut::with_capacity(MAXIMUM_UDP_PAYLOAD_SIZE);
-        let recv_buf = vec![0u8; MAXIMUM_UDP_PAYLOAD_SIZE];
-
         SSUdpSocket {
-            decrypt_buf,
-            recv_buf,
             socket,
             method,
             key,
@@ -61,7 +50,8 @@ impl SSUdpSocket {
     }
 
     /// Send a UDP packet to addr through proxy
-    pub async fn send_to(&mut self, addr: &Address, payload: &[u8]) -> io::Result<()> {
+    pub async fn send_to(&self, payload: &[u8], sock_addr: SocketAddr) -> io::Result<usize> {
+        let addr: Address = sock_addr.into();
         debug!(
             "UDP server client send to {}, payload length {} bytes",
             addr,
@@ -69,32 +59,33 @@ impl SSUdpSocket {
         );
 
         // CLIENT -> SERVER protocol: ADDRESS + PAYLOAD
-        let mut send_buf = Vec::new();
+        let mut send_buf = Vec::with_capacity(addr.serialized_len() + payload.len());
         addr.write_to_buf(&mut send_buf);
         send_buf.extend_from_slice(payload);
 
-        let mut encrypt_buf = BytesMut::new();
+        let mut encrypt_buf = BytesMut::with_capacity(MAXIMUM_UDP_PAYLOAD_SIZE);
         encrypt_payload(self.method, &self.key, &send_buf, &mut encrypt_buf)?;
 
         let send_len = self.socket.send(&encrypt_buf[..]).await?;
 
         assert_eq!(encrypt_buf.len(), send_len);
 
-        Ok(())
+        Ok(payload.len())
     }
 
     /// Receive packet from Shadowsocks' UDP server
-    pub async fn recv_from(&mut self, buf: &mut [u8]) -> io::Result<(Address, usize)> {
+    pub async fn recv_from(&self, buf: &mut [u8]) -> io::Result<(usize, SocketAddr)> {
         // Waiting for response from server SERVER -> CLIENT
-        let recv_n = self.socket.recv(&mut self.recv_buf).await?;
+        let mut recv_buf = [0u8; MAXIMUM_UDP_PAYLOAD_SIZE];
 
-        let decrypt_buf = &mut self.decrypt_buf;
-        decrypt_buf.clear();
+        let recv_n = self.socket.recv(&mut recv_buf).await?;
+        let mut decrypt_buf = BytesMut::with_capacity(MAXIMUM_UDP_PAYLOAD_SIZE);
+
         let decrypt_size = decrypt_payload(
             self.method,
             &self.key,
-            &self.recv_buf[..recv_n],
-            decrypt_buf,
+            &recv_buf[..recv_n],
+            &mut decrypt_buf,
         )?;
         let addr = Address::read_from(&mut decrypt_buf.as_ref()).await?;
         let payload = &decrypt_buf[addr.serialized_len()..decrypt_size];
@@ -106,7 +97,16 @@ impl SSUdpSocket {
             payload.len()
         );
 
-        Ok((addr, payload.len()))
+        let sock_addr = match addr {
+            Address::SocketAddress(s) => s,
+            Address::DomainNameAddress(_, _) => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "invalid addr format",
+                ))
+            }
+        };
+        Ok((payload.len(), sock_addr))
     }
 }
 

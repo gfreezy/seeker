@@ -31,15 +31,25 @@ pub struct Config {
     pub dns_listen: String,
     #[serde(default)]
     pub gateway_mode: bool,
-    #[serde(with = "duration")]
+    #[serde(with = "duration", default = "default_connect_timeout")]
     pub probe_timeout: Duration,
-    #[serde(with = "duration")]
-    pub direct_connect_timeout: Duration,
-    #[serde(with = "duration")]
-    pub direct_read_timeout: Duration,
-    #[serde(with = "duration")]
-    pub direct_write_timeout: Duration,
+    #[serde(with = "duration", default = "default_connect_timeout")]
+    pub connect_timeout: Duration,
+    #[serde(with = "duration", default = "default_read_timeout")]
+    pub read_timeout: Duration,
+    #[serde(with = "duration", default = "default_write_timeout")]
+    pub write_timeout: Duration,
     pub max_connect_errors: usize,
+}
+
+fn default_read_timeout() -> Duration {
+    Duration::from_secs(30)
+}
+fn default_write_timeout() -> Duration {
+    Duration::from_secs(30)
+}
+fn default_connect_timeout() -> Duration {
+    Duration::from_millis(100)
 }
 
 mod ipv4_cidr {

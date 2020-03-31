@@ -1,18 +1,19 @@
 // mod client;
 //mod signal;
-mod connection;
 mod logger;
 mod proxy_client;
+mod proxy_tcp_stream;
+mod proxy_udp_socket;
 
 use std::error::Error;
 
 use crate::logger::setup_logger;
 use crate::proxy_client::ProxyClient;
+use async_signals::Signals;
+use async_std::prelude::{FutureExt, StreamExt};
 use async_std::task::block_on;
 use clap::{App, Arg};
 use config::Config;
-use std::sync::atomic::AtomicBool;
-use std::sync::Arc;
 use sysconfig::{DNSSetup, IpForward};
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -57,9 +58,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let mut config = Config::from_config_file(path)?;
 
-    let term = Arc::new(AtomicBool::new(false));
-    signal_hook::flag::register(signal_hook::SIGINT, Arc::clone(&term))?;
-    signal_hook::flag::register(signal_hook::SIGTERM, Arc::clone(&term))?;
+    let mut signals = Signals::new(vec![libc::SIGINT, libc::SIGTERM]).unwrap();
 
     let _dns_setup = DNSSetup::new();
     let _ip_forward = if config.gateway_mode {
@@ -71,8 +70,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     };
 
     block_on(async {
-        let client = ProxyClient::new(config, uid, term.clone()).await;
-        client.run().await;
+        let client = ProxyClient::new(config, uid).await;
+        client
+            .run()
+            .race(async {
+                signals.next().await.unwrap();
+            })
+            .await;
     });
 
     println!("Stop server. Bye bye...");
