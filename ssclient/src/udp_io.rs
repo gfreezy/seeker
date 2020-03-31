@@ -124,19 +124,19 @@ mod tests {
         let key = method.bytes_to_key(password.as_bytes());
         let server = "127.0.0.1:14188".to_socket_addrs().unwrap().next().unwrap();
         let data = b"GET / HTTP/1.1\r\n\r\n";
-        let addr = Address::DomainNameAddress("twitter.com".to_string(), 443);
+        let addr = "127.0.0.1:443".parse().unwrap();
         block_on(async {
             let key_clone = key.clone();
             let h = spawn(async move {
                 let u = UdpSocket::bind("0.0.0.0:14188").await.unwrap();
-                let mut udp = SSUdpSocket::bind(u, method, key_clone);
+                let udp = SSUdpSocket::bind(u, method, key_clone);
                 let mut b = vec![0; 1024];
-                let (_, s) = udp.recv_from(&mut b).await.unwrap();
+                let (s, _) = udp.recv_from(&mut b).await.unwrap();
                 assert_eq!(&b[..s], data);
             });
             sleep(Duration::from_secs(1)).await;
-            let mut udp = SSUdpSocket::new(server, method, key).await.unwrap();
-            udp.send_to(&addr, data).await.unwrap();
+            let udp = SSUdpSocket::new(server, method, key).await.unwrap();
+            udp.send_to(data, addr).await.unwrap();
             h.await;
         });
     }

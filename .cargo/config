@@ -1,8 +1,8 @@
 #[target.x86_64-unknown-linux-gnu]
 #runner = 'sudo -E'
-#
-#[target.x86_64-apple-darwin]
-#runner = 'sudo -E'
-#
+
+[target.x86_64-apple-darwin]
+runner = 'sudo -E'
+
 #[target.armv7-unknown-linux-gnueabi]
 #linker = "arm-linux-gnueabi-gcc"
