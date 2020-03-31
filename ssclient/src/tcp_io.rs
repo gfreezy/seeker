@@ -111,7 +111,7 @@ impl SSTcpStream {
         let mut addr_buf = BytesMut::with_capacity(addr.serialized_len());
         addr.write_to_buf(&mut addr_buf);
         ss_stream.write_all(&addr_buf).await?;
-        trace!("proxy handshake");
+        eprintln!("proxy handshake");
         Ok(ss_stream)
     }
 
@@ -199,10 +199,14 @@ impl SSTcpStream {
                 }
             };
 
+            trace!("new dec");
             self.dec = Some(Arc::new(Mutex::new(dec)));
-            *self.read_status.lock() = ReadStatus::Established;
-        }
+            trace!("set read status");
+        } else {
+            return Poll::Ready(Ok(()));
+        };
 
+        *self.read_status.lock() = ReadStatus::Established;
         Poll::Ready(Ok(()))
     }
 
@@ -212,8 +216,10 @@ impl SSTcpStream {
         buf: &mut [u8],
     ) -> Poll<io::Result<usize>> {
         let this = self.get_mut();
+        trace!("poll_read_handshake");
         ready!(this.poll_read_handshake(ctx))?;
 
+        trace!("decode");
         match *this.dec.as_ref().unwrap().lock() {
             DecryptedReader::Aead(ref mut r) => Pin::new(r).poll_read(ctx, buf),
             DecryptedReader::Stream(ref mut r) => Pin::new(r).poll_read(ctx, buf),
@@ -272,14 +278,25 @@ impl Write for SSTcpStream {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::setup_tracing_subscriber;
     use async_std::net::TcpListener;
-    use async_std::task::{block_on, spawn};
+    use async_std::task::{block_on, sleep, spawn};
     use std::net::ToSocketAddrs;
+    use std::time::Duration;
+    use tracing::{trace, trace_span};
+    use tracing_futures::Instrument;
+
+    #[allow(dead_code)]
+    fn setup_tracing_subscriber() {
+        use tracing_subscriber::fmt::Subscriber;
+        use tracing_subscriber::EnvFilter;
+
+        let builder = Subscriber::builder().with_env_filter(EnvFilter::new("ssclient=trace"));
+        builder.try_init().unwrap();
+    }
 
     #[test]
     fn test_tcp_read_write() {
-        setup_tracing_subscriber();
+        // setup_tracing_subscriber();
         let method = CipherType::ChaCha20Ietf;
         let password = "GwEU01uXWm0Pp6t08";
         let key = method.bytes_to_key(password.as_bytes());
@@ -290,21 +307,31 @@ mod tests {
             let key_clone = key.clone();
             let addr_clone = addr.clone();
             let listener = TcpListener::bind("0.0.0.0:14187").await.unwrap();
-            let h = spawn(async move {
-                let (stream, _) = listener.accept().await.unwrap();
-                let mut ss_server = SSTcpStream::accept(stream, method, key);
-                let addr = Address::read_from(&mut ss_server).await.unwrap();
-                assert_eq!(addr, addr_clone);
-                let mut buf = vec![0; 1024];
-                let s = ss_server.read(&mut buf).await.unwrap();
-                assert_eq!(&buf[..s], data);
-            });
+            let h = spawn(
+                async move {
+                    let (stream, _) = listener.accept().await.unwrap();
+                    trace!("accept conn");
+                    let mut ss_server = SSTcpStream::accept(stream, method, key);
+                    let addr = Address::read_from(&mut ss_server).await.unwrap();
+                    trace!("read address");
+                    assert_eq!(addr, addr_clone);
+                    let mut buf = vec![0; 1024];
+                    let s = ss_server.read(&mut buf).await.unwrap();
+                    trace!("read data");
+                    ss_server.write(data).await.unwrap();
+                    assert_eq!(&buf[..s], data);
+                }
+                .instrument(trace_span!("server")),
+            );
 
-            let mut conn =
-                SSTcpStream::connect(addr, server, method, key_clone, Duration::from_secs(10))
-                    .await
-                    .unwrap();
+            sleep(Duration::from_secs(3)).await;
+            trace!("before connect");
+            let mut conn = SSTcpStream::connect(addr, server, method, key_clone)
+                .await
+                .unwrap();
+            trace!("before write");
             conn.write_all(data).await.unwrap();
+            trace!("after write");
             drop(conn);
             h.await;
         })
