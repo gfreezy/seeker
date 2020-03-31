@@ -49,9 +49,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         .get_matches();
 
     let path = matches.value_of("config").unwrap();
-    let uid = matches
-        .value_of("user_id")
-        .map(|uid| uid.parse::<u16>().unwrap());
+    let uid = matches.value_of("user_id").map(|uid| uid.parse().unwrap());
     let log_path = matches.value_of("log");
 
     setup_logger(log_path)?;
