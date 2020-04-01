@@ -15,7 +15,7 @@ use sysconfig::setup_ip;
 
 const BEGIN_PORT: u16 = 50000;
 const END_PORT: u16 = 60000;
-const EXPIRE_SECONDS: u64 = 1 * 60 * 1000;
+const EXPIRE_SECONDS: u64 = 60 * 1000;
 
 macro_rules! route_packet {
     ($packet_ty: tt, $ipv4_packet: expr, $session_manager: expr, $relay_addr: expr, $relay_port: expr) => {{
@@ -118,7 +118,7 @@ pub fn run_nat(
                 ),
                 _ => continue,
             } {
-                tun.write(packet.as_ref()).unwrap();
+                let _ = tun.write(packet.as_ref()).unwrap();
             }
         }
     });
