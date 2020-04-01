@@ -31,15 +31,25 @@ pub struct Config {
     pub dns_listen: String,
     #[serde(default)]
     pub gateway_mode: bool,
-    #[serde(with = "duration")]
+    #[serde(with = "duration", default = "default_connect_timeout")]
     pub probe_timeout: Duration,
-    #[serde(with = "duration")]
-    pub direct_connect_timeout: Duration,
-    #[serde(with = "duration")]
-    pub direct_read_timeout: Duration,
-    #[serde(with = "duration")]
-    pub direct_write_timeout: Duration,
+    #[serde(with = "duration", default = "default_connect_timeout")]
+    pub connect_timeout: Duration,
+    #[serde(with = "duration", default = "default_read_timeout")]
+    pub read_timeout: Duration,
+    #[serde(with = "duration", default = "default_write_timeout")]
+    pub write_timeout: Duration,
     pub max_connect_errors: usize,
+}
+
+fn default_read_timeout() -> Duration {
+    Duration::from_secs(30)
+}
+fn default_write_timeout() -> Duration {
+    Duration::from_secs(30)
+}
+fn default_connect_timeout() -> Duration {
+    Duration::from_millis(100)
 }
 
 mod ipv4_cidr {
@@ -132,174 +142,7 @@ impl Config {
 #[cfg(test)]
 mod tests {
     use super::duration::parse_duration;
-    use crate::Config;
     use std::time::Duration;
-
-    #[test]
-    fn test_deserialize() {
-        let content = r#"
-dns_start_ip: 10.0.0.10
-dns_server: 223.5.5.5:53
-tun_name: utun4
-tun_ip: 10.0.0.1
-tun_cidr: 10.0.0.0/16
-dns_listen: 0.0.0.0:53
-gateway_mode: true
-verbose: false
-probe_timeout: 10ms
-direct_connect_timeout: 1s
-direct_read_timeout: 1s
-direct_write_timeout: 1s
-max_connect_errors: 20
-shadowsocks_servers:
-  - name: server1
-    addr: domain-or-ip-to-ss-server:134
-    method: chacha20-ietf
-    password: password
-    connect_timeout: 5s
-    read_timeout: 30s
-    write_timeout: 30s
-    idle_connections: 10
-  - name: server2
-    addr: 192.168.2.3:234
-    method: chacha20-ietf
-    password: password
-    connect_timeout: 5s
-    read_timeout: 30s
-    write_timeout: 30s
-    idle_connections: 10
-
-socks5_server:
-    addr: domain-or-ip-to-ss-server:134
-    connect_timeout: 5s
-    read_timeout: 30s
-    write_timeout: 30s
-    idle_connections: 10
-rules:
-  - 'DOMAIN,audio-ssl.itunes.apple.com,DIRECT'
-  - 'DOMAIN,gspe1-ssl.ls.apple.com,REJECT'
-  - 'DOMAIN-SUFFIX,aaplimg.com,DIRECT'
-  - 'DOMAIN-SUFFIX,apple.co,DIRECT'
-  - 'DOMAIN-KEYWORD,bbcfmt,PROXY'
-  - 'DOMAIN-KEYWORD,uk-live,PROXY'
-  - 'DOMAIN-SUFFIX,snssdk.com,DIRECT'
-  - 'DOMAIN-SUFFIX,toutiao.com,PROBE'
-  - 'MATCH,PROBE'
-        "#;
-
-        let conf: Config = serde_yaml::from_str(&content).unwrap();
-        assert_eq!(
-            format!("{:#?}", conf),
-            r#"Config {
-    shadowsocks_servers: Some(
-        [
-            ShadowsocksServerConfig {
-                name: "server1",
-                addr: DomainName(
-                    "domain-or-ip-to-ss-server",
-                    134,
-                ),
-                password: "password",
-                method: ChaCha20Ietf,
-                connect_timeout: 5s,
-                read_timeout: 30s,
-                write_timeout: 30s,
-                idle_connections: 10,
-            },
-            ShadowsocksServerConfig {
-                name: "server2",
-                addr: SocketAddr(
-                    V4(
-                        192.168.2.3:234,
-                    ),
-                ),
-                password: "password",
-                method: ChaCha20Ietf,
-                connect_timeout: 5s,
-                read_timeout: 30s,
-                write_timeout: 30s,
-                idle_connections: 10,
-            },
-        ],
-    ),
-    socks5_server: Some(
-        Socks5ServerConfig {
-            addr: DomainName(
-                "domain-or-ip-to-ss-server",
-                134,
-            ),
-            connect_timeout: 5s,
-            read_timeout: 30s,
-            write_timeout: 30s,
-        },
-    ),
-    dns_start_ip: 10.0.0.10,
-    dns_server: V4(
-        223.5.5.5:53,
-    ),
-    tun_name: "utun4",
-    tun_ip: 10.0.0.1,
-    verbose: false,
-    tun_cidr: Cidr {
-        address: Address(
-            [
-                10,
-                0,
-                0,
-                0,
-            ],
-        ),
-        prefix_len: 16,
-    },
-    rules: ProxyRules {
-        rules: [
-            Domain(
-                "audio-ssl.itunes.apple.com",
-                Direct,
-            ),
-            Domain(
-                "gspe1-ssl.ls.apple.com",
-                Reject,
-            ),
-            DomainSuffix(
-                "aaplimg.com",
-                Direct,
-            ),
-            DomainSuffix(
-                "apple.co",
-                Direct,
-            ),
-            DomainKeyword(
-                "bbcfmt",
-                Proxy,
-            ),
-            DomainKeyword(
-                "uk-live",
-                Proxy,
-            ),
-            DomainSuffix(
-                "snssdk.com",
-                Direct,
-            ),
-            DomainSuffix(
-                "toutiao.com",
-                Probe,
-            ),
-            Match(
-                Probe,
-            ),
-        ],
-    },
-    dns_listen: "0.0.0.0:53",
-    gateway_mode: true,
-    probe_timeout: 10ms,
-    direct_connect_timeout: 1s,
-    direct_read_timeout: 1s,
-    direct_write_timeout: 1s,
-    max_connect_errors: 20,
-}"#
-        )
-    }
 
     #[test]
     fn test_parse_duration() {

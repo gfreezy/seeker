@@ -1,92 +1,339 @@
-use crate::MAX_PACKET_SIZE;
-use async_std::io::{Read, ReadExt};
-use byteorder::{BigEndian, ByteOrder};
-use crypto::{BoxAeadDecryptor, BoxAeadEncryptor, CipherType};
+mod aead;
+mod stream;
+
+use async_std::io::{Read, Write};
+use async_std::prelude::*;
 use std::io::{ErrorKind, Result};
 
-fn buffer_size(tag_size: usize, data: &[u8]) -> usize {
-    2 + tag_size // len and len_tag
-        + data.len() + tag_size // data and data_tag
+use std::{
+    io,
+    pin::Pin,
+    task::{Context, Poll},
+};
+
+use bytes::{Bytes, BytesMut};
+use futures::ready;
+use tracing::trace;
+
+use crypto::{CipherCategory, CipherType};
+
+use self::{
+    aead::{DecryptedReader as AeadDecryptedReader, EncryptedWriter as AeadEncryptedWriter},
+    stream::{DecryptedReader as StreamDecryptedReader, EncryptedWriter as StreamEncryptedWriter},
+};
+use async_std::net::TcpStream;
+use config::Address;
+use parking_lot::Mutex;
+use std::net::SocketAddr;
+use std::sync::Arc;
+
+enum DecryptedReader<T> {
+    Aead(AeadDecryptedReader<T>),
+    Stream(StreamDecryptedReader<T>),
 }
 
-pub(crate) fn aead_encrypted_write(
-    cipher: &mut BoxAeadEncryptor,
-    buf: &[u8],
-    dst: &mut [u8],
-    t: CipherType,
-) -> Result<usize> {
-    let tag_size = t.tag_size();
-
-    assert!(
-        buf.len() <= MAX_PACKET_SIZE,
-        "Buffer size too large, AEAD encryption protocol requires buffer to be smaller than 0x3FFF"
-    );
-
-    let output_length = buffer_size(tag_size, buf);
-    let data_length = buf.len() as u16;
-    let mut data_len_buf = [0u8; 2];
-    BigEndian::write_u16(&mut data_len_buf, data_length);
-
-    let output_length_size = 2 + tag_size;
-    cipher.encrypt(&data_len_buf, &mut dst[..output_length_size]);
-    cipher.encrypt(buf, &mut dst[output_length_size..output_length]);
-
-    Ok(output_length)
+enum EncryptedWriter<T> {
+    Aead(AeadEncryptedWriter<T>),
+    Stream(StreamEncryptedWriter<T>),
 }
 
-pub(crate) async fn aead_decrypted_read<T: Read + Unpin>(
-    cipher: &mut BoxAeadDecryptor,
-    mut src: T,
-    tmp_buf: &mut [u8],
-    output: &mut [u8],
-    t: CipherType,
-) -> Result<usize> {
-    let tag_size = t.tag_size();
-    src.read_exact(&mut tmp_buf[..2 + tag_size]).await?;
-    let mut len_buf = [0u8; 2];
-    cipher.decrypt(&tmp_buf[..2 + tag_size], &mut len_buf)?;
-    let len = BigEndian::read_u16(&len_buf) as usize;
-    if len > MAX_PACKET_SIZE {
-        return Err(ErrorKind::InvalidData.into());
+/// Steps for initializing a DecryptedReader
+enum ReadStatus {
+    /// Waiting for initializing vector (or nonce for AEAD ciphers)
+    ///
+    /// (context, Buffer, already_read_bytes, method, key)
+    WaitIv(Vec<u8>, usize, CipherType, Bytes),
+
+    /// Connection is established, DecryptedReader is initialized
+    Established,
+}
+
+/// A bidirectional stream for communicating with ShadowSocks' server
+#[derive(Clone)]
+pub struct SSTcpStream {
+    stream: TcpStream,
+    dec: Option<Arc<Mutex<DecryptedReader<TcpStream>>>>,
+    enc: Arc<Mutex<EncryptedWriter<TcpStream>>>,
+    read_status: Arc<Mutex<ReadStatus>>,
+}
+
+impl SSTcpStream {
+    /// Create a new CryptoStream with the underlying stream connection
+    pub async fn connect(
+        addr: Address,
+        server_addr: SocketAddr,
+        method: CipherType,
+        key: Bytes,
+    ) -> Result<SSTcpStream> {
+        let stream = TcpStream::connect(server_addr).await?;
+        let prev_len = match method.category() {
+            CipherCategory::Stream => method.iv_size(),
+            CipherCategory::Aead => method.salt_size(),
+        };
+
+        let iv = match method.category() {
+            CipherCategory::Stream => {
+                let local_iv = method.gen_init_vec();
+                trace!("generated Stream cipher IV {:?}", local_iv);
+                local_iv
+            }
+            CipherCategory::Aead => {
+                let local_salt = method.gen_salt();
+                trace!("generated AEAD cipher salt {:?}", local_salt);
+                local_salt
+            }
+        };
+
+        let enc = match method.category() {
+            CipherCategory::Stream => EncryptedWriter::Stream(StreamEncryptedWriter::new(
+                stream.clone(),
+                method,
+                &key,
+                iv,
+            )),
+            CipherCategory::Aead => {
+                EncryptedWriter::Aead(AeadEncryptedWriter::new(stream.clone(), method, &key, iv))
+            }
+        };
+
+        let mut ss_stream = SSTcpStream {
+            stream,
+            dec: None,
+            enc: Arc::new(Mutex::new(enc)),
+            read_status: Arc::new(Mutex::new(ReadStatus::WaitIv(
+                vec![0u8; prev_len],
+                0usize,
+                method,
+                key,
+            ))),
+        };
+
+        let mut addr_buf = BytesMut::with_capacity(addr.serialized_len());
+        addr.write_to_buf(&mut addr_buf);
+        ss_stream.write_all(&addr_buf).await?;
+        eprintln!("proxy handshake");
+        Ok(ss_stream)
     }
 
-    src.read_exact(&mut tmp_buf[..len + tag_size]).await?;
-    cipher.decrypt(&tmp_buf[..len + tag_size], &mut output[..len])?;
-    Ok(len)
+    pub fn accept(stream: TcpStream, method: CipherType, key: Bytes) -> SSTcpStream {
+        let prev_len = match method.category() {
+            CipherCategory::Stream => method.iv_size(),
+            CipherCategory::Aead => method.salt_size(),
+        };
+
+        let iv = match method.category() {
+            CipherCategory::Stream => {
+                let local_iv = method.gen_init_vec();
+                trace!("generated Stream cipher IV {:?}", local_iv);
+                local_iv
+            }
+            CipherCategory::Aead => {
+                let local_salt = method.gen_salt();
+                trace!("generated AEAD cipher salt {:?}", local_salt);
+                local_salt
+            }
+        };
+
+        let enc = match method.category() {
+            CipherCategory::Stream => EncryptedWriter::Stream(StreamEncryptedWriter::new(
+                stream.clone(),
+                method,
+                &key,
+                iv,
+            )),
+            CipherCategory::Aead => {
+                EncryptedWriter::Aead(AeadEncryptedWriter::new(stream.clone(), method, &key, iv))
+            }
+        };
+
+        SSTcpStream {
+            stream,
+            dec: None,
+            enc: Arc::new(Mutex::new(enc)),
+            read_status: Arc::new(Mutex::new(ReadStatus::WaitIv(
+                vec![0u8; prev_len],
+                0usize,
+                method,
+                key,
+            ))),
+        }
+    }
+
+    /// Return a reference to the underlying stream
+    pub fn get_ref(&self) -> &TcpStream {
+        &self.stream
+    }
+
+    fn poll_read_handshake(&mut self, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        if let ReadStatus::WaitIv(ref mut buf, ref mut pos, method, ref key) =
+            *self.read_status.lock()
+        {
+            trace!("wait iv");
+            while *pos < buf.len() {
+                let n = ready!(Pin::new(&mut self.stream).poll_read(cx, &mut buf[*pos..]))?;
+                if n == 0 {
+                    trace!("wait iv error");
+                    return Poll::Ready(Err(ErrorKind::UnexpectedEof.into()));
+                }
+                *pos += n;
+            }
+
+            let dec = match method.category() {
+                CipherCategory::Stream => {
+                    trace!("got Stream cipher IV {:?}", &buf);
+                    DecryptedReader::Stream(StreamDecryptedReader::new(
+                        self.stream.clone(),
+                        method,
+                        key,
+                        &buf,
+                    ))
+                }
+                CipherCategory::Aead => {
+                    trace!("got AEAD cipher salt {:?}", &buf);
+                    DecryptedReader::Aead(AeadDecryptedReader::new(
+                        self.stream.clone(),
+                        method,
+                        key,
+                        &buf,
+                    ))
+                }
+            };
+
+            trace!("new dec");
+            self.dec = Some(Arc::new(Mutex::new(dec)));
+            trace!("set read status");
+        } else {
+            return Poll::Ready(Ok(()));
+        };
+
+        *self.read_status.lock() = ReadStatus::Established;
+        Poll::Ready(Ok(()))
+    }
+
+    fn priv_poll_read(
+        self: Pin<&mut Self>,
+        ctx: &mut Context<'_>,
+        buf: &mut [u8],
+    ) -> Poll<io::Result<usize>> {
+        let this = self.get_mut();
+        trace!("poll_read_handshake");
+        ready!(this.poll_read_handshake(ctx))?;
+
+        trace!("decode");
+        match *this.dec.as_ref().unwrap().lock() {
+            DecryptedReader::Aead(ref mut r) => Pin::new(r).poll_read(ctx, buf),
+            DecryptedReader::Stream(ref mut r) => Pin::new(r).poll_read(ctx, buf),
+        }
+    }
+
+    fn priv_poll_write(
+        self: Pin<&mut Self>,
+        ctx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        let this = self.get_mut();
+        match *this.enc.lock() {
+            EncryptedWriter::Aead(ref mut w) => Pin::new(w).poll_write(ctx, buf),
+            EncryptedWriter::Stream(ref mut w) => Pin::new(w).poll_write(ctx, buf),
+        }
+    }
+
+    fn priv_poll_flush(mut self: Pin<&mut Self>, ctx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Write::poll_flush(Pin::new(&mut self.stream), ctx)
+    }
+
+    fn priv_poll_close(mut self: Pin<&mut Self>, ctx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Write::poll_close(Pin::new(&mut self.stream), ctx)
+    }
+}
+
+impl Read for SSTcpStream {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        ctx: &mut Context<'_>,
+        buf: &mut [u8],
+    ) -> Poll<io::Result<usize>> {
+        self.priv_poll_read(ctx, buf)
+    }
+}
+
+impl Write for SSTcpStream {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        ctx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        self.priv_poll_write(ctx, buf)
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, ctx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        self.priv_poll_flush(ctx)
+    }
+
+    fn poll_close(self: Pin<&mut Self>, ctx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        self.priv_poll_close(ctx)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use async_std::task;
+    use async_std::net::TcpListener;
+    use async_std::task::{block_on, sleep, spawn};
+    use std::net::ToSocketAddrs;
+    use std::time::Duration;
+    use tracing::{trace, trace_span};
+    use tracing_futures::Instrument;
+
+    #[allow(dead_code)]
+    fn setup_tracing_subscriber() {
+        use tracing_subscriber::fmt::Subscriber;
+        use tracing_subscriber::EnvFilter;
+
+        let builder = Subscriber::builder().with_env_filter(EnvFilter::new("ssclient=trace"));
+        builder.try_init().unwrap();
+    }
 
     #[test]
-    fn test_encrypt_and_decrypt_stream() {
-        let cipher_type = CipherType::XChaCha20IetfPoly1305;
-        let key = cipher_type.bytes_to_key(b"keasdfsdfy");
-        let iv = cipher_type.gen_salt();
-        let mut encrypter_cipher = crypto::new_aead_encryptor(cipher_type, &key, &iv);
-        let mut decrypter_cipher = crypto::new_aead_decryptor(cipher_type, &key, &iv);
+    fn test_tcp_read_write() {
+        // setup_tracing_subscriber();
+        let method = CipherType::ChaCha20Ietf;
+        let password = "GwEU01uXWm0Pp6t08";
+        let key = method.bytes_to_key(password.as_bytes());
+        let server = "127.0.0.1:14187".to_socket_addrs().unwrap().next().unwrap();
+        let data = b"GET / HTTP/1.1\r\n\r\n";
+        let addr = Address::DomainNameAddress("twitter.com".to_string(), 443);
+        block_on(async {
+            let key_clone = key.clone();
+            let addr_clone = addr.clone();
+            let listener = TcpListener::bind("0.0.0.0:14187").await.unwrap();
+            let h = spawn(
+                async move {
+                    let (stream, _) = listener.accept().await.unwrap();
+                    trace!("accept conn");
+                    let mut ss_server = SSTcpStream::accept(stream, method, key);
+                    let addr = Address::read_from(&mut ss_server).await.unwrap();
+                    trace!("read address");
+                    assert_eq!(addr, addr_clone);
+                    let mut buf = vec![0; 1024];
+                    let s = ss_server.read(&mut buf).await.unwrap();
+                    trace!("read data");
+                    ss_server.write(data).await.unwrap();
+                    assert_eq!(&buf[..s], data);
+                }
+                .instrument(trace_span!("server")),
+            );
 
-        let buf = b"hello";
-        let mut dst = [0; MAX_PACKET_SIZE];
-        let mut tmp_buf = [0; MAX_PACKET_SIZE];
-        let mut output = [0; MAX_PACKET_SIZE];
-
-        let size =
-            aead_encrypted_write(&mut encrypter_cipher, &buf[..], &mut dst, cipher_type).unwrap();
-
-        task::block_on(async {
-            let s = aead_decrypted_read(
-                &mut decrypter_cipher,
-                &dst[..size],
-                &mut tmp_buf,
-                &mut output,
-                cipher_type,
-            )
-            .await
-            .unwrap();
-            assert_eq!(&output[..s], buf);
+            sleep(Duration::from_secs(3)).await;
+            trace!("before connect");
+            let mut conn = SSTcpStream::connect(addr, server, method, key_clone)
+                .await
+                .unwrap();
+            trace!("before write");
+            conn.write_all(data).await.unwrap();
+            trace!("after write");
+            drop(conn);
+            h.await;
         })
     }
 }

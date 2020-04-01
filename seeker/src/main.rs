@@ -1,130 +1,20 @@
-mod client;
+// mod client;
 //mod signal;
+mod logger;
+mod proxy_client;
+mod proxy_tcp_stream;
+mod proxy_udp_socket;
 
 use std::error::Error;
 
-use crate::client::ruled_client::RuledClient;
-use crate::client::Client;
-use async_std::io::timeout;
-use async_std::prelude::*;
-use async_std::task::{block_on, spawn};
+use crate::logger::setup_logger;
+use crate::proxy_client::ProxyClient;
+use async_signals::Signals;
+use async_std::prelude::{FutureExt, StreamExt};
+use async_std::task::block_on;
 use clap::{App, Arg};
-use config::{Address, Config};
-use dnsserver::create_dns_server;
-use file_rotate::{FileRotate, RotationMode};
-use std::io;
-use std::io::ErrorKind;
-use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use config::Config;
 use sysconfig::{DNSSetup, IpForward};
-use tracing::{trace, trace_span};
-use tracing_futures::Instrument;
-use tracing_subscriber::{EnvFilter, FmtSubscriber};
-use tun::socket::TunSocket;
-use tun::Tun;
-
-async fn handle_connection<T: Client + Clone + Send + Sync + 'static>(
-    client: T,
-    config: Config,
-    term: Arc<AtomicBool>,
-) {
-    let (dns_server, resolver) = create_dns_server(
-        "dns.db",
-        config.dns_listen.clone(),
-        config.dns_start_ip,
-        config.rules.clone(),
-        (config.dns_server.ip().to_string(), config.dns_server.port()),
-    )
-    .await;
-    println!("Spawn DNS server");
-    spawn(
-        dns_server
-            .run_server()
-            .instrument(trace_span!("dns_server.run_server")),
-    );
-    spawn(Tun::bg_send().instrument(trace_span!("Tun::bg_send")));
-
-    let mut stream = Tun::listen();
-    loop {
-        let socket = timeout(Duration::from_secs(1), async {
-            stream.next().await.transpose()
-        })
-        .await;
-        let socket: TunSocket = match socket {
-            Ok(Some(s)) => s,
-            Ok(None) => break,
-            Err(e) if e.kind() == ErrorKind::TimedOut => {
-                if term.load(Ordering::Relaxed) {
-                    break;
-                } else {
-                    continue;
-                }
-            }
-            Err(e) => panic!(e),
-        };
-        let resolver_clone = resolver.clone();
-        let client_clone = client.clone();
-        let remote_addr = socket.local_addr();
-
-        spawn(
-            async move {
-                let ip = remote_addr.ip().to_string();
-                let host = resolver_clone
-                    .lookup_host(&ip)
-                    .instrument(trace_span!("lookup host", ip = ?ip))
-                    .await
-                    .map(|s| Address::DomainNameAddress(s, remote_addr.port()))
-                    .unwrap_or_else(|| Address::SocketAddress(remote_addr));
-
-                trace!(ip = ?ip, host = ?host, "lookup host");
-
-                match socket {
-                    TunSocket::Tcp(socket) => {
-                        let src_addr = socket.remote_addr();
-                        client_clone
-                            .handle_tcp(socket, host.clone())
-                            .instrument(
-                                trace_span!("handle tcp", src_addr = %src_addr, host = %host),
-                            )
-                            .await
-                    }
-                    TunSocket::Udp(socket) => {
-                        client_clone
-                            .handle_udp(socket, host.clone())
-                            .instrument(trace_span!("handle udp", host = %host))
-                            .await
-                    }
-                }
-            }
-            .instrument(trace_span!("handle socket", socket = %remote_addr)),
-        );
-    }
-}
-
-#[derive(Clone)]
-struct TracingWriter {
-    file_rotate: Arc<Mutex<FileRotate>>,
-}
-
-impl TracingWriter {
-    fn new(file_rotate: Arc<Mutex<FileRotate>>) -> Self {
-        TracingWriter { file_rotate }
-    }
-}
-
-impl io::Write for TracingWriter {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        let mut guard = self.file_rotate.lock().unwrap();
-        guard.write(buf)
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        let mut guard = self.file_rotate.lock().unwrap();
-        guard.flush()
-    }
-}
 
 fn main() -> Result<(), Box<dyn Error>> {
     let version = env!("CARGO_PKG_VERSION");
@@ -162,50 +52,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     let uid = matches.value_of("user_id").map(|uid| uid.parse().unwrap());
     let log_path = matches.value_of("log");
 
-    if let Some(log_path) = log_path {
-        if let Some(path) = PathBuf::from(log_path).parent() {
-            std::fs::create_dir_all(path)?;
-        }
-        let logger = Arc::new(Mutex::new(FileRotate::new(
-            log_path,
-            RotationMode::Lines(100_000),
-            20,
-        )));
-        let env_filter = EnvFilter::new("seeker=trace")
-            .add_directive("seeker=trace".parse()?)
-            .add_directive("ssclient=trace".parse()?)
-            .add_directive("hermesdns=trace".parse()?)
-            .add_directive("tun=info".parse()?);
-        let my_subscriber = FmtSubscriber::builder()
-            .with_env_filter(env_filter)
-            .with_ansi(false)
-            .with_writer(move || TracingWriter::new(logger.clone()))
-            .finish();
-        tracing::subscriber::set_global_default(my_subscriber)
-            .expect("setting tracing default failed");
-    } else {
-        let subscriber = FmtSubscriber::builder()
-            .with_env_filter(EnvFilter::from_default_env())
-            .with_ansi(false)
-            .compact()
-            .finish();
-
-        tracing::subscriber::set_global_default(subscriber)
-            .expect("setting tracing default failed");
-    };
+    setup_logger(log_path)?;
 
     let mut config = Config::from_config_file(path)?;
 
-    let term = Arc::new(AtomicBool::new(false));
-    signal_hook::flag::register(signal_hook::SIGINT, Arc::clone(&term))?;
-    signal_hook::flag::register(signal_hook::SIGTERM, Arc::clone(&term))?;
-
-    Tun::setup(
-        config.tun_name.clone(),
-        config.tun_ip,
-        config.tun_cidr,
-        term.clone(),
-    );
+    let mut signals = Signals::new(vec![libc::SIGINT, libc::SIGTERM]).unwrap();
 
     let _dns_setup = DNSSetup::new();
     let _ip_forward = if config.gateway_mode {
@@ -217,9 +68,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     };
 
     block_on(async {
-        let client = RuledClient::new(config.clone(), uid, term.clone()).await;
-
-        handle_connection(client, config, term.clone()).await;
+        let client = ProxyClient::new(config, uid).await;
+        client
+            .run()
+            .race(async {
+                signals.next().await.unwrap();
+            })
+            .await;
     });
 
     println!("Stop server. Bye bye...");

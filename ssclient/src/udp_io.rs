@@ -1,168 +1,143 @@
-//! Crypto protocol for ShadowSocks UDP
-//!
-//! Payload with stream cipher
-//! ```plain
-//! +-------+----------+
-//! |  IV   | Payload  |
-//! +-------+----------+
-//! | Fixed | Variable |
-//! +-------+----------+
-//! ```
-//!
-//! Payload with AEAD cipher
-//!
-//! ```plain
-//! UDP (after encryption, *ciphertext*)
-//! +--------+-----------+-----------+
-//! | NONCE  |  *Data*   |  Data_TAG |
-//! +--------+-----------+-----------+
-//! | Fixed  | Variable  |   Fixed   |
-//! +--------+-----------+-----------+
-//! ```
+//! UDP relay client
+pub mod crypto_io;
 
-use std::io::{Error, ErrorKind, Result};
+use std::{
+    io,
+    net::{IpAddr, Ipv4Addr, SocketAddr},
+};
 
-use bytes::{BufMut, BytesMut};
-use crypto::{CipherCategory, CipherType, CryptoMode};
+use bytes::{Bytes, BytesMut};
+use tracing::debug;
 
-/// Encrypt payload into ShadowSocks UDP encrypted packet
-pub fn encrypt_payload(
-    t: CipherType,
-    key: &[u8],
-    payload: &[u8],
-    output: &mut BytesMut,
-) -> Result<usize> {
-    match t.category() {
-        CipherCategory::Stream => encrypt_payload_stream(t, key, payload, output),
-        CipherCategory::Aead => encrypt_payload_aead(t, key, payload, output),
+use self::crypto_io::{decrypt_payload, encrypt_payload};
+
+use async_std::net::UdpSocket;
+use config::Address;
+use crypto::CipherType;
+
+pub const MAXIMUM_UDP_PAYLOAD_SIZE: usize = 1500;
+
+/// UDP client for communicating with ShadowSocks' server
+pub struct SSUdpSocket {
+    socket: UdpSocket,
+    method: CipherType,
+    key: Bytes,
+}
+
+impl SSUdpSocket {
+    /// Create a client to communicate with Shadowsocks' UDP server
+    pub async fn new(
+        server_addr: SocketAddr,
+        method: CipherType,
+        key: Bytes,
+    ) -> io::Result<SSUdpSocket> {
+        let local_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 0);
+        let socket = UdpSocket::bind(local_addr).await?;
+        socket.connect(server_addr).await?;
+
+        Ok(SSUdpSocket {
+            socket,
+            method,
+            key,
+        })
     }
-}
-
-/// Decrypt payload from ShadowSocks UDP encrypted packet
-pub fn decrypt_payload(
-    t: CipherType,
-    key: &[u8],
-    payload: &[u8],
-    output: &mut BytesMut,
-) -> Result<usize> {
-    match t.category() {
-        CipherCategory::Stream => decrypt_payload_stream(t, key, payload, output),
-        CipherCategory::Aead => decrypt_payload_aead(t, key, payload, output),
-    }
-}
-
-fn encrypt_payload_aead(
-    t: CipherType,
-    key: &[u8],
-    payload: &[u8],
-    output: &mut BytesMut,
-) -> Result<usize> {
-    let salt = t.gen_salt();
-    let tag_size = t.tag_size();
-    let mut cipher = crypto::new_aead_encryptor(t, key, &salt);
-
-    let salt_len = salt.len();
-    output.put_slice(&salt);
-    output.resize(salt_len + payload.len() + tag_size, 0);
-
-    cipher.encrypt(
-        payload,
-        &mut output[salt_len..salt_len + payload.len() + tag_size],
-    );
-
-    Ok(salt_len + payload.len() + tag_size)
-}
-
-fn decrypt_payload_aead(
-    t: CipherType,
-    key: &[u8],
-    payload: &[u8],
-    output: &mut BytesMut,
-) -> Result<usize> {
-    let tag_size = t.tag_size();
-    let salt_size = t.salt_size();
-
-    if payload.len() < tag_size + salt_size {
-        let err = Error::new(ErrorKind::UnexpectedEof, "udp packet too short");
-        return Err(err);
+    pub fn bind(socket: UdpSocket, method: CipherType, key: Bytes) -> SSUdpSocket {
+        SSUdpSocket {
+            socket,
+            method,
+            key,
+        }
     }
 
-    let salt = &payload[..salt_size];
-    let data = &payload[salt_size..];
-    let data_length = payload.len() - tag_size - salt_size;
+    /// Send a UDP packet to addr through proxy
+    pub async fn send_to(&self, payload: &[u8], sock_addr: SocketAddr) -> io::Result<usize> {
+        let addr: Address = sock_addr.into();
+        debug!(
+            "UDP server client send to {}, payload length {} bytes",
+            addr,
+            payload.len()
+        );
 
-    let mut cipher = crypto::new_aead_decryptor(t, key, salt);
+        // CLIENT -> SERVER protocol: ADDRESS + PAYLOAD
+        let mut send_buf = Vec::with_capacity(addr.serialized_len() + payload.len());
+        addr.write_to_buf(&mut send_buf);
+        send_buf.extend_from_slice(payload);
 
-    output.resize(data_length, 0);
-    cipher.decrypt(data, &mut output[..data_length])?;
+        let mut encrypt_buf = BytesMut::with_capacity(MAXIMUM_UDP_PAYLOAD_SIZE);
+        encrypt_payload(self.method, &self.key, &send_buf, &mut encrypt_buf)?;
 
-    Ok(data_length)
-}
+        let send_len = self.socket.send(&encrypt_buf[..]).await?;
 
-fn encrypt_payload_stream(
-    t: CipherType,
-    key: &[u8],
-    payload: &[u8],
-    output: &mut BytesMut,
-) -> Result<usize> {
-    let iv = t.gen_init_vec();
-    let mut cipher = crypto::new_stream(t, key, &iv, CryptoMode::Encrypt);
+        assert_eq!(encrypt_buf.len(), send_len);
 
-    output.put_slice(&iv);
-    cipher.update(payload, output)?;
-    cipher.finalize(output)?;
-    Ok(payload.len() + iv.len())
-}
+        Ok(payload.len())
+    }
 
-fn decrypt_payload_stream(
-    t: CipherType,
-    key: &[u8],
-    payload: &[u8],
-    output: &mut BytesMut,
-) -> Result<usize> {
-    let iv_size = t.iv_size();
+    /// Receive packet from Shadowsocks' UDP server
+    pub async fn recv_from(&self, buf: &mut [u8]) -> io::Result<(usize, SocketAddr)> {
+        // Waiting for response from server SERVER -> CLIENT
+        let mut recv_buf = [0u8; MAXIMUM_UDP_PAYLOAD_SIZE];
 
-    let iv = &payload[..iv_size];
-    let data = &payload[iv_size..];
+        let recv_n = self.socket.recv(&mut recv_buf).await?;
+        let mut decrypt_buf = BytesMut::with_capacity(MAXIMUM_UDP_PAYLOAD_SIZE);
 
-    let mut cipher = crypto::new_stream(t, key, iv, CryptoMode::Decrypt);
+        let decrypt_size = decrypt_payload(
+            self.method,
+            &self.key,
+            &recv_buf[..recv_n],
+            &mut decrypt_buf,
+        )?;
+        let addr = Address::read_from(&mut decrypt_buf.as_ref()).await?;
+        let payload = &decrypt_buf[addr.serialized_len()..decrypt_size];
+        buf[..payload.len()].copy_from_slice(payload);
 
-    cipher.update(data, output)?;
-    cipher.finalize(output)?;
+        debug!(
+            "UDP server client recv_from {}, payload length {} bytes",
+            addr,
+            payload.len()
+        );
 
-    Ok(data.len())
+        let sock_addr = match addr {
+            Address::SocketAddress(s) => s,
+            Address::DomainNameAddress(_, _) => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "invalid addr format",
+                ))
+            }
+        };
+        Ok((payload.len(), sock_addr))
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::MAX_PACKET_SIZE;
+    use async_std::task::{block_on, sleep, spawn};
+    use std::net::ToSocketAddrs;
+    use std::time::Duration;
 
     #[test]
-    fn test_encrypt_and_decrypt_payload_aead() {
-        let cipher_type = CipherType::XChaCha20IetfPoly1305;
-        let key = cipher_type.bytes_to_key(b"key");
-        let payload = b"payload";
-        let mut output = BytesMut::with_capacity(MAX_PACKET_SIZE);
-        let mut output2 = BytesMut::with_capacity(MAX_PACKET_SIZE);
-        let size = encrypt_payload_aead(cipher_type, &key, payload, &mut output).unwrap();
-        let size2 = decrypt_payload_aead(cipher_type, &key, &output[..size], &mut output2).unwrap();
-        assert_eq!(&output2[..size2], payload);
-    }
-
-    #[test]
-    fn test_encrypt_and_decrypt_payload_stream() {
-        let cipher_type = CipherType::ChaCha20Ietf;
-        let key = cipher_type.bytes_to_key(b"key");
-        let payload = b"payload";
-        let mut output = BytesMut::with_capacity(MAX_PACKET_SIZE);
-        let mut output2 = BytesMut::with_capacity(MAX_PACKET_SIZE);
-        let size = encrypt_payload_stream(cipher_type, &key, payload, &mut output).unwrap();
-        let size2 =
-            decrypt_payload_stream(cipher_type, &key, &output[..size], &mut output2).unwrap();
-        assert_eq!(
-            std::str::from_utf8(&output2[..size2]),
-            std::str::from_utf8(payload)
-        );
+    fn test_read_write() {
+        let method = CipherType::ChaCha20Ietf;
+        let password = "GwEU01uXWm0Pp6t08";
+        let key = method.bytes_to_key(password.as_bytes());
+        let server = "127.0.0.1:14188".to_socket_addrs().unwrap().next().unwrap();
+        let data = b"GET / HTTP/1.1\r\n\r\n";
+        let addr = "127.0.0.1:443".parse().unwrap();
+        block_on(async {
+            let key_clone = key.clone();
+            let h = spawn(async move {
+                let u = UdpSocket::bind("0.0.0.0:14188").await.unwrap();
+                let udp = SSUdpSocket::bind(u, method, key_clone);
+                let mut b = vec![0; 1024];
+                let (s, _) = udp.recv_from(&mut b).await.unwrap();
+                assert_eq!(&b[..s], data);
+            });
+            sleep(Duration::from_secs(1)).await;
+            let udp = SSUdpSocket::new(server, method, key).await.unwrap();
+            udp.send_to(data, addr).await.unwrap();
+            h.await;
+        });
     }
 }
