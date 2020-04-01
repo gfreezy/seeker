@@ -16,7 +16,7 @@ pub struct Socks5UdpSocket {
 }
 
 impl Socks5UdpSocket {
-    pub async fn connect(socks5_server: SocketAddr) -> Result<Self> {
+    pub async fn new(socks5_server: SocketAddr) -> Result<Self> {
         let socket = UdpSocket::bind("0.0.0.0:0").await?;
         let mut conn =
             io::timeout(Duration::from_secs(1), TcpStream::connect(socks5_server)).await?;

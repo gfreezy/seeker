@@ -125,8 +125,7 @@ impl TunSocket {
             return Err(Error::last_os_error());
         }
 
-        let socket = TunSocket { fd };
-        socket.set_non_blocking()
+        Ok(TunSocket { fd })
     }
 
     pub fn name(&self) -> Result<String> {
@@ -184,7 +183,7 @@ impl TunSocket {
         Ok(unsafe { ifr.ifr_ifru.ifru_mtu } as _)
     }
 
-    fn af_write(&self, src: &[u8], af: u8) -> Result<usize> {
+    pub fn af_write(&self, src: &[u8], af: u8) -> Result<usize> {
         let mut hdr = [0u8, 0u8, 0u8, af as u8];
         let mut iov = [
             iovec {
