@@ -235,7 +235,7 @@ impl ProxyClient {
                 .instrument(trace_span!("lookup host", ip = ?ip))
                 .await
                 .map(|s| Address::DomainNameAddress(s, real_dest.port()))
-                .unwrap_or_else(|| Address::SocketAddress(real_dest.into()));
+                .unwrap_or_else(|| Address::SocketAddress(real_dest));
             let sock_addr = match self.resolve(&host).await {
                 Ok(a) => a,
                 Err(e) => {
@@ -307,7 +307,7 @@ impl ProxyClient {
             .instrument(trace_span!("lookup host", ip = ?ip))
             .await
             .map(|s| Address::DomainNameAddress(s, real_dest.port()))
-            .unwrap_or_else(|| Address::SocketAddress(real_dest.into()));
+            .unwrap_or_else(|| Address::SocketAddress(real_dest));
         let sock_addr = self.resolve(&host).await?;
         let socket = self
             .choose_proxy_udp_socket(real_src, sock_addr, &host)
