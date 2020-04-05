@@ -33,7 +33,7 @@ pub fn setup_logger(log_path: Option<&str>) -> Result<(), Box<dyn Error>> {
         .add_directive("seeker=trace".parse()?)
         .add_directive("ssclient=trace".parse()?)
         .add_directive("hermesdns=trace".parse()?)
-        .add_directive("tun=info".parse()?);
+        .add_directive("tun_nat=info".parse()?);
 
     if let Some(log_path) = log_path {
         if let Some(path) = PathBuf::from(log_path).parent() {

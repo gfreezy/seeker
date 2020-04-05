@@ -26,6 +26,8 @@ smoltcp = "0.6"
 parking_lot = "0.10"
 async-signals = "0.3.0-alpha.0"
 libc = "0.2"
-
+lru_time_cache = { git = "https://github.com/gfreezy/lru_time_cache.git", rev = "4319e2b" }
+crypto = { path = "../crypto" }
+futures = "0.3"
 [dependencies.clap]
 version = "2"

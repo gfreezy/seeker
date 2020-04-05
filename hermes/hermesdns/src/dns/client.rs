@@ -158,7 +158,7 @@ impl DnsNetworkClient {
     /// worker thread, and returned to this thread through a channel. Thus this
     /// method is thread safe, and can be used from any number of threads in
     /// parallell.
-    pub async fn send_udp_query(
+    async fn send_udp_query(
         &self,
         qname: &str,
         qtype: QueryType,

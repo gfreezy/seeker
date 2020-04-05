@@ -168,7 +168,6 @@ impl SSTcpStream {
         if let ReadStatus::WaitIv(ref mut buf, ref mut pos, method, ref key) =
             *self.read_status.lock()
         {
-            trace!("wait iv");
             while *pos < buf.len() {
                 let n = ready!(Pin::new(&mut self.stream).poll_read(cx, &mut buf[*pos..]))?;
                 if n == 0 {
@@ -199,9 +198,7 @@ impl SSTcpStream {
                 }
             };
 
-            trace!("new dec");
             self.dec = Some(Arc::new(Mutex::new(dec)));
-            trace!("set read status");
         } else {
             return Poll::Ready(Ok(()));
         };
@@ -216,10 +213,8 @@ impl SSTcpStream {
         buf: &mut [u8],
     ) -> Poll<io::Result<usize>> {
         let this = self.get_mut();
-        trace!("poll_read_handshake");
         ready!(this.poll_read_handshake(ctx))?;
 
-        trace!("decode");
         match *this.dec.as_ref().unwrap().lock() {
             DecryptedReader::Aead(ref mut r) => Pin::new(r).poll_read(ctx, buf),
             DecryptedReader::Stream(ref mut r) => Pin::new(r).poll_read(ctx, buf),

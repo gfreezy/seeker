@@ -1,5 +1,7 @@
+use crate::dns_client::DnsClient;
 use crate::proxy_tcp_stream::ProxyTcpStream;
 use crate::proxy_udp_socket::ProxyUdpSocket;
+use crate::server_chooser::ShadowsocksServerChooser;
 use async_std::io::{timeout, Read, Write};
 use async_std::net::{SocketAddr, TcpListener, TcpStream, UdpSocket};
 use async_std::prelude::*;
@@ -7,8 +9,7 @@ use async_std::task::spawn;
 use config::rule::Action;
 use config::{Address, Config};
 use dnsserver::create_dns_server;
-use dnsserver::resolver::{resolve_domain, RuleBasedDnsResolver};
-use hermesdns::DnsNetworkClient;
+use dnsserver::resolver::RuleBasedDnsResolver;
 use parking_lot::RwLock;
 use socks5_client::{Socks5TcpStream, Socks5UdpSocket};
 use ssclient::{SSTcpStream, SSUdpSocket};
@@ -28,8 +29,9 @@ pub struct ProxyClient {
     session_manager: SessionManager,
     udp_manager: Arc<RwLock<HashMap<u16, (ProxyUdpSocket, SocketAddr)>>>,
     resolver: RuleBasedDnsResolver,
-    dns_client: DnsNetworkClient,
+    dns_client: DnsClient,
     extra_directly_servers: Vec<String>,
+    ss_server_chooser: Option<Arc<ShadowsocksServerChooser>>,
 }
 
 impl ProxyClient {
@@ -40,7 +42,6 @@ impl ProxyClient {
         let resolver = run_dns_resolver(&config).await;
 
         let mut extra_directly_servers = vec![];
-
         // always pass proxy for socks5 server
         if let Some(socks5_addr) = &config.socks5_server {
             extra_directly_servers.push(socks5_addr.addr.to_string());
@@ -52,14 +53,33 @@ impl ProxyClient {
             }
         }
 
+        let dns_client = DnsClient::new(config.dns_server, Duration::from_secs(1)).await;
+        let server_chooser = if config.socks5_server.is_none() {
+            config.shadowsocks_servers.as_ref().map(|s| {
+                let chooser = Arc::new(ShadowsocksServerChooser::new(
+                    s.clone(),
+                    dns_client.clone(),
+                    Address::DomainNameAddress("google.com".to_string(), 80),
+                    "/".to_string(),
+                    Duration::from_secs(1),
+                ));
+                let chooser_clone = chooser.clone();
+                let _ = spawn(async move { chooser_clone.ping_servers().await.unwrap() });
+                chooser
+            })
+        } else {
+            None
+        };
+
         Self {
             resolver,
             extra_directly_servers,
             udp_manager: Arc::new(RwLock::new(HashMap::new())),
+            dns_client,
             config,
             uid,
             session_manager,
-            dns_client: DnsNetworkClient::new(0, Duration::from_secs(1)).await,
+            ss_server_chooser: server_chooser,
         }
     }
 
@@ -118,16 +138,16 @@ impl ProxyClient {
         match action {
             Action::Proxy => {
                 if let Some(socks5_config) = &self.config.socks5_server {
-                    let server = self.resolve(&socks5_config.addr).await?;
+                    let server = self.dns_client.lookup_address(&socks5_config.addr).await?;
                     trace!("choose_proxy_tcp_stream: socks5");
                     return Ok(ProxyTcpStream::Socks5(
                         Socks5TcpStream::connect(server, remote_addr.clone()).await?,
                     ));
                 }
 
-                if let Some(ss_servers) = self.config.shadowsocks_servers.clone() {
-                    let ss_server = ss_servers.first().unwrap();
-                    let server = self.resolve(ss_server.addr()).await?;
+                if let Some(chooser) = &self.ss_server_chooser {
+                    let ss_server = chooser.candidate();
+                    let server = self.dns_client.lookup_address(&ss_server.addr()).await?;
                     trace!("choose_proxy_tcp_stream: shadowsocks");
                     return Ok(ProxyTcpStream::Shadowsocks(
                         SSTcpStream::connect(
@@ -163,16 +183,16 @@ impl ProxyClient {
         match action {
             Action::Proxy => {
                 if let Some(socks5_config) = &self.config.socks5_server {
-                    let server = self.resolve(&socks5_config.addr).await?;
+                    let server = self.dns_client.lookup_address(&socks5_config.addr).await?;
                     trace!("choose_proxy_udp_socket: socks5");
                     return Ok(ProxyUdpSocket::Socks5(Arc::new(
                         Socks5UdpSocket::new(server).await?,
                     )));
                 }
 
-                if let Some(ss_servers) = self.config.shadowsocks_servers.clone() {
-                    let ss_server = ss_servers.first().unwrap();
-                    let server = self.resolve(ss_server.addr()).await?;
+                if let Some(chooser) = &self.ss_server_chooser {
+                    let ss_server = chooser.candidate();
+                    let server = self.dns_client.lookup_address(&ss_server.addr()).await?;
                     trace!("choose_proxy_udp_socket: shadowsocks");
                     return Ok(ProxyUdpSocket::Shadowsocks(Arc::new(
                         SSUdpSocket::new(server, ss_server.method(), ss_server.key()).await?,
@@ -188,27 +208,6 @@ impl ProxyClient {
             }
             _ => unreachable!(),
         }
-    }
-
-    async fn resolve(&self, addr: &Address) -> Result<SocketAddr> {
-        let dns_server = self.config.dns_server.ip().to_string();
-        let dns_port = self.config.dns_server.port();
-        let sock_addr = match addr {
-            Address::SocketAddress(addr) => *addr,
-            Address::DomainNameAddress(domain, port) => {
-                let ip = resolve_domain(&self.dns_client, (&dns_server, dns_port), domain).await?;
-                match ip {
-                    None => {
-                        return Err(io::Error::new(
-                            io::ErrorKind::NotFound,
-                            format!("domain {} not found", &domain),
-                        ))
-                    }
-                    Some(ip) => SocketAddr::new(ip.parse().unwrap(), *port),
-                }
-            }
-        };
-        Ok(sock_addr)
     }
 
     async fn probe_connectivity(&self, addr: SocketAddr) -> bool {
@@ -236,7 +235,7 @@ impl ProxyClient {
                 .await
                 .map(|s| Address::DomainNameAddress(s, real_dest.port()))
                 .unwrap_or_else(|| Address::SocketAddress(real_dest));
-            let sock_addr = match self.resolve(&host).await {
+            let sock_addr = match self.dns_client.lookup_address(&host).await {
                 Ok(a) => a,
                 Err(e) => {
                     error!(?e, "resolve dns");
@@ -249,20 +248,7 @@ impl ProxyClient {
                 .await
             {
                 Ok(remote_conn) => {
-                    spawn(
-                        async move {
-                            trace!("tunneling");
-                            tunnel_tcp_stream(conn, remote_conn).await?;
-                            Ok::<(), io::Error>(())
-                        }
-                        .instrument(trace_span!(
-                            "tunnel",
-                            ?peer_addr,
-                            ?real_src,
-                            ?real_dest,
-                            ?host,
-                        )),
-                    );
+                    spawn(async move { tunnel_tcp_stream(conn, remote_conn).await });
                 }
                 Err(e) => {
                     error!(?e, "get remote conn error");
@@ -308,7 +294,7 @@ impl ProxyClient {
             .await
             .map(|s| Address::DomainNameAddress(s, real_dest.port()))
             .unwrap_or_else(|| Address::SocketAddress(real_dest));
-        let sock_addr = self.resolve(&host).await?;
+        let sock_addr = self.dns_client.lookup_address(&host).await?;
         let socket = self
             .choose_proxy_udp_socket(real_src, sock_addr, &host)
             .await?;
