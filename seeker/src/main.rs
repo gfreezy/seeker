@@ -1,9 +1,11 @@
 // mod client;
 //mod signal;
+mod dns_client;
 mod logger;
 mod proxy_client;
 mod proxy_tcp_stream;
 mod proxy_udp_socket;
+mod server_chooser;
 
 use std::error::Error;
 
