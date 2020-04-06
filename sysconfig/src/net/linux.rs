@@ -24,7 +24,9 @@ impl DNSSetup {
         );
         resolv.set_len(0).unwrap();
         resolv.seek(SeekFrom::Start(0)).unwrap();
-        resolv.write_all(b"nameserver 127.0.0.1").unwrap();
+        resolv
+            .write_all(b"nameserver 127.0.0.1\nnameserver 223.5.5.5")
+            .unwrap();
 
         DNSSetup { original: buf }
     }

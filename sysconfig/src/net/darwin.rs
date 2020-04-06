@@ -50,7 +50,10 @@ impl DNSSetup {
                 &["-setdnsservers", network, "127.0.0.1", &original_dns],
             );
         } else {
-            let _ = run_cmd("networksetup", &["-setdnsservers", network, "127.0.0.1"]);
+            let _ = run_cmd(
+                "networksetup",
+                &["-setdnsservers", network, "127.0.0.1", "223.5.5.5"],
+            );
         }
         DNSSetup {
             primary_network: network.to_string(),
