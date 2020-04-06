@@ -111,7 +111,6 @@ impl SSTcpStream {
         let mut addr_buf = BytesMut::with_capacity(addr.serialized_len());
         addr.write_to_buf(&mut addr_buf);
         ss_stream.write_all(&addr_buf).await?;
-        eprintln!("proxy handshake");
         Ok(ss_stream)
     }
 

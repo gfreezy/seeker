@@ -10,7 +10,9 @@ fn run_cmd(cmd: &str, args: &[&str]) -> String {
 
     if !output.status.success() {
         panic!(
-            "stdout: {}\nstderr: {}",
+            "{} {}\nstdout: {}\nstderr: {}",
+            cmd,
+            args.join(" "),
             std::str::from_utf8(&output.stdout).expect("utf8"),
             std::str::from_utf8(&output.stderr).expect("utf8")
         );
