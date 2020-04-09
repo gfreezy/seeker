@@ -226,34 +226,47 @@ impl ProxyClient {
                 None => continue,
             };
 
-            trace!(?peer_addr, ?real_src, ?real_dest, "new relay connection");
-            let ip = real_dest.ip().to_string();
-            let host = self
-                .resolver
-                .lookup_host(&ip)
-                .instrument(trace_span!("lookup host", ip = ?ip))
-                .await
-                .map(|s| Address::DomainNameAddress(s, real_dest.port()))
-                .unwrap_or_else(|| Address::SocketAddress(real_dest));
-            let sock_addr = match self.dns_client.lookup_address(&host).await {
-                Ok(a) => a,
-                Err(e) => {
-                    error!(?e, "resolve dns");
-                    continue;
-                }
-            };
-            trace!(ip = ?ip, host = ?host, "lookup host");
-            match self
-                .choose_proxy_tcp_stream(real_src, sock_addr, &host)
-                .await
-            {
-                Ok(remote_conn) => {
-                    spawn(async move { tunnel_tcp_stream(conn, remote_conn).await });
-                }
-                Err(e) => {
-                    error!(?e, "get remote conn error");
-                }
+            async {
+                let ip = real_dest.ip().to_string();
+                let host = self
+                    .resolver
+                    .lookup_host(&ip)
+                    .instrument(trace_span!("lookup host", ip = ?ip))
+                    .await
+                    .map(|s| Address::DomainNameAddress(s, real_dest.port()))
+                    .unwrap_or_else(|| Address::SocketAddress(real_dest));
+
+                trace!(dest_host = ?host, "new relay connection");
+
+                let sock_addr = match self.dns_client.lookup_address(&host).await {
+                    Ok(a) => a,
+                    Err(e) => {
+                        error!(?e, "resolve dns");
+                        return;
+                    }
+                };
+
+                trace!(ip = ?ip, host = ?host, "lookup host");
+
+                match self
+                    .choose_proxy_tcp_stream(real_src, sock_addr, &host)
+                    .await
+                {
+                    Ok(remote_conn) => {
+                        spawn(async move { tunnel_tcp_stream(conn, remote_conn).await });
+                    }
+                    Err(e) => {
+                        error!(?e, "get remote conn error");
+                    }
+                };
             }
+            .instrument(trace_span!(
+                "tcp connection",
+                ?peer_addr,
+                ?real_src,
+                ?real_dest
+            ))
+            .await
         }
         Ok::<(), io::Error>(())
     }
@@ -280,6 +293,7 @@ impl ProxyClient {
             Some(s) => s,
             None => return Err(io::ErrorKind::AddrNotAvailable.into()),
         };
+
         trace!(?real_src, ?real_dest, "new udp relay packet");
 
         if let Some(r) = self.udp_manager.read().get(&port) {
