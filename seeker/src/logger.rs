@@ -31,8 +31,6 @@ impl io::Write for TracingWriter {
 pub fn setup_logger(log_path: Option<&str>) -> Result<(), Box<dyn Error>> {
     let env_filter = EnvFilter::new("seeker=trace")
         .add_directive("seeker=trace".parse()?)
-        .add_directive("ssclient=trace".parse()?)
-        .add_directive("hermesdns=trace".parse()?)
         .add_directive("sysconfig=info".parse()?)
         .add_directive("tun_nat=info".parse()?);
 
