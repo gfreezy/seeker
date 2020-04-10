@@ -46,30 +46,33 @@ impl ShadowsocksServerChooser {
 
     pub async fn ping_servers(&self) -> Result<()> {
         loop {
-            let mut fut: FuturesUnordered<_> = self
-                .servers
-                .iter()
-                .map(|config| {
-                    let self_clone = self.clone();
-                    let config_clone = config.clone();
-                    spawn(async move {
-                        let _ = self_clone.ping_server(config_clone.clone()).await?;
-                        Ok::<_, io::Error>(config_clone)
+            let current_config = (*self.candidate.lock()).clone();
+            if !self.ping_server(current_config).await.is_ok() {
+                let mut fut: FuturesUnordered<_> = self
+                    .servers
+                    .iter()
+                    .map(|config| {
+                        let self_clone = self.clone();
+                        let config_clone = config.clone();
+                        spawn(async move {
+                            let _ = self_clone.ping_server(config_clone.clone()).await?;
+                            Ok::<_, io::Error>(config_clone)
+                        })
                     })
-                })
-                .collect();
-            while let Some(ret) = fut.next().await {
-                match ret {
-                    Ok(config) => {
-                        info!(
-                            name = config.name(),
-                            server = ?config.addr(),
-                            "Choose shadowsocks server"
-                        );
-                        *self.candidate.lock() = config;
-                        break;
+                    .collect();
+                while let Some(ret) = fut.next().await {
+                    match ret {
+                        Ok(config) => {
+                            info!(
+                                name = config.name(),
+                                server = ?config.addr(),
+                                "Choose shadowsocks server"
+                            );
+                            *self.candidate.lock() = config;
+                            break;
+                        }
+                        Err(_) => continue,
                     }
-                    Err(_) => continue,
                 }
             }
             sleep(Duration::from_secs(10)).await;
