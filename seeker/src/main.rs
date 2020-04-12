@@ -1,5 +1,5 @@
-// mod client;
-//mod signal;
+#[macro_use]
+mod macros;
 mod dns_client;
 mod logger;
 mod proxy_client;
