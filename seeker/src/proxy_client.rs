@@ -55,18 +55,39 @@ impl ProxyClient {
 
         let dns_client = DnsClient::new(config.dns_server, Duration::from_secs(1)).await;
         let server_chooser = if config.socks5_server.is_none() {
-            config.shadowsocks_servers.as_ref().map(|s| {
-                let chooser = Arc::new(ShadowsocksServerChooser::new(
-                    s.clone(),
+            let chooser = Arc::new(
+                ShadowsocksServerChooser::new(
+                    config
+                        .clone()
+                        .shadowsocks_servers
+                        .expect("shadowsocks server can not be empty"),
                     dns_client.clone(),
-                    Address::DomainNameAddress("google.com".to_string(), 80),
-                    "/".to_string(),
+                    vec![
+                        (
+                            Address::DomainNameAddress("google.com".to_string(), 80),
+                            "/".to_string(),
+                        ),
+                        (
+                            Address::DomainNameAddress("twitter.com".to_string(), 80),
+                            "/".to_string(),
+                        ),
+                        (
+                            Address::DomainNameAddress("github.com".to_string(), 80),
+                            "/".to_string(),
+                        ),
+                        (
+                            Address::DomainNameAddress("youtube.com".to_string(), 80),
+                            "/".to_string(),
+                        ),
+                    ],
                     Duration::from_secs(1),
-                ));
-                let chooser_clone = chooser.clone();
-                let _ = spawn(async move { chooser_clone.ping_servers().await.unwrap() });
-                chooser
-            })
+                )
+                .await
+                .expect("create server chooser error"),
+            );
+            let chooser_clone = chooser.clone();
+            let _ = spawn(async move { chooser_clone.ping_servers_forever().await.unwrap() });
+            Some(chooser)
         } else {
             None
         };
@@ -141,20 +162,30 @@ impl ProxyClient {
                     let server = self.dns_client.lookup_address(&socks5_config.addr).await?;
                     trace!("choose_proxy_tcp_stream: socks5");
                     return Ok(ProxyTcpStream::Socks5(
-                        Socks5TcpStream::connect(server, remote_addr.clone()).await?,
+                        retry_timeout!(
+                            self.config.connect_timeout,
+                            2,
+                            Socks5TcpStream::connect(server, remote_addr.clone())
+                        )
+                        .await?,
                     ));
                 }
 
                 if let Some(chooser) = &self.ss_server_chooser {
-                    let ss_server = chooser.candidate();
+                    let ss_server = chooser.candidate().expect("no candidate available");
                     let server = self.dns_client.lookup_address(&ss_server.addr()).await?;
                     trace!("choose_proxy_tcp_stream: shadowsocks");
                     return Ok(ProxyTcpStream::Shadowsocks(
-                        SSTcpStream::connect(
-                            remote_addr.clone(),
-                            server,
-                            ss_server.method(),
-                            ss_server.key(),
+                        retry_timeout_next_candidate!(
+                            self.config.connect_timeout,
+                            2,
+                            SSTcpStream::connect(
+                                remote_addr.clone(),
+                                server,
+                                ss_server.method(),
+                                ss_server.key(),
+                            ),
+                            chooser
                         )
                         .await?,
                     ));
@@ -164,7 +195,14 @@ impl ProxyClient {
             }
             Action::Direct => {
                 trace!("choose_proxy_tcp_stream: direct");
-                Ok(ProxyTcpStream::Direct(TcpStream::connect(sock_addr).await?))
+                Ok(ProxyTcpStream::Direct(
+                    retry_timeout!(
+                        self.config.connect_timeout,
+                        2,
+                        TcpStream::connect(sock_addr)
+                    )
+                    .await?,
+                ))
             }
             _ => unimplemented!(),
         }
@@ -186,16 +224,27 @@ impl ProxyClient {
                     let server = self.dns_client.lookup_address(&socks5_config.addr).await?;
                     trace!("choose_proxy_udp_socket: socks5");
                     return Ok(ProxyUdpSocket::Socks5(Arc::new(
-                        Socks5UdpSocket::new(server).await?,
+                        retry_timeout!(
+                            self.config.connect_timeout,
+                            2,
+                            Socks5UdpSocket::new(server)
+                        )
+                        .await?,
                     )));
                 }
 
                 if let Some(chooser) = &self.ss_server_chooser {
-                    let ss_server = chooser.candidate();
+                    let ss_server = chooser.candidate().expect("no candidate available");
                     let server = self.dns_client.lookup_address(&ss_server.addr()).await?;
                     trace!("choose_proxy_udp_socket: shadowsocks");
                     return Ok(ProxyUdpSocket::Shadowsocks(Arc::new(
-                        SSUdpSocket::new(server, ss_server.method(), ss_server.key()).await?,
+                        retry_timeout_next_candidate!(
+                            self.config.connect_timeout,
+                            2,
+                            SSUdpSocket::new(server, ss_server.method(), ss_server.key()),
+                            chooser
+                        )
+                        .await?,
                     )));
                 }
                 unreachable!()
