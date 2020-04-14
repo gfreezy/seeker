@@ -102,7 +102,9 @@ impl ShadowsocksServerChooser {
                 Err(_) => {}
             }
         }
-        *self.candidates.lock() = candidates;
+        if !candidates.is_empty() {
+            *self.candidates.lock() = candidates;
+        }
         Ok(())
     }
 
