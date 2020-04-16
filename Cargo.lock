@@ -677,6 +677,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "http_proxy_client"
+version = "0.1.0"
+dependencies = [
+ "async-std",
+ "config",
+]
+
+[[package]]
 name = "iovec"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1303,6 +1311,7 @@ dependencies = [
  "file-rotate",
  "futures",
  "hermesdns",
+ "http_proxy_client",
  "libc",
  "lru_time_cache",
  "parking_lot 0.10.0",
