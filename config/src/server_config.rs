@@ -81,7 +81,7 @@ impl Display for ServerAddr {
 
 /// Configuration for a server
 #[derive(Clone, Debug, Deserialize)]
-pub struct Socks5ServerConfig {
+pub struct ProxyServerConfig {
     /// Server address
     #[serde(with = "server_addr")]
     pub addr: Address,

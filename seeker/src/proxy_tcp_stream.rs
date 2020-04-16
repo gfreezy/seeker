@@ -1,5 +1,6 @@
 use async_std::io::{Read, Write};
 use async_std::net::TcpStream;
+use http_proxy_client::HttpProxyTcpStream;
 use socks5_client::Socks5TcpStream;
 use ssclient::SSTcpStream;
 use std::io::Result;
@@ -10,6 +11,7 @@ use std::task::{Context, Poll};
 pub enum ProxyTcpStream {
     Direct(TcpStream),
     Socks5(Socks5TcpStream),
+    HttpProxy(HttpProxyTcpStream),
     Shadowsocks(SSTcpStream),
 }
 
@@ -23,6 +25,7 @@ impl Read for ProxyTcpStream {
             ProxyTcpStream::Direct(conn) => Pin::new(conn).poll_read(cx, buf),
             ProxyTcpStream::Socks5(conn) => Pin::new(conn).poll_read(cx, buf),
             ProxyTcpStream::Shadowsocks(conn) => Pin::new(conn).poll_read(cx, buf),
+            ProxyTcpStream::HttpProxy(conn) => Pin::new(conn).poll_read(cx, buf),
         }
     }
 }
@@ -36,6 +39,7 @@ impl Write for ProxyTcpStream {
             ProxyTcpStream::Direct(conn) => Pin::new(conn).poll_write(cx, buf),
             ProxyTcpStream::Socks5(conn) => Pin::new(conn).poll_write(cx, buf),
             ProxyTcpStream::Shadowsocks(conn) => Pin::new(conn).poll_write(cx, buf),
+            ProxyTcpStream::HttpProxy(conn) => Pin::new(conn).poll_write(cx, buf),
         }
     }
 
@@ -44,6 +48,7 @@ impl Write for ProxyTcpStream {
             ProxyTcpStream::Direct(conn) => Pin::new(conn).poll_flush(cx),
             ProxyTcpStream::Socks5(conn) => Pin::new(conn).poll_flush(cx),
             ProxyTcpStream::Shadowsocks(conn) => Pin::new(conn).poll_flush(cx),
+            ProxyTcpStream::HttpProxy(conn) => Pin::new(conn).poll_flush(cx),
         }
     }
 
@@ -52,6 +57,7 @@ impl Write for ProxyTcpStream {
             ProxyTcpStream::Direct(conn) => Pin::new(conn).poll_close(cx),
             ProxyTcpStream::Socks5(conn) => Pin::new(conn).poll_close(cx),
             ProxyTcpStream::Shadowsocks(conn) => Pin::new(conn).poll_close(cx),
+            ProxyTcpStream::HttpProxy(conn) => Pin::new(conn).poll_close(cx),
         }
     }
 }
