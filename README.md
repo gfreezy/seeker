@@ -61,11 +61,11 @@ tun_ip: 10.0.0.1
 tun_cidr: 10.0.0.0/16
 dns_listen: 0.0.0.0:53
 gateway_mode: true
-probe_timeout: 10ms
+probe_timeout: 30ms  # probe_timeout 时间内如果 TCP 可以直接连接，则直连；否则走代理
 connect_timeout: 1s
 read_timeout: 30s
 write_timeout: 5s
-max_connect_errors: 20
+max_connect_errors: 2  # ss 服务器重试次数，到达重试次数后会自动选择下一个最快的服务器 
 
 socks5_server:
   addr: domain-or-ip-to-socks5-server:port
