@@ -96,6 +96,10 @@ pub fn run_nat(
 
         loop {
             let size = tun.read(&mut buf).unwrap();
+            if size == 0 {
+                eprintln!("tun read return 0, exit now");
+                break;
+            }
             let mut ipv4_packet = match Ipv4Packet::new_checked(&mut buf[..size]) {
                 Err(_) => continue,
                 Ok(p) => p,
@@ -158,6 +162,7 @@ struct InnerSessionManager {
     map: HashMap<u16, Association>,
     reverse_map: HashMap<(Ipv4Addr, u16, Ipv4Addr, u16), u16>,
     begin_port: u16,
+    next_index: u16,
     available_ports: BitVec,
 }
 
@@ -171,14 +176,32 @@ impl InnerSessionManager {
             map: HashMap::new(),
             reverse_map: HashMap::new(),
             available_ports: ports,
+            next_index: 0,
             begin_port,
         }
     }
 
     fn fetch_next_available_port(&mut self) -> u16 {
-        let index = self.available_ports.iter().position(|p| *p).unwrap();
-        self.available_ports.set(index, false);
-        index as u16 + self.begin_port
+        let mut looped = false;
+        let index = loop {
+            if let Some(i) = self
+                .available_ports
+                .iter()
+                .skip(self.next_index as usize)
+                .position(|p| *p)
+            {
+                break i;
+            } else if looped {
+                panic!("no available port");
+            } else {
+                self.next_index = 0;
+                looped = true;
+            }
+        };
+        let real_index = self.next_index + index as u16;
+        self.available_ports.set(real_index as usize, false);
+        self.next_index = real_index + 1;
+        real_index + self.begin_port
     }
 
     pub fn get_by_port(&self, port: u16) -> Option<&Association> {

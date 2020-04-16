@@ -10,5 +10,5 @@ edition = "2018"
 libc = "0.2.62"
 sysconfig = { path = "../sysconfig" }
 parking_lot = "0.10"
-bitvec = "0.17.3"
+bitvec = "0.17"
 smoltcp = "0.6"
