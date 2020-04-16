@@ -10,18 +10,21 @@ probe_timeout: 100ms
 connect_timeout: 200ms
 read_timeout: 300s
 write_timeout: 300s
-max_connect_errors: 10
+max_connect_errors: 2
 
 socks5_server:
-  addr: domain-or-ip-to-socks5-server:port  # 替换成 socks5 代理的地址
+  addr: 127.0.0.1:1086  # 替换成 socks5 代理的地址
+
+http_proxy_server:
+  addr: 127.0.0.1:1087  # 替换成 socks5 代理的地址
 
 shadowsocks_servers:
   - name: server1
-    addr: domain-or-ip-to-ss-server:port # 替换成 ss 服务器的地址
+    addr: domain-to-ss-server.com # 替换成 ss 服务器的地址
     method: chacha20-ietf
     password: password
   - name: server2
-    addr: domain-or-ip-to-ss-server:port
+    addr: 128.113.23.12:12312
     method: chacha20-ietf
     password: password
 
