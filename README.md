@@ -51,7 +51,7 @@ blocked app from Allow apps downloaded from pane at the bottom of the window.
     * `PROBE` 默认尝试直连，如果超时，则走代理。由 `direct_connect_timeout` 控制超时时间
 * 确保系统没有重复的 `tun_name` 
 * 确保 TUN 的网络 `tun_ip` 和 `tun_cidr` 与当前所处网络环境不在一个网段
-* `seeker` 支持 socks5 代理和 shadowsocks 代理。当 socks5 与 shadowsocks 同时设置的时候，会优先使用 socks5 代理，并且忽略 shadowsocks 配置。 
+* `seeker` 支持 socks5 代理、http 代理和 shadowsocks 代理。优先级为 socks5 代理 > shadowsocks 代理 > http 代理。 
 ```yaml
 verbose: false
 dns_start_ip: 10.0.0.10
@@ -61,13 +61,16 @@ tun_ip: 10.0.0.1
 tun_cidr: 10.0.0.0/16
 dns_listen: 0.0.0.0:53
 gateway_mode: true
-probe_timeout: 10ms
+probe_timeout: 30ms  # probe_timeout 时间内如果 TCP 可以直接连接，则直连；否则走代理
 connect_timeout: 1s
 read_timeout: 30s
 write_timeout: 5s
-max_connect_errors: 20
+max_connect_errors: 2  # ss 服务器重试次数，到达重试次数后会自动选择下一个最快的服务器 
 
 socks5_server:
+  addr: domain-or-ip-to-socks5-server:port
+
+http_proxy_server:
   addr: domain-or-ip-to-socks5-server:port
 
 shadowsocks_servers:
@@ -92,9 +95,11 @@ rules:
   - 'MATCH,PROBE'
 ```
 
-## ⚠️使用 Socks5 代理服务器
+## ⚠️使用 Socks5 或 http 代理服务器
 使用 socks5 代理的时候，需要将所有直连的域名设置在配置文件里面，如果使用 ss 或者 vmess 之类的，需要将 ss 或 vmess server 
 的域名也加入配置文件。否则有可能会导致死循环，没法正常使用。
+
+⚠️ http 代理只支持 `CONNECT` 协议，而且不支持 UDP 协议。
 
 ## 指定 IP 或某网段走代理
 修改路由表，将希望走代理的 IP 或者网段路由到虚拟网卡。如果使用了本机 socks5 代理，则必须确保 socks5 不会直连加入路由表的网段，否则会死循环。

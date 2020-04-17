@@ -10,6 +10,7 @@ use config::rule::Action;
 use config::{Address, Config};
 use dnsserver::create_dns_server;
 use dnsserver::resolver::RuleBasedDnsResolver;
+use http_proxy_client::HttpProxyTcpStream;
 use parking_lot::RwLock;
 use socks5_client::{Socks5TcpStream, Socks5UdpSocket};
 use ssclient::{SSTcpStream, SSUdpSocket};
@@ -46,6 +47,10 @@ impl ProxyClient {
         if let Some(socks5_addr) = &config.socks5_server {
             extra_directly_servers.push(socks5_addr.addr.to_string());
         }
+        // always pass proxy for socks5 server
+        if let Some(c) = &config.http_proxy_server {
+            extra_directly_servers.push(c.addr.to_string());
+        }
 
         if let Some(shadowsocks_servers) = &config.shadowsocks_servers {
             for shadowsocks_server in shadowsocks_servers.iter() {
@@ -54,42 +59,41 @@ impl ProxyClient {
         }
 
         let dns_client = DnsClient::new(config.dns_server, Duration::from_secs(1)).await;
-        let server_chooser = if config.socks5_server.is_none() {
-            let chooser = Arc::new(
-                ShadowsocksServerChooser::new(
-                    config
-                        .clone()
-                        .shadowsocks_servers
-                        .expect("shadowsocks server can not be empty"),
-                    dns_client.clone(),
-                    vec![
-                        (
-                            Address::DomainNameAddress("google.com".to_string(), 80),
-                            "/".to_string(),
-                        ),
-                        (
-                            Address::DomainNameAddress("twitter.com".to_string(), 80),
-                            "/".to_string(),
-                        ),
-                        (
-                            Address::DomainNameAddress("github.com".to_string(), 80),
-                            "/".to_string(),
-                        ),
-                        (
-                            Address::DomainNameAddress("youtube.com".to_string(), 80),
-                            "/".to_string(),
-                        ),
-                    ],
-                    Duration::from_secs(1),
-                )
-                .await
-                .expect("create server chooser error"),
-            );
-            let chooser_clone = chooser.clone();
-            let _ = spawn(async move { chooser_clone.ping_servers_forever().await.unwrap() });
-            Some(chooser)
-        } else {
-            None
+        let server_chooser = match (&config.socks5_server, &config.shadowsocks_servers) {
+            (None, Some(shadowsocks_servers)) => {
+                let ping_url = vec![
+                    (
+                        Address::DomainNameAddress("google.com".to_string(), 80),
+                        "/".to_string(),
+                    ),
+                    (
+                        Address::DomainNameAddress("twitter.com".to_string(), 80),
+                        "/".to_string(),
+                    ),
+                    (
+                        Address::DomainNameAddress("github.com".to_string(), 80),
+                        "/".to_string(),
+                    ),
+                    (
+                        Address::DomainNameAddress("youtube.com".to_string(), 80),
+                        "/".to_string(),
+                    ),
+                ];
+                let chooser = Arc::new(
+                    ShadowsocksServerChooser::new(
+                        shadowsocks_servers.clone(),
+                        dns_client.clone(),
+                        ping_url,
+                        Duration::from_secs(1),
+                    )
+                    .await
+                    .expect("create server chooser error"),
+                );
+                let chooser_clone = chooser.clone();
+                let _ = spawn(async move { chooser_clone.ping_servers_forever().await.unwrap() });
+                Some(chooser)
+            }
+            _ => None,
         };
 
         Self {
@@ -164,7 +168,7 @@ impl ProxyClient {
                     return Ok(ProxyTcpStream::Socks5(
                         retry_timeout!(
                             self.config.connect_timeout,
-                            2,
+                            self.config.max_connect_errors,
                             Socks5TcpStream::connect(server, remote_addr.clone())
                         )
                         .await?,
@@ -178,7 +182,7 @@ impl ProxyClient {
                     return Ok(ProxyTcpStream::Shadowsocks(
                         retry_timeout_next_candidate!(
                             self.config.connect_timeout,
-                            2,
+                            self.config.max_connect_errors,
                             SSTcpStream::connect(
                                 remote_addr.clone(),
                                 server,
@@ -191,21 +195,33 @@ impl ProxyClient {
                     ));
                 }
 
-                unreachable!()
+                if let Some(proxy_config) = &self.config.http_proxy_server {
+                    let server = self.dns_client.lookup_address(&proxy_config.addr).await?;
+                    trace!("choose_proxy_tcp_stream: http proxy");
+                    return Ok(ProxyTcpStream::HttpProxy(
+                        retry_timeout!(
+                            self.config.connect_timeout,
+                            self.config.max_connect_errors,
+                            HttpProxyTcpStream::connect(server, remote_addr.clone())
+                        )
+                        .await?,
+                    ));
+                }
+
+                // fallback to direct
             }
-            Action::Direct => {
-                trace!("choose_proxy_tcp_stream: direct");
-                Ok(ProxyTcpStream::Direct(
-                    retry_timeout!(
-                        self.config.connect_timeout,
-                        2,
-                        TcpStream::connect(sock_addr)
-                    )
-                    .await?,
-                ))
-            }
+            Action::Direct => {}
             _ => unimplemented!(),
         }
+        trace!("choose_proxy_tcp_stream: direct");
+        Ok(ProxyTcpStream::Direct(
+            retry_timeout!(
+                self.config.connect_timeout,
+                self.config.max_connect_errors,
+                TcpStream::connect(sock_addr)
+            )
+            .await?,
+        ))
     }
 
     async fn choose_proxy_udp_socket(
@@ -226,7 +242,7 @@ impl ProxyClient {
                     return Ok(ProxyUdpSocket::Socks5(Arc::new(
                         retry_timeout!(
                             self.config.connect_timeout,
-                            2,
+                            self.config.max_connect_errors,
                             Socks5UdpSocket::new(server)
                         )
                         .await?,
@@ -240,23 +256,24 @@ impl ProxyClient {
                     return Ok(ProxyUdpSocket::Shadowsocks(Arc::new(
                         retry_timeout_next_candidate!(
                             self.config.connect_timeout,
-                            2,
+                            self.config.max_connect_errors,
                             SSUdpSocket::new(server, ss_server.method(), ss_server.key()),
                             chooser
                         )
                         .await?,
                     )));
                 }
-                unreachable!()
+
+                // fallback to direct
             }
-            Action::Direct => {
-                trace!("choose_proxy_udp_socket: direct");
-                Ok(ProxyUdpSocket::Direct(Arc::new(
-                    UdpSocket::bind("0.0.0.0:0").await?,
-                )))
-            }
+            Action::Direct => {}
             _ => unreachable!(),
         }
+
+        trace!("choose_proxy_udp_socket: direct");
+        Ok(ProxyUdpSocket::Direct(Arc::new(
+            UdpSocket::bind("0.0.0.0:0").await?,
+        )))
     }
 
     async fn probe_connectivity(&self, addr: SocketAddr) -> bool {

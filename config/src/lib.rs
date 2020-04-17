@@ -3,7 +3,7 @@ mod server_config;
 pub use server_config::{ServerAddr, ShadowsocksServerConfig};
 pub use socks5_client::Address;
 
-use crate::server_config::Socks5ServerConfig;
+use crate::server_config::ProxyServerConfig;
 use rule::ProxyRules;
 use serde::Deserialize;
 use smoltcp::wire::{Ipv4Address, Ipv4Cidr};
@@ -17,7 +17,8 @@ use std::time::Duration;
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
     pub shadowsocks_servers: Option<Arc<Vec<ShadowsocksServerConfig>>>,
-    pub socks5_server: Option<Socks5ServerConfig>,
+    pub socks5_server: Option<ProxyServerConfig>,
+    pub http_proxy_server: Option<ProxyServerConfig>,
     pub dns_start_ip: Ipv4Addr,
     pub dns_server: SocketAddr,
     pub tun_name: String,
@@ -129,10 +130,14 @@ impl Config {
     pub fn from_config_file(path: &str) -> io::Result<Self> {
         let file = File::open(&path).unwrap();
         let conf: Config = serde_yaml::from_reader(&file).unwrap();
-        if let (None, None) = (&conf.shadowsocks_servers, &conf.socks5_server) {
+        if let (None, None, None) = (
+            &conf.shadowsocks_servers,
+            &conf.socks5_server,
+            &conf.http_proxy_server,
+        ) {
             return Err(io::Error::new(
                 ErrorKind::InvalidData,
-                "shadowsocks_servers and socks5_server should be set one at least.",
+                "shadowsocks_servers, socks5_server and http_proxy_server should be set one at least.",
             ));
         };
         Ok(conf)
