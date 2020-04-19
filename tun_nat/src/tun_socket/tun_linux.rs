@@ -80,8 +80,7 @@ impl TunSocket {
 
         let name = name.to_string();
 
-        let socket = TunSocket { fd, name };
-        socket.set_non_blocking()
+        Ok(TunSocket { fd, name })
     }
 
     pub fn name(&self) -> Result<String> {
