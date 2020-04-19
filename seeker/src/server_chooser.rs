@@ -89,17 +89,14 @@ impl ShadowsocksServerChooser {
             })
             .collect();
         while let Some(ret) = fut.next().await {
-            match ret {
-                Ok((config, duration)) => {
-                    info!(
-                        name = config.name(),
-                        server = ?config.addr(),
-                        latency = %duration.as_millis(),
-                        "Ping shadowsocks server"
-                    );
-                    candidates.push(config);
-                }
-                Err(_) => {}
+            if let Ok((config, duration)) = ret {
+                info!(
+                    name = config.name(),
+                    server = ?config.addr(),
+                    latency = %duration.as_millis(),
+                    "Ping shadowsocks server"
+                );
+                candidates.push(config);
             }
         }
         if !candidates.is_empty() {
