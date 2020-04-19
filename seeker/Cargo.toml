@@ -21,7 +21,7 @@ tun_nat = { path = "../tun_nat" }
 async-trait = "0.1"
 hermesdns = { path = "../hermes/hermesdns" }
 chrono = "0.4"
-file-rotate = { git = "https://github.com/gfreezy/file-rotate", rev = "d07b66c" }
+file-rotate = { git = "https://github.com/gfreezy/file-rotate", rev = "0fc0f02" }
 async-std = "1.5"
 smoltcp = "0.6"
 parking_lot = "0.10"
