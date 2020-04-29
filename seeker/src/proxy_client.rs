@@ -159,6 +159,7 @@ impl ProxyClient {
         let action = self
             .get_action_for_addr(original_addr, sock_addr, &remote_addr)
             .await?;
+        trace!(?action, "selected action");
 
         match action {
             Action::Proxy => {
@@ -319,10 +320,11 @@ impl ProxyClient {
                     .await
                 {
                     Ok(remote_conn) => {
+                        trace!("connect successfully");
                         spawn(async move { tunnel_tcp_stream(conn, remote_conn).await });
                     }
                     Err(e) => {
-                        error!(?e, "get remote conn error");
+                        error!(?e, "connect error");
                     }
                 };
             }

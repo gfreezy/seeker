@@ -65,7 +65,7 @@ impl ShadowsocksServerChooser {
     pub async fn ping_servers_forever(&self) -> Result<()> {
         loop {
             self.ping_servers().await?;
-            sleep(Duration::from_secs(10)).await;
+            sleep(Duration::from_secs(300)).await;
         }
     }
 
