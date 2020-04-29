@@ -7,6 +7,7 @@ macro_rules! retry_timeout {
                 match ret {
                     v @ Ok(_) => break v,
                     e @ Err(_) => {
+                        tracing::warn!("retry_timeout: {}", $retries - retries);
                         if retries <= 0 {
                             break e;
                         }
@@ -26,6 +27,7 @@ macro_rules! retry_timeout_next_candidate {
                 match retry_timeout!($timeout, $retries, $fut).await {
                     v @ Ok(_) => break v,
                     e @ Err(_) => {
+                        tracing::warn!("retry_timeout: {}", $retries - tries);
                         if tries <= 0 {
                             break e;
                         }
