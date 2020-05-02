@@ -196,11 +196,17 @@ impl DnsNetworkClient {
             Ok(Some(qr)) => Ok(qr),
             Ok(None) => {
                 let _ = self.total_failed.fetch_add(1, Ordering::Release);
-                Err(Error::new(ErrorKind::InvalidInput, "domain not found "))
+                Err(Error::new(
+                    ErrorKind::InvalidInput,
+                    format!("domain {} not found", qname),
+                ))
             }
             Err(_) => {
                 let _ = self.total_failed.fetch_add(1, Ordering::Release);
-                Err(Error::new(ErrorKind::TimedOut, "domain resolve timed out"))
+                Err(Error::new(
+                    ErrorKind::TimedOut,
+                    format!("domain {} resolve timed out", qname),
+                ))
             }
         }
     }

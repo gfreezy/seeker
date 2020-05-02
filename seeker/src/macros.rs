@@ -6,11 +6,14 @@ macro_rules! retry_timeout {
                 let ret = timeout($timeout, $fut).await;
                 match ret {
                     v @ Ok(_) => break v,
-                    e @ Err(_) => {
+                    Err(e) if e.kind() == std::io::ErrorKind::TimedOut => {
                         tracing::warn!("retry_timeout: {}", $retries - retries);
                         if retries <= 0 {
-                            break e;
+                            break Err(e);
                         }
+                    }
+                    e => {
+                        break e;
                     }
                 }
                 retries -= 1;
@@ -26,14 +29,17 @@ macro_rules! retry_timeout_next_candidate {
             loop {
                 match retry_timeout!($timeout, $retries, $fut).await {
                     v @ Ok(_) => break v,
-                    e @ Err(_) => {
-                        tracing::warn!("retry_timeout: {}", $retries - tries);
+                    Err(e) if e.kind() == std::io::ErrorKind::TimedOut => {
+                        tracing::warn!("retry_timeout_next_candidate: {}", $retries - tries,);
                         if tries <= 0 {
-                            break e;
+                            break Err(e);
                         }
                         if $chooser.next_candidate().is_none() {
-                            break e;
+                            break Err(e);
                         }
+                    }
+                    e => {
+                        break e;
                     }
                 }
                 tries -= 1;

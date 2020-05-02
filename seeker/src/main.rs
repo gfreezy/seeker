@@ -16,7 +16,7 @@ use async_std::prelude::{FutureExt, StreamExt};
 use async_std::task::block_on;
 use clap::{App, Arg};
 use config::Config;
-use sysconfig::{DNSSetup, IpForward};
+use sysconfig::{ulimit, DNSSetup, IpForward};
 
 fn main() -> Result<(), Box<dyn Error>> {
     let version = env!("CARGO_PKG_VERSION");
@@ -60,6 +60,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let mut signals = Signals::new(vec![libc::SIGINT, libc::SIGTERM]).unwrap();
 
+    ulimit("-n", "10240");
     let _dns_setup = DNSSetup::new(config.dns_server.ip().to_string());
     let _ip_forward = if config.gateway_mode {
         // In gateway mode, dns server need be accessible from the network.
