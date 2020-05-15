@@ -22,24 +22,18 @@ macro_rules! retry_timeout {
     };
 }
 
-macro_rules! retry_timeout_next_candidate {
-    ($timeout: expr, $retries: expr, $fut: expr, $chooser: expr) => {
+macro_rules! retry {
+    ($retries: expr, $fut: expr) => {
         async {
             let mut tries: usize = 10;
             loop {
-                match retry_timeout!($timeout, $retries, $fut).await {
+                match $fut.await {
                     v @ Ok(_) => break v,
-                    Err(e) if e.kind() == std::io::ErrorKind::TimedOut => {
-                        tracing::warn!("retry_timeout_next_candidate: {}", $retries - tries,);
+                    Err(e) => {
+                        tracing::warn!("retry: {}", $retries - tries,);
                         if tries <= 0 {
                             break Err(e);
                         }
-                        if $chooser.next_candidate().is_none() {
-                            break Err(e);
-                        }
-                    }
-                    e => {
-                        break e;
                     }
                 }
                 tries -= 1;
