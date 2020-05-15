@@ -6,8 +6,10 @@ use config::{Address, ShadowsocksServerConfig};
 use futures::stream::FuturesUnordered;
 use parking_lot::Mutex;
 use ssclient::SSTcpStream;
+use std::collections::HashMap;
 use std::io;
 use std::io::Result;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tracing::info;
@@ -19,6 +21,7 @@ pub struct ShadowsocksServerChooser {
     servers: Arc<Vec<ShadowsocksServerConfig>>,
     candidates: Arc<Mutex<Vec<ShadowsocksServerConfig>>>,
     dns_client: DnsClient,
+    server_aliveness: Arc<Mutex<HashMap<String, Arc<AtomicBool>>>>,
 }
 
 impl ShadowsocksServerChooser {
@@ -34,19 +37,47 @@ impl ShadowsocksServerChooser {
             candidates: Arc::new(Mutex::new(vec![])),
             servers,
             dns_client,
+            server_aliveness: Arc::new(Mutex::new(HashMap::new())),
         };
         chooser.ping_servers().await?;
         Ok(chooser)
     }
 
-    pub fn candidate(&self) -> Option<ShadowsocksServerConfig> {
-        self.candidates.lock().first().cloned()
+    fn get_server_aliveness(&self, config: &ShadowsocksServerConfig) -> Arc<AtomicBool> {
+        let mut server_aliveness = self.server_aliveness.lock();
+        let entry = server_aliveness
+            .entry(config.name().to_string())
+            .or_insert_with(|| Arc::new(AtomicBool::new(true)));
+        entry.clone()
     }
 
-    pub fn next_candidate(&self) -> Option<()> {
+    fn set_server_down(&self, config: &ShadowsocksServerConfig) {
+        let mut server_aliveness = self.server_aliveness.lock();
+        let entry = server_aliveness
+            .entry(config.name().to_string())
+            .or_insert_with(|| Arc::new(AtomicBool::new(true)));
+        entry.store(false, Ordering::SeqCst);
+    }
+
+    fn set_server_alive(&self, config: &ShadowsocksServerConfig) {
+        let mut server_aliveness = self.server_aliveness.lock();
+        let entry = server_aliveness
+            .entry(config.name().to_string())
+            .or_insert_with(|| Arc::new(AtomicBool::new(true)));
+        entry.store(true, Ordering::SeqCst);
+    }
+
+    pub fn candidate(&self) -> Option<(ShadowsocksServerConfig, Arc<AtomicBool>)> {
+        let config = self.candidates.lock().first().cloned()?;
+        let alive = self.get_server_aliveness(&config);
+        Some((config, alive))
+    }
+
+    pub fn take_down_current_and_move_next(&self) -> Option<()> {
         let mut candidates = self.candidates.lock();
         if candidates.len() > 1 {
             let removed = candidates.remove(0);
+            self.set_server_down(&removed);
             let new = &candidates[0];
             info!(
                 old_name = removed.name(),
@@ -71,11 +102,12 @@ impl ShadowsocksServerChooser {
 
     async fn ping_servers(&self) -> Result<()> {
         let mut candidates = vec![];
-        if let Some(current_config) = self.candidate() {
+        if let Some((current_config, _)) = self.candidate() {
             if self.ping_server(current_config.clone()).await.is_ok() {
                 candidates.push(current_config);
             }
         }
+
         let mut fut: FuturesUnordered<_> = self
             .servers
             .iter()
@@ -108,11 +140,12 @@ impl ShadowsocksServerChooser {
     async fn ping_server(&self, config: ShadowsocksServerConfig) -> Result<Duration> {
         let instant = Instant::now();
         for (host, path) in &self.ping_url {
-            timeout(self.ping_timeout, async {
+            let ret: Result<_> = timeout(self.ping_timeout, async {
                 let resolved_addr = self.dns_client.lookup_address(config.addr()).await?;
                 let mut conn = SSTcpStream::connect(
                     host.clone(),
                     resolved_addr,
+                    Arc::new(AtomicBool::new(true)),
                     config.method(),
                     config.key(),
                 )
@@ -123,8 +156,16 @@ impl ShadowsocksServerChooser {
                 let _size = conn.read(&mut buf).await?;
                 Ok(())
             })
-            .await?;
+            .await;
+            match ret {
+                Err(e) => {
+                    self.set_server_down(&config);
+                    return Err(e);
+                }
+                _ => {}
+            }
         }
+        self.set_server_alive(&config);
         Ok(instant.elapsed())
     }
 }
