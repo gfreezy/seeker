@@ -177,23 +177,32 @@ impl ProxyClient {
                 }
 
                 if let Some(chooser) = &self.ss_server_chooser {
-                    let ss_server = chooser.candidate().expect("no candidate available");
-                    let server = self.dns_client.lookup_address(&ss_server.addr()).await?;
-                    trace!("choose_proxy_tcp_stream: shadowsocks");
-                    return Ok(ProxyTcpStream::Shadowsocks(
-                        retry_timeout_next_candidate!(
+                    return retry!(3, async {
+                        let (ss_server, server_alive) =
+                            chooser.candidate().expect("no candidate available");
+                        let server = self.dns_client.lookup_address(&ss_server.addr()).await?;
+                        trace!("choose_proxy_tcp_stream: shadowsocks");
+                        let stream = retry_timeout!(
                             self.config.connect_timeout,
                             self.config.max_connect_errors,
                             SSTcpStream::connect(
                                 remote_addr.clone(),
                                 server,
+                                server_alive.clone(),
                                 ss_server.method(),
                                 ss_server.key(),
-                            ),
-                            chooser
+                            )
                         )
-                        .await?,
-                    ));
+                        .await;
+                        match stream {
+                            Ok(s) => Ok(ProxyTcpStream::Shadowsocks(s)),
+                            Err(e) => {
+                                chooser.take_down_current_and_move_next();
+                                Err(e)
+                            }
+                        }
+                    })
+                    .await;
                 }
 
                 if let Some(proxy_config) = &self.config.http_proxy_server {
@@ -251,18 +260,25 @@ impl ProxyClient {
                 }
 
                 if let Some(chooser) = &self.ss_server_chooser {
-                    let ss_server = chooser.candidate().expect("no candidate available");
-                    let server = self.dns_client.lookup_address(&ss_server.addr()).await?;
-                    trace!("choose_proxy_udp_socket: shadowsocks");
-                    return Ok(ProxyUdpSocket::Shadowsocks(Arc::new(
-                        retry_timeout_next_candidate!(
+                    return retry!(3, async {
+                        let (ss_server, _) = chooser.candidate().expect("no candidate available");
+                        let server = self.dns_client.lookup_address(&ss_server.addr()).await?;
+                        trace!("choose_proxy_udp_socket: shadowsocks");
+                        let udp = retry_timeout!(
                             self.config.connect_timeout,
                             self.config.max_connect_errors,
-                            SSUdpSocket::new(server, ss_server.method(), ss_server.key()),
-                            chooser
+                            SSUdpSocket::new(server, ss_server.method(), ss_server.key())
                         )
-                        .await?,
-                    )));
+                        .await;
+                        match udp {
+                            Ok(s) => Ok(ProxyUdpSocket::Shadowsocks(Arc::new(s))),
+                            Err(e) => {
+                                chooser.take_down_current_and_move_next();
+                                Err(e)
+                            }
+                        }
+                    })
+                    .await;
                 }
 
                 // fallback to direct
