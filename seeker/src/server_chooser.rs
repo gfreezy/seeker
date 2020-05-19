@@ -73,7 +73,7 @@ impl ShadowsocksServerChooser {
         Some((config, alive))
     }
 
-    pub async fn take_down_current_and_move_next(&self) -> Option<()> {
+    pub async fn take_down_current_and_move_next(&self) {
         let mut candidates = self.candidates.lock();
         if candidates.len() > 1 {
             let removed = candidates.remove(0);
@@ -87,12 +87,10 @@ impl ShadowsocksServerChooser {
                 "Change shadowsocks server"
             );
 
-            Some(())
-        } else {
-            error!("No shadowsocks servers available, ping servers again");
-            self.ping_servers().await;
-            None
+            return;
         }
+        error!("No shadowsocks servers available, ping servers again");
+        self.ping_servers().await;
     }
 
     pub async fn ping_servers_forever(&self) -> Result<()> {
