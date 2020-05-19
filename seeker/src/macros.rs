@@ -25,7 +25,7 @@ macro_rules! retry_timeout {
 macro_rules! retry {
     ($retries: expr, $fut: expr) => {
         async {
-            let mut tries: usize = 10;
+            let mut tries = $retries;
             loop {
                 match $fut.await {
                     v @ Ok(_) => break v,
