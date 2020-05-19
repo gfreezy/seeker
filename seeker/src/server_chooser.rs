@@ -12,7 +12,7 @@ use std::io::Result;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tracing::info;
+use tracing::{error, info};
 
 #[derive(Clone)]
 pub struct ShadowsocksServerChooser {
@@ -89,6 +89,7 @@ impl ShadowsocksServerChooser {
 
             Some(())
         } else {
+            error!("No shadowsocks servers available");
             None
         }
     }
