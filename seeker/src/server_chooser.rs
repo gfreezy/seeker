@@ -30,7 +30,7 @@ impl ShadowsocksServerChooser {
         dns_client: DnsClient,
         ping_url: Vec<(Address, String)>,
         ping_timeout: Duration,
-    ) -> Result<Self> {
+    ) -> Self {
         let chooser = ShadowsocksServerChooser {
             ping_url,
             ping_timeout,
@@ -39,8 +39,8 @@ impl ShadowsocksServerChooser {
             dns_client,
             server_aliveness: Arc::new(Mutex::new(HashMap::new())),
         };
-        chooser.ping_servers().await?;
-        Ok(chooser)
+        chooser.ping_servers().await;
+        chooser
     }
 
     fn get_server_aliveness(&self, config: &ShadowsocksServerConfig) -> Arc<AtomicBool> {
@@ -73,7 +73,7 @@ impl ShadowsocksServerChooser {
         Some((config, alive))
     }
 
-    pub fn take_down_current_and_move_next(&self) -> Option<()> {
+    pub async fn take_down_current_and_move_next(&self) -> Option<()> {
         let mut candidates = self.candidates.lock();
         if candidates.len() > 1 {
             let removed = candidates.remove(0);
@@ -89,19 +89,20 @@ impl ShadowsocksServerChooser {
 
             Some(())
         } else {
-            error!("No shadowsocks servers available");
+            error!("No shadowsocks servers available, ping servers again");
+            self.ping_servers().await;
             None
         }
     }
 
     pub async fn ping_servers_forever(&self) -> Result<()> {
         loop {
-            self.ping_servers().await?;
+            self.ping_servers().await;
             sleep(Duration::from_secs(300)).await;
         }
     }
 
-    async fn ping_servers(&self) -> Result<()> {
+    async fn ping_servers(&self) {
         let mut candidates = vec![];
         if let Some((current_config, _)) = self.candidate() {
             if self.ping_server(current_config.clone()).await.is_ok() {
@@ -135,7 +136,6 @@ impl ShadowsocksServerChooser {
         if !candidates.is_empty() {
             *self.candidates.lock() = candidates;
         }
-        Ok(())
     }
 
     async fn ping_server(&self, config: ShadowsocksServerConfig) -> Result<Duration> {

@@ -86,8 +86,7 @@ impl ProxyClient {
                         ping_url,
                         Duration::from_secs(1),
                     )
-                    .await
-                    .expect("create server chooser error"),
+                    .await,
                 );
                 let chooser_clone = chooser.clone();
                 let _ = spawn(async move { chooser_clone.ping_servers_forever().await.unwrap() });
@@ -197,7 +196,7 @@ impl ProxyClient {
                         match stream {
                             Ok(s) => Ok(ProxyTcpStream::Shadowsocks(s)),
                             Err(e) => {
-                                chooser.take_down_current_and_move_next();
+                                chooser.take_down_current_and_move_next().await;
                                 Err(e)
                             }
                         }
@@ -273,7 +272,7 @@ impl ProxyClient {
                         match udp {
                             Ok(s) => Ok(ProxyUdpSocket::Shadowsocks(Arc::new(s))),
                             Err(e) => {
-                                chooser.take_down_current_and_move_next();
+                                chooser.take_down_current_and_move_next().await;
                                 Err(e)
                             }
                         }
