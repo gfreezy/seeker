@@ -60,5 +60,31 @@ pub fn setup_logger(log_path: Option<&str>) -> Result<(), Box<dyn Error>> {
         tracing::subscriber::set_global_default(subscriber)
             .expect("setting tracing default failed");
     };
+
+    #[cfg(debug_assertions)]
+    {
+        // only for #[cfg]
+        use parking_lot::deadlock;
+        use std::thread;
+        use std::time::Duration;
+
+        // Create a background thread which checks for deadlocks every 10s
+        thread::spawn(move || loop {
+            thread::sleep(Duration::from_secs(10));
+            let deadlocks = deadlock::check_deadlock();
+            if deadlocks.is_empty() {
+                continue;
+            }
+
+            eprintln!("{} deadlocks detected", deadlocks.len());
+            for (i, threads) in deadlocks.iter().enumerate() {
+                eprintln!("Deadlock #{}", i);
+                for t in threads {
+                    eprintln!("Thread Id {:#?}", t.thread_id());
+                    eprintln!("{:#?}", t.backtrace());
+                }
+            }
+        });
+    } // only for #[cfg]
     Ok(())
 }
