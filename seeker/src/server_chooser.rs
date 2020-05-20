@@ -156,12 +156,9 @@ impl ShadowsocksServerChooser {
                 Ok(())
             })
             .await;
-            match ret {
-                Err(e) => {
-                    self.set_server_down(&config);
-                    return Err(e);
-                }
-                _ => {}
+            if let Err(e) = ret {
+                self.set_server_down(&config);
+                return Err(e);
             }
         }
         self.set_server_alive(&config);
