@@ -74,20 +74,23 @@ impl ShadowsocksServerChooser {
     }
 
     pub async fn take_down_current_and_move_next(&self) {
-        let mut candidates = self.candidates.lock();
-        if candidates.len() > 1 {
-            let removed = candidates.remove(0);
-            self.set_server_down(&removed);
-            let new = &candidates[0];
-            info!(
-                old_name = removed.name(),
-                old_server = ?removed.addr(),
-                new_name = new.name(),
-                new_server = ?new.addr(),
-                "Change shadowsocks server"
-            );
+        // make sure `candidates` drop after block ends to avoid deadlock.
+        {
+            let mut candidates = self.candidates.lock();
+            if candidates.len() > 1 {
+                let removed = candidates.remove(0);
+                self.set_server_down(&removed);
+                let new = &candidates[0];
+                info!(
+                    old_name = removed.name(),
+                    old_server = ?removed.addr(),
+                    new_name = new.name(),
+                    new_server = ?new.addr(),
+                    "Change shadowsocks server"
+                );
 
-            return;
+                return;
+            }
         }
         error!("No shadowsocks servers available, ping servers again");
         self.ping_servers().await;
