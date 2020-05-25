@@ -12,7 +12,7 @@ use std::{
 };
 
 use bytes::{Bytes, BytesMut};
-use futures::ready;
+use futures_util::ready;
 use tracing::trace;
 
 use crypto::{CipherCategory, CipherType};
