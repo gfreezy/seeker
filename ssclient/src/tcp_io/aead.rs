@@ -43,7 +43,7 @@ use std::{
 
 use byteorder::{BigEndian, ByteOrder};
 use bytes::{BufMut, Bytes, BytesMut};
-use futures::ready;
+use futures_util::ready;
 
 use crate::BUFFER_SIZE;
 use async_std::io::{Read, Write};

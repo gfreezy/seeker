@@ -3,7 +3,7 @@ use async_std::io::timeout;
 use async_std::prelude::*;
 use async_std::task::{sleep, spawn};
 use config::{Address, ShadowsocksServerConfig};
-use futures::stream::FuturesUnordered;
+use futures_util::stream::FuturesUnordered;
 use parking_lot::Mutex;
 use ssclient::SSTcpStream;
 use std::collections::HashMap;
