@@ -206,9 +206,9 @@ mod tests {
     use super::{DecryptedReader, EncryptedWriter};
     use async_std::io::Cursor;
     use async_std::prelude::*;
+    use async_std::task::block_on;
     use bytes::Bytes;
     use crypto::{CipherType, CryptoMode};
-    use futures::executor::block_on;
 
     #[test]
     fn test_write() {
