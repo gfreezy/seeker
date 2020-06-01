@@ -58,7 +58,7 @@ impl Inner {
         rules: ProxyRules,
         dns_server: (String, u16),
     ) -> Self {
-        let db = Db::open(path).expect("open db error");
+        let db = sled::open(path).expect("open db error");
         let next_ip = match db.get(NEXT_IP.as_bytes()) {
             Ok(Some(v)) => {
                 let mut s = [0; 4];

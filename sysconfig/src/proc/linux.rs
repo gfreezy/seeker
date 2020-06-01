@@ -1,10 +1,10 @@
 use crate::SocketInfo;
-use procfs::FDTarget;
+use procfs::process::FDTarget;
 use std::collections::HashMap;
 use std::io::Result;
 
 pub fn list_system_proc_socks() -> Result<HashMap<i32, Vec<SocketInfo>>> {
-    let all_procs = procfs::all_processes();
+    let all_procs = procfs::process::all_processes().expect("list all processes");
 
     // build up a map between socket inodes and processes:
     let mut map = HashMap::new();
@@ -20,8 +20,8 @@ pub fn list_system_proc_socks() -> Result<HashMap<i32, Vec<SocketInfo>>> {
 
     let mut socks_map = HashMap::new();
     // get the tcp table
-    let tcp = procfs::tcp().unwrap();
-    let tcp6 = procfs::tcp6().unwrap();
+    let tcp = procfs::net::tcp().unwrap();
+    let tcp6 = procfs::net::tcp6().unwrap();
     for entry in tcp.into_iter().chain(tcp6) {
         // find the process (if any) that has an open FD to this entry's inode
         if let Some(process) = map.get(&entry.inode) {
@@ -37,7 +37,7 @@ pub fn list_system_proc_socks() -> Result<HashMap<i32, Vec<SocketInfo>>> {
 }
 
 pub fn list_user_proc_socks(uid: u32) -> Result<HashMap<i32, Vec<SocketInfo>>> {
-    let all_procs = procfs::all_processes();
+    let all_procs = procfs::process::all_processes().expect("list all processes");
 
     // build up a map between socket inodes and processes:
     let mut map = HashMap::new();
@@ -52,8 +52,8 @@ pub fn list_user_proc_socks(uid: u32) -> Result<HashMap<i32, Vec<SocketInfo>>> {
     }
     let mut socks_map = HashMap::new();
     // get the tcp table
-    let tcp = procfs::tcp().unwrap();
-    let tcp6 = procfs::tcp6().unwrap();
+    let tcp = procfs::net::tcp().unwrap();
+    let tcp6 = procfs::net::tcp6().unwrap();
     for entry in tcp.into_iter().chain(tcp6) {
         // find the process (if any) that has an open FD to this entry's inode
         if let Some(process) = map.get(&entry.inode) {
