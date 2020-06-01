@@ -65,7 +65,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     let _dns_setup = DNSSetup::new(config.dns_server.ip().to_string());
     let _ip_forward = if config.gateway_mode {
         // In gateway mode, dns server need be accessible from the network.
-        config.dns_listen = "0.0.0.0:53".to_string();
         Some(IpForward::new())
     } else {
         None
