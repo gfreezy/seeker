@@ -1,17 +1,19 @@
+use async_std::net::IpAddr;
 use async_std::sync::Mutex;
+use async_std_resolver::config::{NameServerConfigGroup, ResolverConfig, ResolverOpts};
+use async_std_resolver::{resolver, AsyncStdResolver};
 use async_trait::async_trait;
 use config::rule::{Action, ProxyRules};
-use hermesdns::{
-    DnsClient, DnsNetworkClient, DnsPacket, DnsRecord, DnsResolver, Hosts, QueryType, TransientTtl,
-};
+use hermesdns::{DnsPacket, DnsRecord, DnsResolver, Hosts, QueryType, TransientTtl};
 use sled::Db;
 use std::any::Any;
+use std::io;
 use std::io::Result;
 use std::net::Ipv4Addr;
 use std::path::Path;
 use std::sync::Arc;
-use std::time::Duration;
 use tracing::debug;
+use trust_dns_proto::rr::RData;
 
 const NEXT_IP: &str = "next_ip";
 
@@ -47,8 +49,7 @@ struct Inner {
     next_ip: u32,
     hosts: Hosts,
     rules: ProxyRules,
-    dns_server: (String, u16),
-    resolver: DnsNetworkClient,
+    resolver: AsyncStdResolver,
 }
 
 impl Inner {
@@ -56,7 +57,7 @@ impl Inner {
         path: P,
         next_ip: u32,
         rules: ProxyRules,
-        dns_server: (String, u16),
+        (ip, port): (String, u16),
     ) -> Self {
         let db = sled::open(path).expect("open db error");
         let next_ip = match db.get(NEXT_IP.as_bytes()) {
@@ -70,14 +71,24 @@ impl Inner {
                 next_ip
             }
         };
+        // Construct a new Resolver with default configuration options
+        let resolver = resolver(
+            ResolverConfig::from_parts(
+                None,
+                Vec::new(),
+                NameServerConfigGroup::from_ips_clear(&[ip.parse().expect("invalid dns ip")], port),
+            ),
+            ResolverOpts::default(),
+        )
+        .await
+        .expect("failed to create resolver");
 
         Self {
             db,
             next_ip,
             hosts: Hosts::load().expect("load /etc/hosts"),
             rules,
-            dns_server,
-            resolver: DnsNetworkClient::new(0, Duration::from_millis(100)).await,
+            resolver,
         }
     }
 
@@ -104,23 +115,44 @@ impl Inner {
             packet.answers.push(DnsRecord::A {
                 domain: domain.to_string(),
                 addr: ip,
-                ttl: TransientTtl(1),
+                ttl: TransientTtl(60),
             });
             return Ok(packet);
         }
 
         match self.rules.action_for_domain(domain) {
             Some(Action::Direct) => {
-                debug!("lookup host for direct domain: {}", domain);
-                return self
+                let lookup_ip = self
                     .resolver
-                    .send_query(
-                        domain,
-                        QueryType::A,
-                        (&self.dns_server.0, self.dns_server.1),
-                        true,
-                    )
-                    .await;
+                    .lookup_ip(domain)
+                    .await
+                    .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+                let mut ips: Vec<IpAddr> = vec![];
+                for record in lookup_ip.as_lookup().record_iter() {
+                    let rdata = match record.rdata() {
+                        RData::A(ip) => {
+                            ips.push(IpAddr::V4(*ip));
+                            DnsRecord::A {
+                                domain: domain.to_string(),
+                                addr: *ip,
+                                ttl: TransientTtl(record.ttl()),
+                            }
+                        }
+                        RData::AAAA(ip) => {
+                            ips.push(IpAddr::V6(*ip));
+                            DnsRecord::AAAA {
+                                domain: domain.to_string(),
+                                addr: *ip,
+                                ttl: TransientTtl(record.ttl()),
+                            }
+                        }
+                        _ => continue,
+                    };
+                    packet.answers.push(rdata)
+                }
+
+                debug!("lookup host for direct domain: {}, ip: {:?}", domain, ips);
+                return Ok(packet);
             }
             Some(Action::Reject) => return Ok(packet),
             _ => {}
@@ -144,22 +176,10 @@ impl Inner {
         packet.answers.push(DnsRecord::A {
             domain: domain.to_string(),
             addr: ip.parse().unwrap(),
-            ttl: TransientTtl(1),
+            ttl: TransientTtl(5),
         });
         Ok(packet)
     }
-}
-
-pub async fn resolve_domain<T: DnsClient>(
-    resolver: &T,
-    server: (&str, u16),
-    domain: &str,
-) -> Result<Option<String>> {
-    let packet = resolver
-        .send_query(domain, QueryType::A, server, true)
-        .await?;
-    let ip = packet.get_first_a();
-    Ok(ip)
 }
 
 #[async_trait]
