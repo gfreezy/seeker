@@ -8,11 +8,13 @@ edition = "2018"
 
 [dependencies]
 async-std = "1.6.0"
-hermesdns = { path = "../hermes/hermesdns" }
+hermesdns = { path = "../hermesdns" }
 config = { path = "../config" }
 sled = "0.31.0"
 async-trait = "0.1.31"
 tracing = "0.1.14"
+async-std-resolver = "0.19.5"
+trust-dns-proto = "0.19.5"
 
 [dev-dependencies]
 tempfile = "3.1.0"

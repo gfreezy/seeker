@@ -90,6 +90,7 @@ impl ProxyClient {
                 );
                 let chooser_clone = chooser.clone();
                 let _ = spawn(async move { chooser_clone.ping_servers_forever().await.unwrap() });
+                chooser.ping_servers().await;
                 Some(chooser)
             }
             _ => None,

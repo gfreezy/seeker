@@ -56,7 +56,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     setup_logger(log_path)?;
 
-    let mut config = Config::from_config_file(path)?;
+    let config = Config::from_config_file(path)?;
 
     let mut signals = Signals::new(vec![libc::SIGINT, libc::SIGTERM]).unwrap();
 
