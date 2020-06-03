@@ -1,5 +1,4 @@
 use async_std::net::IpAddr;
-use async_std::sync::Mutex;
 use async_std_resolver::config::{NameServerConfigGroup, ResolverConfig, ResolverOpts};
 use async_std_resolver::{resolver, AsyncStdResolver};
 use async_trait::async_trait;
@@ -11,6 +10,7 @@ use std::io;
 use std::io::Result;
 use std::net::Ipv4Addr;
 use std::path::Path;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use tracing::debug;
 use trust_dns_proto::rr::RData;
@@ -22,38 +22,19 @@ const NEXT_IP: &str = "next_ip";
 /// This resolver uses an external DNS server to service a query
 #[derive(Clone)]
 pub struct RuleBasedDnsResolver {
-    inner: Arc<Mutex<Inner>>,
+    inner: Arc<Inner>,
+}
+
+struct Inner {
+    hosts: Hosts,
+    rules: ProxyRules,
+    db: Db,
+    next_ip: AtomicU32,
+    resolver: AsyncStdResolver,
 }
 
 impl RuleBasedDnsResolver {
     pub async fn new<P: AsRef<Path>>(
-        path: P,
-        next_ip: u32,
-        rules: ProxyRules,
-        dns_server: (String, u16),
-    ) -> Self {
-        RuleBasedDnsResolver {
-            inner: Arc::new(Mutex::new(
-                Inner::new(path, next_ip, rules, dns_server).await,
-            )),
-        }
-    }
-
-    pub async fn lookup_host(&self, addr: &str) -> Option<String> {
-        self.inner.lock().await.lookup_host(addr).await
-    }
-}
-
-struct Inner {
-    db: Db,
-    next_ip: u32,
-    hosts: Hosts,
-    rules: ProxyRules,
-    resolver: AsyncStdResolver,
-}
-
-impl Inner {
-    async fn new<P: AsRef<Path>>(
         path: P,
         next_ip: u32,
         rules: ProxyRules,
@@ -71,6 +52,7 @@ impl Inner {
                 next_ip
             }
         };
+
         // Construct a new Resolver with default configuration options
         let resolver = resolver(
             ResolverConfig::from_parts(
@@ -83,35 +65,40 @@ impl Inner {
         .await
         .expect("failed to create resolver");
 
-        Self {
-            db,
-            next_ip,
-            hosts: Hosts::load().expect("load /etc/hosts"),
-            rules,
-            resolver,
+        RuleBasedDnsResolver {
+            inner: Arc::new(Inner {
+                hosts: Hosts::load().expect("load /etc/hosts"),
+                rules,
+                next_ip: AtomicU32::new(next_ip),
+                db,
+                resolver,
+            }),
         }
     }
 
-    async fn lookup_host(&self, addr: &str) -> Option<String> {
-        debug!("lookup host: {}", addr);
-        self.db
+    pub fn lookup_host(&self, addr: &str) -> Option<String> {
+        let host = self
+            .inner
+            .db
             .get(addr.as_bytes())
             .unwrap()
-            .map(|host| String::from_utf8(host.to_vec()).unwrap())
+            .map(|host| String::from_utf8(host.to_vec()).unwrap());
+        debug!("lookup host: {}, addr: {:?}", addr, host);
+        host
     }
 
-    fn gen_ipaddr(&mut self) -> String {
-        let [a, b, c, d] = self.next_ip.to_be_bytes();
-        self.next_ip += 1;
+    fn gen_ipaddr(&self) -> String {
+        let [a, b, c, d] = (self.inner.next_ip.load(Ordering::SeqCst) as u32).to_be_bytes();
+        self.inner.next_ip.fetch_add(1, Ordering::SeqCst);
         // TODO: assert next_ip is not to large
         let addr = Ipv4Addr::new(a, b, c, d);
         debug!("Resolver.gen_ipaddr: {}", addr);
         addr.to_string()
     }
 
-    async fn resolve(&mut self, domain: &str) -> Result<DnsPacket> {
+    async fn resolve(&self, domain: &str) -> Result<DnsPacket> {
         let mut packet = DnsPacket::new();
-        if let Some(ip) = self.hosts.get(domain) {
+        if let Some(ip) = self.inner.hosts.get(domain) {
             packet.answers.push(DnsRecord::A {
                 domain: domain.to_string(),
                 addr: ip,
@@ -120,9 +107,10 @@ impl Inner {
             return Ok(packet);
         }
 
-        match self.rules.action_for_domain(domain) {
+        match self.inner.rules.action_for_domain(domain) {
             Some(Action::Direct) => {
                 let lookup_ip = self
+                    .inner
                     .resolver
                     .lookup_ip(domain)
                     .await
@@ -158,7 +146,7 @@ impl Inner {
             _ => {}
         };
 
-        let ip = if let Some(addr) = self.db.get(domain).expect("get domain") {
+        let ip = if let Some(addr) = self.inner.db.get(domain).expect("get domain") {
             let ip = String::from_utf8(addr.to_vec()).unwrap();
             debug!("resolve from cache, domain: {}, ip: {}", domain, &ip);
             ip
@@ -166,11 +154,21 @@ impl Inner {
             let ip = self.gen_ipaddr();
             debug!("resolve to tun, domain: {}, ip: {}", domain, &ip);
 
-            self.db
-                .insert(NEXT_IP.as_bytes(), &self.next_ip.to_be_bytes())
+            self.inner
+                .db
+                .insert(
+                    NEXT_IP.as_bytes(),
+                    &self.inner.next_ip.load(Ordering::SeqCst).to_be_bytes(),
+                )
                 .unwrap();
-            self.db.insert(domain.as_bytes(), ip.as_bytes()).unwrap();
-            self.db.insert(ip.as_bytes(), domain.as_bytes()).unwrap();
+            self.inner
+                .db
+                .insert(domain.as_bytes(), ip.as_bytes())
+                .unwrap();
+            self.inner
+                .db
+                .insert(ip.as_bytes(), domain.as_bytes())
+                .unwrap();
             ip
         };
         packet.answers.push(DnsRecord::A {
@@ -190,8 +188,7 @@ impl DnsResolver for RuleBasedDnsResolver {
         _qtype: QueryType,
         _recursive: bool,
     ) -> Result<DnsPacket> {
-        let mut guard = self.inner.lock().await;
-        guard.resolve(domain).await
+        self.resolve(domain).await
     }
 
     fn as_any(&self) -> &dyn Any {
