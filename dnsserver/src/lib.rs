@@ -63,7 +63,7 @@ mod tests {
                 Some("10.0.0.2".to_string())
             );
             assert_eq!(
-                resolver.lookup_host("10.0.0.2").await,
+                resolver.lookup_host("10.0.0.2"),
                 Some("to.aliyun.com".to_string())
             )
         });
