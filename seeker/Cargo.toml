@@ -22,11 +22,11 @@ async-trait = "0.1.31"
 hermesdns = { path = "../hermesdns" }
 chrono = "0.4.11"
 file-rotate = { git = "https://github.com/gfreezy/file-rotate", rev = "0fc0f02" }
-async-std = "1.6.0"
+async-std = "~1.5.0"
 smoltcp = "0.6.0"
 parking_lot = { version = "0.10.2", features = ["deadlock_detection"] }
 async-signals = "0.3.1"
-libc = "0.2.70"
+libc = "0.2.71"
 crypto = { path = "../crypto" }
 futures-util = "0.3.5"
 clap = "2.33.1"
