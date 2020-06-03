@@ -322,7 +322,7 @@ impl ProxyClient {
                 let sock_addr = match self.dns_client.lookup_address(&host).await {
                     Ok(a) => a,
                     Err(e) => {
-                        error!(?e, "resolve dns");
+                        error!(?e, ?host, "error resolve dns");
                         return;
                     }
                 };
