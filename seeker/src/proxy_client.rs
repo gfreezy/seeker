@@ -314,8 +314,6 @@ impl ProxyClient {
                 let host = self
                     .resolver
                     .lookup_host(&ip)
-                    .instrument(trace_span!("lookup host", ip = ?ip))
-                    .await
                     .map(|s| Address::DomainNameAddress(s, real_dest.port()))
                     .unwrap_or_else(|| Address::SocketAddress(real_dest));
 
@@ -388,8 +386,6 @@ impl ProxyClient {
         let host = self
             .resolver
             .lookup_host(&ip)
-            .instrument(trace_span!("lookup host", ip = ?ip))
-            .await
             .map(|s| Address::DomainNameAddress(s, real_dest.port()))
             .unwrap_or_else(|| Address::SocketAddress(real_dest));
         let sock_addr = self.dns_client.lookup_address(&host).await?;
