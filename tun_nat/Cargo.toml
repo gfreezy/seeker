@@ -11,4 +11,4 @@ libc = "0.2.71"
 sysconfig = { path = "../sysconfig" }
 parking_lot = "0.10.2"
 bitvec = "0.17.4"
-smoltcp = "0.6.0"
+smoltcp = { version = "0.6.0", default-features = false, features = ["proto-ipv6", "proto-ipv4", "std"] }
