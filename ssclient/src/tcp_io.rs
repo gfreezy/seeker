@@ -297,7 +297,7 @@ mod tests {
     use async_std::task::{block_on, sleep, spawn};
     use std::net::ToSocketAddrs;
     use std::time::Duration;
-    use tracing::{trace, trace_span};
+    use tracing::trace;
 
     #[allow(dead_code)]
     fn setup_tracing_subscriber() {

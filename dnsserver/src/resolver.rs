@@ -104,6 +104,10 @@ impl RuleBasedDnsResolver {
                 addr: ip,
                 ttl: TransientTtl(60),
             });
+            debug!(
+                "lookup host for /etc/hosts domain: {}, ip: {:?}",
+                domain, ip
+            );
             return Ok(packet);
         }
 
@@ -171,6 +175,7 @@ impl RuleBasedDnsResolver {
                 .unwrap();
             ip
         };
+
         packet.answers.push(DnsRecord::A {
             domain: domain.to_string(),
             addr: ip.parse().unwrap(),
@@ -208,20 +213,25 @@ mod tests {
         let n = u32::from_be_bytes(start_ip.octets());
         let dns = std::env::var("DNS").unwrap_or_else(|_| "223.5.5.5".to_string());
         task::block_on(async {
-            let mut inner = Inner::new(dir.path(), n, ProxyRules::new(vec![]), (dns, 53)).await;
+            let resolver =
+                RuleBasedDnsResolver::new(dir.path(), n, ProxyRules::new(vec![]), (dns, 53)).await;
             assert_eq!(
-                inner.resolve("baidu.com").await.unwrap().get_random_a(),
+                resolver.resolve("baidu.com").await.unwrap().get_random_a(),
                 Some("10.0.0.1".to_string())
             );
             assert_eq!(
-                inner.resolve("www.ali.com").await.unwrap().get_random_a(),
+                resolver
+                    .resolve("www.ali.com")
+                    .await
+                    .unwrap()
+                    .get_random_a(),
                 Some("10.0.0.2".to_string())
             );
             assert_eq!(
-                inner.lookup_host("10.0.0.1").await,
+                resolver.lookup_host("10.0.0.1"),
                 Some("baidu.com".to_string())
             );
-            assert_eq!(inner.lookup_host("10.1.0.1").await, None);
+            assert_eq!(resolver.lookup_host("10.1.0.1"), None);
         });
     }
 }

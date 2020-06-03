@@ -13,7 +13,7 @@ macro_rules! return_or_report {
         match $x {
             Ok(res) => res,
             Err(_) => {
-                println!($message);
+                eprintln!($message);
                 return;
             }
         }
@@ -25,7 +25,7 @@ macro_rules! ignore_or_report {
         match $x {
             Ok(_) => {}
             Err(_) => {
-                println!($message);
+                eprintln!($message);
                 return;
             }
         };
