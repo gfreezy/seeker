@@ -265,7 +265,6 @@ dependencies = [
 name = "config"
 version = "0.1.0"
 dependencies = [
- "byteorder",
  "bytes",
  "crypto",
  "serde",
@@ -339,7 +338,6 @@ dependencies = [
  "bytes",
  "digest",
  "hkdf",
- "hmac",
  "libc",
  "libsodium-sys",
  "md-5",
@@ -1335,24 +1333,18 @@ dependencies = [
  "async-signals",
  "async-std",
  "async-std-resolver",
- "async-trait",
- "chrono",
  "clap",
  "config",
- "crypto",
  "dnsserver",
  "file-rotate",
  "futures-util",
- "hermesdns",
  "http_proxy_client",
  "libc",
  "parking_lot",
- "smoltcp",
  "socks5_client",
  "ssclient",
  "sysconfig",
  "tracing",
- "tracing-core",
  "tracing-futures",
  "tracing-subscriber",
  "tun_nat",
@@ -1458,8 +1450,6 @@ checksum = "0fe46639fd2ec79eadf8fe719f237a7a0bd4dac5d957f1ca5bbdbc1c3c39e53a"
 dependencies = [
  "bitflags",
  "byteorder",
- "libc",
- "log",
  "managed",
 ]
 
@@ -1501,7 +1491,6 @@ dependencies = [
  "futures-util",
  "parking_lot",
  "tracing",
- "tracing-futures",
  "tracing-subscriber",
 ]
 
