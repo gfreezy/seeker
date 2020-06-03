@@ -29,6 +29,7 @@ impl Read for ProxyTcpStream {
         }
     }
 }
+
 impl Write for ProxyTcpStream {
     fn poll_write(
         mut self: Pin<&mut Self>,
