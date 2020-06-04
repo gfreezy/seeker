@@ -360,10 +360,7 @@ impl ProxyClient {
             .unwrap();
     }
 
-    async fn get_udp_socket_and_dest_addr(
-        &self,
-        port: u16,
-    ) -> Option<(ProxyUdpSocket, SocketAddr)> {
+    fn get_udp_socket_and_dest_addr(&self, port: u16) -> Option<(ProxyUdpSocket, SocketAddr)> {
         let (real_src, real_dest) = self.session_manager.get_by_port(port)?;
         trace!(?real_src, ?real_dest, "new udp relay packet");
 
@@ -406,10 +403,7 @@ impl ProxyClient {
         loop {
             let (size, peer_addr) = udp_listener.recv_from(&mut buf).await?;
             assert!(size < 2000);
-            let (socket, dest_addr) = match self
-                .get_udp_socket_and_dest_addr(peer_addr.port())
-                .await
-            {
+            let (socket, dest_addr) = match self.get_udp_socket_and_dest_addr(peer_addr.port()) {
                 None => {
                     let (socket, dest_addr) = match self.new_udp_socket(peer_addr.port()).await {
                         Ok(r) => r,
