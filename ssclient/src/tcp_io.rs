@@ -297,8 +297,7 @@ mod tests {
     use async_std::task::{block_on, sleep, spawn};
     use std::net::ToSocketAddrs;
     use std::time::Duration;
-    use tracing::{trace, trace_span};
-    use tracing_futures::Instrument;
+    use tracing::trace;
 
     #[allow(dead_code)]
     fn setup_tracing_subscriber() {
@@ -322,22 +321,19 @@ mod tests {
             let key_clone = key.clone();
             let addr_clone = addr.clone();
             let listener = TcpListener::bind("0.0.0.0:14187").await.unwrap();
-            let h = spawn(
-                async move {
-                    let (stream, _) = listener.accept().await.unwrap();
-                    trace!("accept conn");
-                    let mut ss_server = SSTcpStream::accept(stream, method, key);
-                    let addr = Address::read_from(&mut ss_server).await.unwrap();
-                    trace!("read address");
-                    assert_eq!(addr, addr_clone);
-                    let mut buf = vec![0; 1024];
-                    let s = ss_server.read(&mut buf).await.unwrap();
-                    trace!("read data");
-                    ss_server.write(data).await.unwrap();
-                    assert_eq!(&buf[..s], data);
-                }
-                .instrument(trace_span!("server")),
-            );
+            let h = spawn(async move {
+                let (stream, _) = listener.accept().await.unwrap();
+                trace!("accept conn");
+                let mut ss_server = SSTcpStream::accept(stream, method, key);
+                let addr = Address::read_from(&mut ss_server).await.unwrap();
+                trace!("read address");
+                assert_eq!(addr, addr_clone);
+                let mut buf = vec![0; 1024];
+                let s = ss_server.read(&mut buf).await.unwrap();
+                trace!("read data");
+                ss_server.write(data).await.unwrap();
+                assert_eq!(&buf[..s], data);
+            });
 
             sleep(Duration::from_secs(3)).await;
             trace!("before connect");

@@ -90,6 +90,7 @@ impl ProxyClient {
                 );
                 let chooser_clone = chooser.clone();
                 let _ = spawn(async move { chooser_clone.ping_servers_forever().await.unwrap() });
+                chooser.ping_servers().await;
                 Some(chooser)
             }
             _ => None,
@@ -313,8 +314,6 @@ impl ProxyClient {
                 let host = self
                     .resolver
                     .lookup_host(&ip)
-                    .instrument(trace_span!("lookup host", ip = ?ip))
-                    .await
                     .map(|s| Address::DomainNameAddress(s, real_dest.port()))
                     .unwrap_or_else(|| Address::SocketAddress(real_dest));
 
@@ -323,7 +322,7 @@ impl ProxyClient {
                 let sock_addr = match self.dns_client.lookup_address(&host).await {
                     Ok(a) => a,
                     Err(e) => {
-                        error!(?e, "resolve dns");
+                        error!(?e, ?host, "error resolve dns");
                         return;
                     }
                 };
@@ -387,8 +386,6 @@ impl ProxyClient {
         let host = self
             .resolver
             .lookup_host(&ip)
-            .instrument(trace_span!("lookup host", ip = ?ip))
-            .await
             .map(|s| Address::DomainNameAddress(s, real_dest.port()))
             .unwrap_or_else(|| Address::SocketAddress(real_dest));
         let sock_addr = self.dns_client.lookup_address(&host).await?;

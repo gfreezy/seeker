@@ -103,7 +103,7 @@ impl ShadowsocksServerChooser {
         }
     }
 
-    async fn ping_servers(&self) {
+    pub async fn ping_servers(&self) {
         let mut candidates = vec![];
         if let Some((current_config, _)) = self.candidate() {
             if self.ping_server(current_config.clone()).await.is_ok() {
