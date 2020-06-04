@@ -1,4 +1,4 @@
-use crate::net::run_cmd;
+use crate::command::run_cmd;
 use std::net::IpAddr;
 use tracing::info;
 
@@ -27,10 +27,14 @@ impl DNSSetup {
             }
             let _ = run_cmd("networksetup", &args);
         } else {
-            let _ = run_cmd(
-                "networksetup",
-                &["-setdnsservers", &network, "127.0.0.1", &dns],
-            );
+            if dns.is_empty() {
+                let _ = run_cmd("networksetup", &["-setdnsservers", &network, "127.0.0.1"]);
+            } else {
+                let _ = run_cmd(
+                    "networksetup",
+                    &["-setdnsservers", &network, "127.0.0.1", &dns],
+                );
+            }
         }
         DNSSetup {
             primary_network: network,

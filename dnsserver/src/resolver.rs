@@ -152,11 +152,11 @@ impl RuleBasedDnsResolver {
 
         let ip = if let Some(addr) = self.inner.db.get(domain).expect("get domain") {
             let ip = String::from_utf8(addr.to_vec()).unwrap();
-            debug!("resolve from cache, domain: {}, ip: {}", domain, &ip);
+            debug!("lookup host from cache, domain: {}, ip: {}", domain, &ip);
             ip
         } else {
             let ip = self.gen_ipaddr();
-            debug!("resolve to tun, domain: {}, ip: {}", domain, &ip);
+            debug!("lookup host gen ip, domain: {}, ip: {}", domain, &ip);
 
             self.inner
                 .db
