@@ -62,7 +62,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     set_rlimit_no_file(10240)?;
 
-    let _dns_setup = DNSSetup::new(config.dns_server.ip().to_string());
+    let _dns_setup = DNSSetup::new("".to_string());
     let _ip_forward = if config.gateway_mode {
         // In gateway mode, dns server need be accessible from the network.
         Some(IpForward::new())

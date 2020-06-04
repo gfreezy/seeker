@@ -1,4 +1,4 @@
-use crate::net::run_cmd;
+use crate::command::run_cmd;
 use std::fs::OpenOptions;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::net::IpAddr;
@@ -71,7 +71,7 @@ fn get_original_dns(content: &str, dns: &str) -> Vec<String> {
         .filter_map(|ip| ip.parse::<IpAddr>().ok())
         .map(|ip| ip.to_string())
         .collect();
-    if dns_list.is_empty() {
+    if dns_list.is_empty() && !dns.is_empty() {
         dns_list.push(dns.to_string())
     }
     dns_list
@@ -80,7 +80,9 @@ fn get_original_dns(content: &str, dns: &str) -> Vec<String> {
 fn generate_resolve_file(dns: &[&str]) -> Vec<u8> {
     let mut content = Vec::new();
     for d in dns {
-        content.extend_from_slice(format!("nameserver {}\n", d).as_bytes());
+        if !d.is_empty() {
+            content.extend_from_slice(format!("nameserver {}\n", d).as_bytes());
+        }
     }
     content
 }
