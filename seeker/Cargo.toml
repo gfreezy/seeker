@@ -8,7 +8,6 @@ edition = "2018"
 
 [dependencies]
 tracing = "0.1.14"
-tracing-core = "0.1.10"
 tracing-subscriber = "0.2.5"
 tracing-futures = { version = "0.2.4", features = ["std-future"], default-features = false }
 config = { path = "../config" }
@@ -18,16 +17,11 @@ socks5_client = { path = "../socks5_client" }
 http_proxy_client = { path = "../http_proxy_client" }
 sysconfig = { path = "../sysconfig" }
 tun_nat = { path = "../tun_nat" }
-async-trait = "0.1.31"
-hermesdns = { path = "../hermes/hermesdns" }
-chrono = "0.4.11"
 file-rotate = { git = "https://github.com/gfreezy/file-rotate", rev = "0fc0f02" }
-async-std = "1.6.0"
-smoltcp = "0.6.0"
+async-std = "~1.5.0"
 parking_lot = { version = "0.10.2", features = ["deadlock_detection"] }
 async-signals = "0.3.1"
-libc = "0.2.70"
-lru_time_cache = { git = "https://github.com/gfreezy/lru_time_cache.git", rev = "4319e2b" }
-crypto = { path = "../crypto" }
+libc = "0.2.71"
 futures-util = "0.3.5"
 clap = "2.33.1"
+async-std-resolver = "0.19.5"

@@ -61,7 +61,7 @@ pub fn setup_logger(log_path: Option<&str>) -> Result<(), Box<dyn Error>> {
             .expect("setting tracing default failed");
     };
 
-    #[cfg(debug_assertions)]
+    // #[cfg(debug_assertions)]
     {
         // only for #[cfg]
         use parking_lot::deadlock;

@@ -13,7 +13,7 @@ macro_rules! return_or_report {
         match $x {
             Ok(res) => res,
             Err(_) => {
-                println!($message);
+                eprintln!($message);
                 return;
             }
         }
@@ -25,7 +25,7 @@ macro_rules! ignore_or_report {
         match $x {
             Ok(_) => {}
             Err(_) => {
-                println!($message);
+                eprintln!($message);
                 return;
             }
         };
@@ -178,28 +178,25 @@ impl DnsUdpServer {
                 }
             };
 
-            // Parse it
-            let request = match DnsPacket::from_buffer(&mut req_buffer) {
-                Ok(x) => x,
-                Err(e) => {
-                    println!("Failed to parse UDP query packet: {:?}", e);
-                    continue;
-                }
-            };
-
-            let mut size_limit = 512;
-
-            // Check for EDNS
-            if request.resources.len() == 1 {
-                if let DnsRecord::OPT { packet_len, .. } = request.resources[0] {
-                    size_limit = packet_len as usize;
-                }
-            }
-
             let context = self.context.clone();
             let socket_clone = socket.clone();
 
             spawn(async move {
+                // Parse it
+                let request = return_or_report!(
+                    DnsPacket::from_buffer(&mut req_buffer),
+                    "failed to parse packet"
+                );
+
+                let mut size_limit = 512;
+
+                // Check for EDNS
+                if request.resources.len() == 1 {
+                    if let DnsRecord::OPT { packet_len, .. } = request.resources[0] {
+                        size_limit = packet_len as usize;
+                    }
+                }
+
                 // Create a response buffer, and ask the context for an appropriate
                 // resolver
                 let mut res_buffer = VectorPacketBuffer::new();
