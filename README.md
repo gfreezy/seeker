@@ -12,28 +12,45 @@ chmod +x seeker-osx  # or  chmod+x seeker-linux
 1. 启动 `seeker`
 
     ```bash
-    Seeker 0.1.1
+    Seeker 0.2.0
     gfreezy <gfreezy@gmail.com>
     Tun to Shadowsockets proxy. https://github.com/gfreezy/seeker
     
     USAGE:
-        seeker [OPTIONS] --config <FILE>
+        seeker [FLAGS] [OPTIONS]
     
     FLAGS:
+            --encrypt    Encrypt config file and output to terminal
         -h, --help       Prints help information
         -V, --version    Prints version information
     
     OPTIONS:
-        -c, --config <FILE>    Sets config file. Sample config at
-                               https://github.com/gfreezy/seeker/blob/master/sample_config.yml
-        -l, --log <PATH>       Log file.
-        -u, --uid <UID>        User id to proxy.
+        -c, --config <FILE>              Sets config file. Sample config at
+                                         https://github.com/gfreezy/seeker/blob/master/sample_config.yml
+            --config-url <CONFIG_URL>    URL to config
+            --key <KEY>                  Key for encryption/decryption
+        -l, --log <PATH>                 Log file
+        -u, --uid <UID>                  User id to proxy
     ```
+   
+   本地配置文件启动
    
    ```bash
    sudo seeker --config path/to/config.yml
    ```
-      
+   
+   远程配置文件启动
+   
+   ```bash
+   sudo seeker --config-url https://pastebin.com/raw/config --key encrypt-key
+   ```
+         
+   生成远程配置文件
+   
+   ```bash
+   sudo seeker --config path/to/config.yml --encrypt --key encrypt-key
+   ```
+   
 2. `seeker` 启动的时候会自动将本机 DNS 修改为 `127.0.0.1`，退出的时候将 DNS 设置为默认值
 
 ## FAQ

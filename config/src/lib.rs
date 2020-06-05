@@ -9,7 +9,7 @@ use serde::Deserialize;
 use smoltcp::wire::{Ipv4Address, Ipv4Cidr};
 use std::fs::File;
 use std::io;
-use std::io::ErrorKind;
+use std::io::{ErrorKind, Read};
 use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
@@ -129,7 +129,11 @@ fn parse_cidr(s: String) -> Ipv4Cidr {
 impl Config {
     pub fn from_config_file(path: &str) -> io::Result<Self> {
         let file = File::open(&path).unwrap();
-        let conf: Config = serde_yaml::from_reader(&file).unwrap();
+        Config::from_reader(file)
+    }
+
+    pub fn from_reader<R: Read>(reader: R) -> io::Result<Self> {
+        let conf: Config = serde_yaml::from_reader(reader).expect("serde yaml deserialize error");
         if let (None, None, None) = (
             &conf.shadowsocks_servers,
             &conf.socks5_server,
