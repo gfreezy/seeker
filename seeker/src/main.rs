@@ -123,26 +123,24 @@ fn load_config(
     url: Option<&str>,
     decrypt_key: Option<&str>,
 ) -> anyhow::Result<Config> {
-    if let Some(p) = path {
-        return Ok(Config::from_config_file(p).context("Load config from path error")?);
-    }
-
-    if let (Some(url), Some(key)) = (url, decrypt_key) {
-        let resp = ureq::get(url)
-            .timeout_read(5000)
-            .timeout_connect(5000)
-            .timeout_write(5000)
-            .call();
-        if !resp.ok() {
-            return Err(anyhow::anyhow!("Load config from remote host error"));
+    match (path, url, decrypt_key) {
+        (Some(p), ..) => Config::from_config_file(p).context("Load config from path error"),
+        (_, Some(url), Some(key)) => {
+            let resp = ureq::get(url)
+                .timeout_read(5000)
+                .timeout_connect(5000)
+                .timeout_write(5000)
+                .call();
+            if !resp.ok() {
+                return Err(anyhow::anyhow!("Load config from remote host error"));
+            }
+            let config =
+                config_encryptor::decrypt_config(resp.into_reader(), CipherType::ChaCha20Ietf, key)
+                    .context("Decrypt remote config error")?;
+            Config::from_reader(config.as_slice()).context("Load Config error")
         }
-        let config =
-            config_encryptor::decrypt_config(resp.into_reader(), CipherType::ChaCha20Ietf, key)
-                .context("Decrypt remote config error")?;
-        return Ok(Config::from_reader(config.as_slice()).context("Load Config error")?);
+        _ => Err(anyhow::anyhow!("Parameters error")),
     }
-
-    Err(anyhow::anyhow!("Parameters error"))
 }
 
 fn encrypt_config(path: Option<&str>, encrypt_key: Option<&str>) -> anyhow::Result<String> {
