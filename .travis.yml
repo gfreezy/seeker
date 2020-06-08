@@ -28,6 +28,7 @@ script:
   - cargo build --release
   - strip target/release/$BIN_NAME
   - upx --ultra-brute target/release/$BIN_NAME
+  - target/release/$BIN_NAME -V
   - cp target/release/$BIN_NAME artifacts/$BIN_NAME-$TRAVIS_OS_NAME
 before_deploy:
   - export TRAVIS_TAG="preview"
