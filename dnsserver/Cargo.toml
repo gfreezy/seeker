@@ -14,7 +14,7 @@ sled = "0.31.0"
 async-trait = "0.1.31"
 tracing = "0.1.14"
 async-std-resolver = "0.19.5"
-trust-dns-proto = "0.19.5"
+trust-dns-proto = { version = "0.19.5", default-features = false }
 
 [dev-dependencies]
 tempfile = "3.1.0"

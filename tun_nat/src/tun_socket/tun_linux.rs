@@ -101,7 +101,7 @@ impl TunSocket {
     pub fn mtu(&self) -> Result<usize> {
         let fd = match unsafe { socket(AF_INET, SOCK_STREAM, IPPROTO_IP) } {
             -1 => return Err(Error::last_os_error()),
-            fd @ _ => fd,
+            fd => fd,
         };
 
         let name = self.name()?;

@@ -25,7 +25,7 @@ pub fn list_system_proc_socks() -> Result<HashMap<i32, Vec<SocketInfo>>> {
     for entry in tcp.into_iter().chain(tcp6) {
         // find the process (if any) that has an open FD to this entry's inode
         if let Some(process) = map.get(&entry.inode) {
-            let item = socks_map.entry(process.pid()).or_insert_with(|| vec![]);
+            let item = socks_map.entry(process.pid()).or_insert(vec![]);
             item.push(SocketInfo {
                 local: entry.local_address,
                 remote: entry.remote_address,
@@ -57,7 +57,7 @@ pub fn list_user_proc_socks(uid: u32) -> Result<HashMap<i32, Vec<SocketInfo>>> {
     for entry in tcp.into_iter().chain(tcp6) {
         // find the process (if any) that has an open FD to this entry's inode
         if let Some(process) = map.get(&entry.inode) {
-            let item = socks_map.entry(process.pid()).or_insert_with(|| vec![]);
+            let item = socks_map.entry(process.pid()).or_insert(vec![]);
             item.push(SocketInfo {
                 local: entry.local_address,
                 remote: entry.remote_address,
@@ -72,11 +72,6 @@ pub fn list_user_proc_socks(uid: u32) -> Result<HashMap<i32, Vec<SocketInfo>>> {
 mod test {
     use super::*;
     use libc;
-
-    #[test]
-    fn test_list_system_proc_socks() {
-        assert!(list_system_proc_socks().unwrap().len() > 1);
-    }
 
     #[test]
     fn test_list_user_proc_socks() {

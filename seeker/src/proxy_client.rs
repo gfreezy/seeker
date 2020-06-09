@@ -19,7 +19,6 @@ use std::io;
 use std::io::Result;
 use std::sync::Arc;
 use std::time::Duration;
-use sysconfig::{list_user_proc_socks, SocketInfo};
 use tracing::{error, trace, trace_span};
 use tracing_futures::Instrument;
 use tun_nat::{run_nat, SessionManager};
@@ -495,9 +494,16 @@ async fn run_dns_resolver(config: &Config) -> RuleBasedDnsResolver {
     resolver
 }
 
+#[cfg(target_arch = "x86_64")]
 fn socket_addr_belong_to_user(addr: SocketAddr, uid: u32) -> Result<bool> {
-    let user_socks: HashMap<i32, Vec<SocketInfo>> = list_user_proc_socks(uid)?;
+    use sysconfig::SocketInfo;
+    let user_socks: HashMap<i32, Vec<SocketInfo>> = sysconfig::list_user_proc_socks(uid)?;
     Ok(user_socks
         .values()
         .any(|sockets| sockets.iter().any(|s| s.local == addr)))
+}
+
+#[cfg(not(target_arch = "x86_64"))]
+fn socket_addr_belong_to_user(_addr: SocketAddr, _uid: u32) -> Result<bool> {
+    Ok(true)
 }

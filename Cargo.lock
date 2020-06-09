@@ -1083,6 +1083,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "openssl-src"
+version = "111.9.0+1.1.1g"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a2dbe10ddd1eb335aba3780eb2eaa13e1b7b441d2562fd962398740927f39ec4"
+dependencies = [
+ "cc",
+]
+
+[[package]]
 name = "openssl-sys"
 version = "0.9.57"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1091,6 +1100,7 @@ dependencies = [
  "autocfg",
  "cc",
  "libc",
+ "openssl-src",
  "pkg-config",
  "vcpkg",
 ]
@@ -1828,20 +1838,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "tokio"
-version = "0.2.21"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d099fa27b9702bed751524694adbe393e18b36b204da91eb1cbbbbb4a5ee2d58"
-dependencies = [
- "bytes",
- "iovec",
- "lazy_static",
- "mio",
- "pin-project-lite",
- "slab",
-]
-
-[[package]]
 name = "tracing"
 version = "0.1.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1939,7 +1935,6 @@ dependencies = [
  "rand",
  "smallvec",
  "thiserror",
- "tokio",
  "url",
 ]
 

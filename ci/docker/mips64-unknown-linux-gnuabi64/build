@@ -1,0 +1,5 @@
+#!/bin/sh
+
+mkdir -p stage
+cp ../../ubuntu-install-packages ./stage/
+docker build -t ci/cross:mips64-unknown-linux-gnuabi64 .
