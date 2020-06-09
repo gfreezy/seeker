@@ -86,10 +86,10 @@ jobs:
             os: macos-latest
             rust: nightly
             target: x86_64-apple-darwin
-#          - build: linux-arm
-#            os: ubuntu-18.04
-#            rust: nightly
-#            target: arm-unknown-linux-gnueabihf
+          - build: linux-arm
+            os: ubuntu-18.04
+            rust: nightly
+            target: arm-unknown-linux-gnueabihf
 #          - build: win-msvc
 #            os: windows-2019
 #            rust: nightly
