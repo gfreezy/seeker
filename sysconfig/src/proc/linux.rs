@@ -75,7 +75,7 @@ mod test {
 
     #[test]
     fn test_list_system_proc_socks() {
-        assert!(list_system_proc_socks().unwrap().len() > 1);
+        assert!(list_system_proc_socks().unwrap().len() >= 1);
     }
 
     #[test]
