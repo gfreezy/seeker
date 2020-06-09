@@ -14,7 +14,7 @@ impl DNSSetup {
         info!("Primary netowrk service is {}", &network);
         let original_dns = run_cmd("networksetup", &["-getdnsservers", &network])
             .lines()
-            .filter(|l| *l != "127.0.0.1" && *l != &dns)
+            .filter(|l| *l != "127.0.0.1" && *l != dns)
             .filter_map(|l| l.parse::<IpAddr>().ok())
             .map(|ip| ip.to_string())
             .collect::<Vec<_>>();
@@ -26,15 +26,13 @@ impl DNSSetup {
                 args.push(&dns);
             }
             let _ = run_cmd("networksetup", &args);
+        } else if dns.is_empty() {
+            let _ = run_cmd("networksetup", &["-setdnsservers", &network, "127.0.0.1"]);
         } else {
-            if dns.is_empty() {
-                let _ = run_cmd("networksetup", &["-setdnsservers", &network, "127.0.0.1"]);
-            } else {
-                let _ = run_cmd(
-                    "networksetup",
-                    &["-setdnsservers", &network, "127.0.0.1", &dns],
-                );
-            }
+            let _ = run_cmd(
+                "networksetup",
+                &["-setdnsservers", &network, "127.0.0.1", &dns],
+            );
         }
         DNSSetup {
             primary_network: network,
