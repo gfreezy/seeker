@@ -74,11 +74,6 @@ mod test {
     use libc;
 
     #[test]
-    fn test_list_system_proc_socks() {
-        assert!(list_system_proc_socks().unwrap().len() >= 1);
-    }
-
-    #[test]
     fn test_list_user_proc_socks() {
         let uid = unsafe { libc::getuid() };
         let _socket = std::net::TcpListener::bind("0.0.0.0:65532").unwrap();
