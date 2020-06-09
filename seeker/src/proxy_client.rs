@@ -504,6 +504,6 @@ fn socket_addr_belong_to_user(addr: SocketAddr, uid: u32) -> Result<bool> {
 }
 
 #[cfg(not(target_arch = "x86_64"))]
-fn socket_addr_belong_to_user(addr: SocketAddr, uid: u32) -> Result<bool> {
+fn socket_addr_belong_to_user(_addr: SocketAddr, _uid: u32) -> Result<bool> {
     Ok(true)
 }
