@@ -123,6 +123,7 @@ jobs:
           echo "target flag is: ${{ env.TARGET_FLAGS }}"
 
       - name: Build cross docker images
+        if: matrix.target != ''
         run: ci/docker/${{ matrix.target }}/build
 
       - name: Build all crates
