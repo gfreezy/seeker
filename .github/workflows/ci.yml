@@ -63,15 +63,15 @@ jobs:
           - build: macos
             os: macos-latest
             rust: nightly
-          - build: nightly-arm
-            os: ubuntu-18.04
-            rust: nightly
-            # For stripping release binaries:
-            # docker run --rm -v $PWD/target:/target:Z \
-            #   rustembedded/cross:arm-unknown-linux-gnueabihf \
-            #   arm-linux-gnueabihf-strip \
-            #   /target/arm-unknown-linux-gnueabihf/debug/rg
-            target: arm-unknown-linux-gnueabihf
+#          - build: nightly-arm
+#            os: ubuntu-18.04
+#            rust: nightly
+#            # For stripping release binaries:
+#            # docker run --rm -v $PWD/target:/target:Z \
+#            #   rustembedded/cross:arm-unknown-linux-gnueabihf \
+#            #   arm-linux-gnueabihf-strip \
+#            #   /target/arm-unknown-linux-gnueabihf/debug/rg
+#            target: arm-unknown-linux-gnueabihf
 #          - build: beta
 #            os: ubuntu-18.04
 #            rust: beta
@@ -125,7 +125,7 @@ jobs:
       - name: Build cross docker images
         if: matrix.target != ''
         run: |
-          [ -d ci/docker/${{ matrix.target }} ] && cd ci/docker/${{ matrix.target }} && ./build
+          [ -d ci/docker/${{ matrix.target }} ] && cd ci/docker/${{ matrix.target }} && ./build || true
 
       - name: Build all crates
         run: ${{ env.CARGO }} build --verbose --all ${{ env.TARGET_FLAGS }}
