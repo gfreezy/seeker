@@ -154,6 +154,11 @@ jobs:
           release_version="$(cat artifacts/release-version)"
           echo "::set-env name=RELEASE_VERSION::$release_version"
           echo "release version: $RELEASE_VERSION"
+
+      - name: Build cross docker images
+        if: matrix.target != ''
+        run: cd ci/docker/${{ matrix.target }} && ./build
+
       - name: Build release binary
         run: ${{ env.CARGO }} build --verbose --release ${{ env.TARGET_FLAGS }}
 
