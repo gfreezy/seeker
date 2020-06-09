@@ -121,6 +121,10 @@ jobs:
         run: |
           echo "cargo command is: ${{ env.CARGO }}"
           echo "target flag is: ${{ env.TARGET_FLAGS }}"
+
+      - name: Build cross docker images
+        run: ci/docker/${{ matrix.target }}/build
+
       - name: Build all crates
         run: ${{ env.CARGO }} build --verbose --all ${{ env.TARGET_FLAGS }}
 
