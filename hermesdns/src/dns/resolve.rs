@@ -149,7 +149,7 @@ impl RecursiveDnsResolver {
             let server = (ns_copy.as_str(), 53);
             let response = self
                 .dns_client
-                .send_query(qname, qtype.clone(), server, false)
+                .send_query(qname, qtype, server, false)
                 .await?;
 
             // If we've got an actual answer, we're done!

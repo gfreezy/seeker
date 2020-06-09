@@ -27,7 +27,7 @@ mod tests {
     use hermesdns::{DnsClient, DnsNetworkClient, QueryType};
     use std::time::Duration;
 
-    const LOCAL_UDP_PORT: u16 = 53;
+    const LOCAL_UDP_PORT: u16 = 1153;
     async fn get_ip(client: &DnsNetworkClient, host: &str) -> Option<String> {
         let resp = io::timeout(
             Duration::from_secs(5),
@@ -45,7 +45,7 @@ mod tests {
         task::block_on(async {
             let (server, resolver) = create_dns_server(
                 dir.path(),
-                format!("127.0.0.1:{}", LOCAL_UDP_PORT),
+                format!("0.0.0.0:{}", LOCAL_UDP_PORT),
                 "10.0.0.1".parse().unwrap(),
                 ProxyRules::new(vec![]),
                 (dns, 53),
