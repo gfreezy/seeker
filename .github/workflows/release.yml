@@ -86,22 +86,22 @@ jobs:
             os: macos-latest
             rust: nightly
             target: x86_64-apple-darwin
-    #          - build: linux-arm
-    #            os: ubuntu-18.04
-    #            rust: nightly
-    #            target: arm-unknown-linux-gnueabihf
-    #          - build: win-msvc
-    #            os: windows-2019
-    #            rust: nightly
-    #            target: x86_64-pc-windows-msvc
-    #          - build: win-gnu
-    #            os: windows-2019
-    #            rust: nightly-x86_64-gnu
-    #            target: x86_64-pc-windows-gnu
-    #          - build: win32-msvc
-    #            os: windows-2019
-    #            rust: nightly
-    #            target: i686-pc-windows-msvc
+#          - build: linux-arm
+#            os: ubuntu-18.04
+#            rust: nightly
+#            target: arm-unknown-linux-gnueabihf
+#          - build: win-msvc
+#            os: windows-2019
+#            rust: nightly
+#            target: x86_64-pc-windows-msvc
+#          - build: win-gnu
+#            os: windows-2019
+#            rust: nightly-x86_64-gnu
+#            target: x86_64-pc-windows-gnu
+#          - build: win32-msvc
+#            os: windows-2019
+#            rust: nightly
+#            target: i686-pc-windows-msvc
 
     steps:
       - name: Checkout repository

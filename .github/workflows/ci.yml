@@ -63,32 +63,32 @@ jobs:
           - build: macos
             os: macos-latest
             rust: nightly
-          # - build: nightly-arm
-          #   os: ubuntu-18.04
-          #   rust: nightly
-          #   # For stripping release binaries:
-          #   # docker run --rm -v $PWD/target:/target:Z \
-          #   #   rustembedded/cross:arm-unknown-linux-gnueabihf \
-          #   #   arm-linux-gnueabihf-strip \
-          #   #   /target/arm-unknown-linux-gnueabihf/debug/rg
-          #   target: arm-unknown-linux-gnueabihf
-    #          - build: beta
-    #            os: ubuntu-18.04
-    #            rust: beta
-    #          - build: nightly-32
-    #            os: ubuntu-18.04
-    #            rust: nightly
-    #            target: i686-unknown-linux-gnu
-    #          - build: nightly-mips
-    #            os: ubuntu-18.04
-    #            rust: nightly
-    #            target: mips64-unknown-linux-gnuabi64
-    #          - build: win-msvc
-    #            os: windows-2019
-    #            rust: nightly
-    #          - build: win-gnu
-    #            os: windows-2019
-    #            rust: nightly-x86_64-gnu
+#          - build: nightly-arm
+#            os: ubuntu-18.04
+#            rust: nightly
+#            # For stripping release binaries:
+#            # docker run --rm -v $PWD/target:/target:Z \
+#            #   rustembedded/cross:arm-unknown-linux-gnueabihf \
+#            #   arm-linux-gnueabihf-strip \
+#            #   /target/arm-unknown-linux-gnueabihf/debug/rg
+#            target: arm-unknown-linux-gnueabihf
+#          - build: beta
+#            os: ubuntu-18.04
+#            rust: beta
+#          - build: nightly-32
+#            os: ubuntu-18.04
+#            rust: nightly
+#            target: i686-unknown-linux-gnu
+#          - build: nightly-mips
+#            os: ubuntu-18.04
+#            rust: nightly
+#            target: mips64-unknown-linux-gnuabi64
+#          - build: win-msvc
+#            os: windows-2019
+#            rust: nightly
+#          - build: win-gnu
+#            os: windows-2019
+#            rust: nightly-x86_64-gnu
     steps:
       - name: Checkout repository
         uses: actions/checkout@v2
@@ -126,38 +126,37 @@ jobs:
 
       # This is useful for debugging problems when the expected build artifacts
       # (like shell completions and man pages) aren't generated.
-      - name: Show build.rs stderr
-        shell: bash
-        continue-on-error: true
-        run: |
-          set +x
-          stderr="$(find "${{ env.TARGET_DIR }}/debug" -name stderr -print0 | xargs -0 ls -t | head -n1)"
-          if [ -s "$stderr" ]; then
-            echo "===== $stderr ===== "
-            cat "$stderr"
-            echo "====="
-          fi
-          set -x
+#      - name: Show build.rs stderr
+#        shell: bash
+#        run: |
+#          set +x
+#          stderr="$(find "${{ env.TARGET_DIR }}/debug" -name stderr -print0 | xargs -0 ls -t | head -n1)"
+#          if [ -s "$stderr" ]; then
+#            echo "===== $stderr ===== "
+#            cat "$stderr"
+#            echo "====="
+#          fi
+#          set -x
 
       - name: Run tests (with cross)
         if: matrix.target != ''
         run: ${{ env.CARGO }} test --verbose --all ${{ env.TARGET_FLAGS }}
-  #
-  #      - name: Test for existence of build artifacts (Windows)
-  #        if: matrix.os == 'windows-2019'
-  #        shell: bash
-  #        run: |
-  #          outdir="$(ci/cargo-out-dir "${{ env.TARGET_DIR }}")"
-  #          ls "$outdir/_rg.ps1" && file "$outdir/_rg.ps1"
-  #      - name: Test for existence of build artifacts (Unix)
-  #        if: matrix.os != 'windows-2019'
-  #        shell: bash
-  #        run: |
-  #          outdir="$(ci/cargo-out-dir "${{ env.TARGET_DIR }}")"
-  #          # TODO: Check for the man page generation here. For whatever reason,
-  #          # it seems to be intermittently failing in CI. No idea why.
-  #          # for f in rg.bash rg.fish rg.1; do
-  #          for f in rg.bash rg.fish; do
-  #            # We could use file -E here, but it isn't supported on macOS.
-  #            ls "$outdir/$f" && file "$outdir/$f"
-  #          done
+
+#      - name: Test for existence of build artifacts (Windows)
+#        if: matrix.os == 'windows-2019'
+#        shell: bash
+#        run: |
+#          outdir="$(ci/cargo-out-dir "${{ env.TARGET_DIR }}")"
+#          ls "$outdir/_rg.ps1" && file "$outdir/_rg.ps1"
+#      - name: Test for existence of build artifacts (Unix)
+#        if: matrix.os != 'windows-2019'
+#        shell: bash
+#        run: |
+#          outdir="$(ci/cargo-out-dir "${{ env.TARGET_DIR }}")"
+#          # TODO: Check for the man page generation here. For whatever reason,
+#          # it seems to be intermittently failing in CI. No idea why.
+#          # for f in rg.bash rg.fish rg.1; do
+#          for f in rg.bash rg.fish; do
+#            # We could use file -E here, but it isn't supported on macOS.
+#            ls "$outdir/$f" && file "$outdir/$f"
+#          done
