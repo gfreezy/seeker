@@ -124,7 +124,7 @@ jobs:
 
       - name: Build cross docker images
         if: matrix.target != ''
-        run: ci/docker/${{ matrix.target }}/build
+        run: cd ci/docker/${{ matrix.target }} && ./build
 
       - name: Build all crates
         run: ${{ env.CARGO }} build --verbose --all ${{ env.TARGET_FLAGS }}
