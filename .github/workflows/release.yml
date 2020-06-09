@@ -156,6 +156,7 @@ jobs:
           echo "release version: $RELEASE_VERSION"
 
       - name: Build cross docker images
+        if: matrix.target != ''
         run: |
           [ -d ci/docker/${{ matrix.target }} ] && cd ci/docker/${{ matrix.target }} && ./build
 
