@@ -9,3 +9,10 @@ image = "ci/cross:mips64-unknown-linux-gnuabi64"
 
 [target.arm-unknown-linux-gnueabihf]
 image = "ci/cross:arm-unknown-linux-gnueabihf"
+
+[build.env]
+passthrough = [
+    "RUST_BACKTRACE",
+    "RUST_LOG",
+    "DNS",
+]
