@@ -1828,20 +1828,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "tokio"
-version = "0.2.21"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d099fa27b9702bed751524694adbe393e18b36b204da91eb1cbbbbb4a5ee2d58"
-dependencies = [
- "bytes",
- "iovec",
- "lazy_static",
- "mio",
- "pin-project-lite",
- "slab",
-]
-
-[[package]]
 name = "tracing"
 version = "0.1.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1939,7 +1925,6 @@ dependencies = [
  "rand",
  "smallvec",
  "thiserror",
- "tokio",
  "url",
 ]
 
