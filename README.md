@@ -1,6 +1,9 @@
 # Seeker [![Build Status](https://travis-ci.com/gfreezy/seeker.svg?branch=master)](https://travis-ci.com/gfreezy/seeker)[![Gitter](https://badges.gitter.im/AllSundays/seeker.svg)](https://gitter.im/AllSundays/seeker?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge)
 使用 Tun 实现 ss 透明代理（支持 Mac & Linux 系统），支持 TCP、UDP。
 
+## Slack
+https://join.slack.com/t/allsunday/shared_invite/zt-f8xw3uzl-qchMa2jQOfQF1T89w3lfiw
+
 ## Download
 访问 https://github.com/gfreezy/seeker/releases 下载最新 release
 
