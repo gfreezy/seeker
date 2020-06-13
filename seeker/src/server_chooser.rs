@@ -7,7 +7,6 @@ use futures_util::stream::FuturesUnordered;
 use parking_lot::Mutex;
 use ssclient::SSTcpStream;
 use std::collections::HashMap;
-use std::io;
 use std::io::Result;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -99,7 +98,7 @@ impl ShadowsocksServerChooser {
     pub async fn ping_servers_forever(&self) -> Result<()> {
         loop {
             self.ping_servers().await;
-            sleep(Duration::from_secs(300)).await;
+            sleep(Duration::from_secs(30)).await;
         }
     }
 
@@ -118,20 +117,32 @@ impl ShadowsocksServerChooser {
                 let self_clone = self.clone();
                 let config_clone = config.clone();
                 spawn(async move {
-                    let duration = self_clone.ping_server(config_clone.clone()).await?;
-                    Ok::<_, io::Error>((config_clone, duration))
+                    let duration = self_clone
+                        .ping_server(config_clone.clone())
+                        .await
+                        .map_err(|_| config_clone.clone())?;
+                    Ok::<_, ShadowsocksServerConfig>((config_clone, duration))
                 })
             })
             .collect();
         while let Some(ret) = fut.next().await {
-            if let Ok((config, duration)) = ret {
-                info!(
-                    name = config.name(),
-                    server = ?config.addr(),
-                    latency = %duration.as_millis(),
-                    "Ping shadowsocks server"
-                );
-                candidates.push(config);
+            match ret {
+                Ok((config, duration)) => {
+                    info!(
+                        name = config.name(),
+                        server = ?config.addr(),
+                        latency = %duration.as_millis(),
+                        "Ping shadowsocks server"
+                    );
+                    candidates.push(config);
+                }
+                Err(config) => {
+                    info!(
+                        name = config.name(),
+                        server = ?config.addr(),
+                        "Ping shadowsocks server error"
+                    );
+                }
             }
         }
         if !candidates.is_empty() {
