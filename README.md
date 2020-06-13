@@ -160,6 +160,10 @@ rules:
 rm -rf dns.db
 ``` 
 
+## FAQ
+* Ubuntu 提示 `Address already used`
+    https://unix.stackexchange.com/questions/304050/how-to-avoid-conflicts-between-dnsmasq-and-systemd-resolved
+    
 ## Build (rust >= 1.39)
 ```bash
 git clone https://github.com/gfreezy/seeker.git
