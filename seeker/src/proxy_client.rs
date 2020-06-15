@@ -6,6 +6,7 @@ use async_std::io::{timeout, Read, Write};
 use async_std::net::{SocketAddr, TcpListener, TcpStream, UdpSocket};
 use async_std::prelude::*;
 use async_std::task::spawn;
+use async_std_resolver::AsyncStdResolver;
 use config::rule::Action;
 use config::{Address, Config};
 use dnsserver::create_dns_server;
@@ -38,8 +39,9 @@ impl ProxyClient {
     pub async fn new(config: Config, uid: Option<u32>) -> Self {
         let session_manager =
             run_nat(&config.tun_name, config.tun_ip, config.tun_cidr, 1300).expect("run nat");
+        let dns_client = DnsClient::new(&config.dns_servers, Duration::from_secs(1)).await;
 
-        let resolver = run_dns_resolver(&config).await;
+        let resolver = run_dns_resolver(&config, dns_client.resolver()).await;
 
         let mut extra_directly_servers = vec![];
         // always pass proxy for socks5 server
@@ -57,7 +59,6 @@ impl ProxyClient {
             }
         }
 
-        let dns_client = DnsClient::new(config.dns_server, Duration::from_secs(1)).await;
         let server_chooser = match (&config.socks5_server, &config.shadowsocks_servers) {
             (None, Some(shadowsocks_servers)) => {
                 let ping_url = vec![
@@ -476,13 +477,13 @@ async fn tunnel_tcp_stream<T1: Read + Write + Unpin + Clone, T2: Read + Write + 
     f1.race(f2).await
 }
 
-async fn run_dns_resolver(config: &Config) -> RuleBasedDnsResolver {
+async fn run_dns_resolver(config: &Config, resolver: AsyncStdResolver) -> RuleBasedDnsResolver {
     let (dns_server, resolver) = create_dns_server(
         "dns.db",
         config.dns_listen.clone(),
         config.dns_start_ip,
         config.rules.clone(),
-        (config.dns_server.ip().to_string(), config.dns_server.port()),
+        resolver,
     )
     .await;
     println!("Spawn DNS server");
