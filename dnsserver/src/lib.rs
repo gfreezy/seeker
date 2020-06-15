@@ -1,5 +1,6 @@
 pub mod resolver;
 
+use async_std_resolver::AsyncStdResolver;
 use config::rule::ProxyRules;
 use hermesdns::DnsUdpServer;
 use resolver::RuleBasedDnsResolver;
@@ -11,19 +12,20 @@ pub async fn create_dns_server<P: AsRef<Path>>(
     listen: String,
     start_ip: Ipv4Addr,
     rules: ProxyRules,
-    dns_server: (String, u16),
+    async_resolver: AsyncStdResolver,
 ) -> (DnsUdpServer, RuleBasedDnsResolver) {
     let n = u32::from_be_bytes(start_ip.octets());
-    let resolver = RuleBasedDnsResolver::new(path, n, rules, dns_server).await;
+    let resolver = RuleBasedDnsResolver::new(path, n, rules, async_resolver).await;
     let server = DnsUdpServer::new(listen, Box::new(resolver.clone())).await;
     (server, resolver)
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use async_std::io;
     use async_std::task;
+    use async_std_resolver::config::{NameServerConfigGroup, ResolverConfig, ResolverOpts};
     use hermesdns::{DnsClient, DnsNetworkClient, QueryType};
     use std::time::Duration;
 
@@ -38,17 +40,30 @@ mod tests {
         resp.get_random_a()
     }
 
+    pub(crate) async fn new_resolver(ip: String, port: u16) -> AsyncStdResolver {
+        let name_servers = NameServerConfigGroup::from_ips_clear(&[ip.parse().unwrap()], port);
+
+        // Construct a new Resolver with default configuration options
+        async_std_resolver::resolver(
+            ResolverConfig::from_parts(None, Vec::new(), name_servers),
+            ResolverOpts::default(),
+        )
+        .await
+        .expect("failed to create resolver")
+    }
+
     #[test]
     fn test_resolve_ip() {
         let dir = tempfile::tempdir().unwrap();
         let dns = std::env::var("DNS").unwrap_or_else(|_| "223.5.5.5".to_string());
         task::block_on(async {
+            let resolver = new_resolver(dns, 53).await;
             let (server, resolver) = create_dns_server(
                 dir.path(),
                 format!("0.0.0.0:{}", LOCAL_UDP_PORT),
                 "10.0.0.1".parse().unwrap(),
                 ProxyRules::new(vec![]),
-                (dns, 53),
+                resolver,
             )
             .await;
             task::spawn(server.run_server());

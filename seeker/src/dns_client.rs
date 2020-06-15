@@ -1,4 +1,6 @@
-use async_std_resolver::config::{NameServerConfigGroup, ResolverConfig, ResolverOpts};
+use async_std_resolver::config::{
+    NameServerConfig, NameServerConfigGroup, Protocol, ResolverConfig, ResolverOpts,
+};
 use async_std_resolver::{resolver, AsyncStdResolver};
 use config::Address;
 use std::io::{Error, ErrorKind, Result};
@@ -12,16 +14,26 @@ pub struct DnsClient {
 }
 
 impl DnsClient {
-    pub async fn new(dns_server: SocketAddr, timeout: Duration) -> Self {
+    pub async fn new(dns_servers: &[SocketAddr], timeout: Duration) -> Self {
+        let mut name_servers = NameServerConfigGroup::with_capacity(dns_servers.len());
+
+        for addr in dns_servers {
+            let udp = NameServerConfig {
+                socket_addr: *addr,
+                protocol: Protocol::Udp,
+                tls_dns_name: None,
+            };
+            name_servers.push(udp);
+        }
+
+        let num_concurrent_reqs = name_servers.len();
+
         // Construct a new Resolver with default configuration options
         let resolver = resolver(
-            ResolverConfig::from_parts(
-                None,
-                Vec::new(),
-                NameServerConfigGroup::from_ips_clear(&[dns_server.ip()], dns_server.port()),
-            ),
+            ResolverConfig::from_parts(None, Vec::new(), name_servers),
             ResolverOpts {
                 timeout,
+                num_concurrent_reqs,
                 ..Default::default()
             },
         )
@@ -31,6 +43,9 @@ impl DnsClient {
         DnsClient { resolver }
     }
 
+    pub fn resolver(&self) -> AsyncStdResolver {
+        self.resolver.clone()
+    }
     pub async fn lookup(&self, domain: &str) -> Result<IpAddr> {
         let response = self
             .resolver

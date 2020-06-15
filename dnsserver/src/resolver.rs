@@ -1,6 +1,5 @@
 use async_std::net::IpAddr;
-use async_std_resolver::config::{NameServerConfigGroup, ResolverConfig, ResolverOpts};
-use async_std_resolver::{resolver, AsyncStdResolver};
+use async_std_resolver::AsyncStdResolver;
 use async_trait::async_trait;
 use config::rule::{Action, ProxyRules};
 use hermesdns::{DnsPacket, DnsRecord, DnsResolver, Hosts, QueryType, TransientTtl};
@@ -38,7 +37,7 @@ impl RuleBasedDnsResolver {
         path: P,
         next_ip: u32,
         rules: ProxyRules,
-        (ip, port): (String, u16),
+        resolver: AsyncStdResolver,
     ) -> Self {
         let db = sled::open(path).expect("open db error");
         let next_ip = match db.get(NEXT_IP.as_bytes()) {
@@ -52,18 +51,6 @@ impl RuleBasedDnsResolver {
                 next_ip
             }
         };
-
-        // Construct a new Resolver with default configuration options
-        let resolver = resolver(
-            ResolverConfig::from_parts(
-                None,
-                Vec::new(),
-                NameServerConfigGroup::from_ips_clear(&[ip.parse().expect("invalid dns ip")], port),
-            ),
-            ResolverOpts::default(),
-        )
-        .await
-        .expect("failed to create resolver");
 
         RuleBasedDnsResolver {
             inner: Arc::new(Inner {
@@ -204,6 +191,7 @@ impl DnsResolver for RuleBasedDnsResolver {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tests::new_resolver;
     use async_std::task;
 
     #[test]
@@ -213,8 +201,13 @@ mod tests {
         let n = u32::from_be_bytes(start_ip.octets());
         let dns = std::env::var("DNS").unwrap_or_else(|_| "223.5.5.5".to_string());
         task::block_on(async {
-            let resolver =
-                RuleBasedDnsResolver::new(dir.path(), n, ProxyRules::new(vec![]), (dns, 53)).await;
+            let resolver = RuleBasedDnsResolver::new(
+                dir.path(),
+                n,
+                ProxyRules::new(vec![]),
+                new_resolver(dns, 53).await,
+            )
+            .await;
             assert_eq!(
                 resolver.resolve("baidu.com").await.unwrap().get_random_a(),
                 Some("10.0.0.1".to_string())

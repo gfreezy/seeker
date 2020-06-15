@@ -20,7 +20,7 @@ pub struct Config {
     pub socks5_server: Option<ProxyServerConfig>,
     pub http_proxy_server: Option<ProxyServerConfig>,
     pub dns_start_ip: Ipv4Addr,
-    pub dns_server: SocketAddr,
+    pub dns_servers: Vec<SocketAddr>,
     pub tun_name: String,
     pub tun_ip: Ipv4Addr,
     #[serde(default)]

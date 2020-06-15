@@ -1,6 +1,8 @@
 verbose: false
 dns_start_ip: 11.0.0.10
-dns_server: 223.5.5.5:53
+dns_server:
+  - 223.5.5.5:53
+  - 114.114.114.114:53
 tun_name: utun4
 tun_ip: 11.0.0.1
 tun_cidr: 11.0.0.0/16
