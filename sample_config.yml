@@ -11,7 +11,7 @@ dns_listen: 0.0.0.0:53
 gateway_mode: true
 probe_timeout: 100ms
 ping_timeout: 2s
-connect_timeout: 200ms
+connect_timeout: 2s
 read_timeout: 300s
 write_timeout: 300s
 max_connect_errors: 2
