@@ -33,6 +33,10 @@ pub struct Config {
     #[serde(default)]
     pub gateway_mode: bool,
     #[serde(with = "duration", default = "default_connect_timeout")]
+    pub ping_timeout: Duration,
+    #[serde(with = "duration", default = "default_connect_timeout")]
+    pub dns_timeout: Duration,
+    #[serde(with = "duration", default = "default_ping_timeout")]
     pub probe_timeout: Duration,
     #[serde(with = "duration", default = "default_connect_timeout")]
     pub connect_timeout: Duration,
@@ -51,6 +55,9 @@ fn default_write_timeout() -> Duration {
 }
 fn default_connect_timeout() -> Duration {
     Duration::from_millis(100)
+}
+fn default_ping_timeout() -> Duration {
+    Duration::from_secs(3)
 }
 
 mod ipv4_cidr {
