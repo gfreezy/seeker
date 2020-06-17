@@ -19,7 +19,6 @@ use std::collections::HashMap;
 use std::io;
 use std::io::Result;
 use std::sync::Arc;
-use std::time::Duration;
 use tracing::{error, trace, trace_span};
 use tracing_futures::Instrument;
 use tun_nat::{run_nat, SessionManager};
@@ -39,7 +38,7 @@ impl ProxyClient {
     pub async fn new(config: Config, uid: Option<u32>) -> Self {
         let session_manager =
             run_nat(&config.tun_name, config.tun_ip, config.tun_cidr, 1300).expect("run nat");
-        let dns_client = DnsClient::new(&config.dns_servers, Duration::from_secs(1)).await;
+        let dns_client = DnsClient::new(&config.dns_servers, config.dns_timeout).await;
 
         let resolver = run_dns_resolver(&config, dns_client.resolver()).await;
 
@@ -84,7 +83,7 @@ impl ProxyClient {
                         shadowsocks_servers.clone(),
                         dns_client.clone(),
                         ping_url,
-                        Duration::from_secs(1),
+                        config.ping_timeout,
                     )
                     .await,
                 );
@@ -182,16 +181,15 @@ impl ProxyClient {
                             chooser.candidate().expect("no candidate available");
                         let server = self.dns_client.lookup_address(&ss_server.addr()).await?;
                         trace!("choose_proxy_tcp_stream: shadowsocks");
-                        let stream = retry_timeout!(
+                        let stream = timeout(
                             self.config.connect_timeout,
-                            self.config.max_connect_errors,
                             SSTcpStream::connect(
                                 remote_addr.clone(),
                                 server,
                                 server_alive.clone(),
                                 ss_server.method(),
                                 ss_server.key(),
-                            )
+                            ),
                         )
                         .await;
                         match stream {
@@ -264,10 +262,9 @@ impl ProxyClient {
                         let (ss_server, _) = chooser.candidate().expect("no candidate available");
                         let server = self.dns_client.lookup_address(&ss_server.addr()).await?;
                         trace!("choose_proxy_udp_socket: shadowsocks");
-                        let udp = retry_timeout!(
+                        let udp = timeout(
                             self.config.connect_timeout,
-                            self.config.max_connect_errors,
-                            SSUdpSocket::new(server, ss_server.method(), ss_server.key())
+                            SSUdpSocket::new(server, ss_server.method(), ss_server.key()),
                         )
                         .await;
                         match udp {
