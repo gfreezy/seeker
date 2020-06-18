@@ -3,13 +3,15 @@ dns_start_ip: 11.0.0.10
 dns_server:
   - 223.5.5.5:53
   - 114.114.114.114:53
+dns_timeout: 1s
 tun_name: utun4
 tun_ip: 11.0.0.1
 tun_cidr: 11.0.0.0/16
 dns_listen: 0.0.0.0:53
 gateway_mode: true
 probe_timeout: 100ms
-connect_timeout: 200ms
+ping_timeout: 2s
+connect_timeout: 2s
 read_timeout: 300s
 write_timeout: 300s
 max_connect_errors: 2
