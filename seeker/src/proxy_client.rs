@@ -344,7 +344,8 @@ impl ProxyClient {
                 ?peer_addr,
                 ?real_src,
                 ?real_dest
-            )).await
+            ))
+            .await
         }
         Ok::<(), io::Error>(())
     }
