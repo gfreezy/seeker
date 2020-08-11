@@ -127,7 +127,7 @@ impl DnsNetworkClient {
         let req_receiver = self.receiver.clone();
         let write_task = async move {
             let mut req_buffer = BytePacketBuffer::new();
-            while let Some(mut req) = req_receiver.recv().await {
+            while let Ok(mut req) = req_receiver.recv().await {
                 let server = (req.server.0.as_str(), req.server.1);
                 req_buffer.seek(0)?;
                 req.packet.write(&mut req_buffer, 512)?;
@@ -193,8 +193,8 @@ impl DnsNetworkClient {
             .await;
 
         match future::timeout(self.timeout, receiver.recv()).await {
-            Ok(Some(qr)) => Ok(qr),
-            Ok(None) => {
+            Ok(Ok(qr)) => Ok(qr),
+            Ok(Err(_)) => {
                 let _ = self.total_failed.fetch_add(1, Ordering::Release);
                 Err(Error::new(
                     ErrorKind::InvalidInput,
