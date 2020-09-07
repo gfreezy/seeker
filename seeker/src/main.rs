@@ -1,3 +1,4 @@
+#![type_length_limit = "2374570"]
 #[macro_use]
 mod macros;
 mod config_encryptor;
