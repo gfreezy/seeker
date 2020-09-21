@@ -1,6 +1,6 @@
 pub mod rule;
 mod server_config;
-pub use server_config::{ServerAddr, ShadowsocksServerConfig};
+pub use server_config::{DnsServerAddr, ShadowsocksServerConfig};
 pub use socks5_client::Address;
 
 use crate::server_config::ProxyServerConfig;
@@ -10,7 +10,7 @@ use smoltcp::wire::{Ipv4Address, Ipv4Cidr};
 use std::fs::File;
 use std::io;
 use std::io::{ErrorKind, Read};
-use std::net::{Ipv4Addr, SocketAddr};
+use std::net::Ipv4Addr;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -20,7 +20,7 @@ pub struct Config {
     pub socks5_server: Option<ProxyServerConfig>,
     pub http_proxy_server: Option<ProxyServerConfig>,
     pub dns_start_ip: Ipv4Addr,
-    pub dns_servers: Vec<SocketAddr>,
+    pub dns_servers: Vec<DnsServerAddr>,
     pub tun_name: String,
     pub tun_ip: Ipv4Addr,
     #[serde(default)]

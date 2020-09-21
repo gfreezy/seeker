@@ -84,6 +84,7 @@ dns_start_ip: 10.0.0.10
 dns_servers:
   - 223.5.5.5:53
   - 114.114.114.114:53
+  - tcp://114.114.114.114:53
 dns_timeout: 1s
 tun_name: utun4
 tun_ip: 10.0.0.1
