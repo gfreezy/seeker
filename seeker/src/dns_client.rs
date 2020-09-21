@@ -2,7 +2,7 @@ use async_std_resolver::config::{
     NameServerConfig, NameServerConfigGroup, Protocol, ResolverConfig, ResolverOpts,
 };
 use async_std_resolver::{resolver, AsyncStdResolver};
-use config::{Address, ServerAddr};
+use config::{Address, DnsServerAddr};
 use std::io::{Error, ErrorKind, Result};
 use std::net::IpAddr;
 use std::net::SocketAddr;
@@ -14,12 +14,12 @@ pub struct DnsClient {
 }
 
 impl DnsClient {
-    pub async fn new(dns_servers: &[ServerAddr], timeout: Duration) -> Self {
+    pub async fn new(dns_servers: &[DnsServerAddr], timeout: Duration) -> Self {
         let mut name_servers = NameServerConfigGroup::with_capacity(dns_servers.len());
 
         for addr in dns_servers {
             match addr {
-                ServerAddr::SocketAddr(addr) => {
+                DnsServerAddr::UdpSocketAddr(addr) => {
                     let udp = NameServerConfig {
                         socket_addr: *addr,
                         protocol: Protocol::Udp,
@@ -27,7 +27,7 @@ impl DnsClient {
                     };
                     name_servers.push(udp);
                 }
-                ServerAddr::URL(addr) => {
+                DnsServerAddr::TcpSocketAddr(addr) => {
                     if !["tcp", "tls"].contains(&addr.scheme()) {
                         panic!("Invalid dns server address")
                     }

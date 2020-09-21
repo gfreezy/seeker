@@ -10,12 +10,12 @@ use url_serde;
 /// Server address
 #[derive(Clone, Debug, Deserialize)]
 #[serde(untagged)]
-pub enum ServerAddr {
+pub enum DnsServerAddr {
     /// IP Address
-    SocketAddr(SocketAddr),
+    UdpSocketAddr(SocketAddr),
     /// eg. tcp://114.114.114.114:53
     #[serde(with = "url_serde")]
-    URL(Url),
+    TcpSocketAddr(Url),
 }
 
 /// Configuration for a server
