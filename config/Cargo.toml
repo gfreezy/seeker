@@ -8,6 +8,8 @@ edition = "2018"
 
 [dependencies]
 serde = { version = "1.0.115", features = ["derive", "rc"] }
+url = "1.7.2"
+url_serde = "0.2.0"
 serde_yaml = "0.8.13"
 bytes = "0.5.6"
 crypto = { path = "../crypto" }
