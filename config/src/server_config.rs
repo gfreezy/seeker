@@ -1,82 +1,21 @@
-use std::{
-    fmt::{self, Debug, Display, Formatter},
-    net::SocketAddr,
-    str::FromStr,
-    string::ToString,
-};
+use std::{fmt::Debug, net::SocketAddr, string::ToString};
 
 use crate::Address;
 use bytes::Bytes;
 use crypto::CipherType;
 use serde::Deserialize;
+use url::Url;
+use url_serde;
 
 /// Server address
 #[derive(Clone, Debug, Deserialize)]
-pub enum ServerAddr {
+#[serde(untagged)]
+pub enum DnsServerAddr {
     /// IP Address
-    SocketAddr(SocketAddr),
-    /// Domain name address, eg. example.com:8080
-    DomainName(String, u16),
-}
-
-impl ServerAddr {
-    /// Get address for server listener
-    /// Panic if address is domain name
-    pub fn listen_addr(&self) -> &SocketAddr {
-        match *self {
-            ServerAddr::SocketAddr(ref s) => s,
-            _ => panic!("Cannot use domain name as server listen address"),
-        }
-    }
-
-    /// Get string representation of domain
-    pub fn host(&self) -> String {
-        match *self {
-            ServerAddr::SocketAddr(ref s) => s.ip().to_string(),
-            ServerAddr::DomainName(ref dm, _) => dm.clone(),
-        }
-    }
-
-    /// Get port
-    pub fn port(&self) -> u16 {
-        match *self {
-            ServerAddr::SocketAddr(ref s) => s.port(),
-            ServerAddr::DomainName(_, p) => p,
-        }
-    }
-}
-
-/// Parse `ServerAddr` error
-#[derive(Debug)]
-pub struct ServerAddrError;
-
-impl FromStr for ServerAddr {
-    type Err = ServerAddrError;
-
-    fn from_str(s: &str) -> Result<ServerAddr, ServerAddrError> {
-        match s.parse::<SocketAddr>() {
-            Ok(addr) => Ok(ServerAddr::SocketAddr(addr)),
-            Err(..) => {
-                let mut sp = s.split(':');
-                match (sp.next(), sp.next()) {
-                    (Some(dn), Some(port)) => match port.parse::<u16>() {
-                        Ok(port) => Ok(ServerAddr::DomainName(dn.to_owned(), port)),
-                        Err(..) => Err(ServerAddrError),
-                    },
-                    _ => Err(ServerAddrError),
-                }
-            }
-        }
-    }
-}
-
-impl Display for ServerAddr {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        match *self {
-            ServerAddr::SocketAddr(ref a) => write!(f, "{}", a),
-            ServerAddr::DomainName(ref d, port) => write!(f, "{}:{}", d, port),
-        }
-    }
+    UdpSocketAddr(SocketAddr),
+    /// eg. tcp://114.114.114.114:53
+    #[serde(with = "url_serde")]
+    TcpSocketAddr(Url),
 }
 
 /// Configuration for a server
