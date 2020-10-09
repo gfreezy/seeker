@@ -5,7 +5,6 @@ use bytes::Bytes;
 use crypto::CipherType;
 use serde::Deserialize;
 use url::Url;
-use url_serde;
 
 /// Server address
 #[derive(Clone, Debug, Deserialize)]
