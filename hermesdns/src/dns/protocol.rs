@@ -63,7 +63,7 @@ impl QueryType {
     }
 }
 
-#[derive(Copy, Clone, Debug, Eq, Ord)]
+#[derive(Copy, Clone, Debug, Eq)]
 pub struct TransientTtl(pub u32);
 
 impl PartialEq<TransientTtl> for TransientTtl {
@@ -75,6 +75,12 @@ impl PartialEq<TransientTtl> for TransientTtl {
 impl PartialOrd<TransientTtl> for TransientTtl {
     fn partial_cmp(&self, _: &TransientTtl) -> Option<Ordering> {
         Some(Ordering::Equal)
+    }
+}
+
+impl Ord for TransientTtl {
+    fn cmp(&self, _: &Self) -> Ordering {
+        Ordering::Equal
     }
 }
 
