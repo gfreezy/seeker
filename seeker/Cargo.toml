@@ -18,7 +18,7 @@ http_proxy_client = { path = "../http_proxy_client" }
 sysconfig = { path = "../sysconfig" }
 tun_nat = { path = "../tun_nat" }
 file-rotate = { git = "https://github.com/gfreezy/file-rotate", rev = "0fc0f02" }
-async-std = "1.6.3"
+async-std = "1.6.5"
 parking_lot = { version = "0.11.0", features = ["deadlock_detection"] }
 async-signals = "0.3.1"
 libc = "0.2.74"
