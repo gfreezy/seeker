@@ -210,7 +210,12 @@ impl ProxyClient {
                         retry_timeout!(
                             self.config.connect_timeout,
                             self.config.max_connect_errors,
-                            HttpProxyTcpStream::connect(server, remote_addr.clone())
+                            HttpProxyTcpStream::connect(
+                                server,
+                                remote_addr.clone(),
+                                proxy_config.username.as_ref().map(|s| s.as_str()),
+                                proxy_config.password.as_ref().map(|s| s.as_str())
+                            )
                         )
                         .await?,
                     ));

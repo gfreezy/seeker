@@ -17,12 +17,21 @@ pub enum DnsServerAddr {
     TcpSocketAddr(Url),
 }
 
+#[derive(Clone, Debug, Deserialize)]
+pub enum ProxyProtocol {
+    Http,
+    Https,
+    Socks5,
+}
 /// Configuration for a server
 #[derive(Clone, Debug, Deserialize)]
 pub struct ProxyServerConfig {
     /// Server address
     #[serde(with = "server_addr")]
     pub addr: Address,
+    pub protocol: ProxyProtocol,
+    pub username: Option<String>,
+    pub password: Option<String>,
 }
 
 /// Configuration for a server
