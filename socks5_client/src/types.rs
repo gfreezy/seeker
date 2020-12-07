@@ -318,6 +318,13 @@ impl Address {
     pub fn serialized_len(&self) -> usize {
         get_addr_len(self)
     }
+
+    pub fn hostname(&self) -> Option<String> {
+        match self {
+            Address::SocketAddress(_) => None,
+            Address::DomainNameAddress(host, _) => Some(host.to_string()),
+        }
+    }
 }
 
 impl Debug for Address {

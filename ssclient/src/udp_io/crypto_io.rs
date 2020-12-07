@@ -51,6 +51,7 @@ pub fn decrypt_payload(
     }
 }
 
+#[allow(clippy::unnecessary_wraps)]
 fn encrypt_payload_aead(
     t: CipherType,
     key: &[u8],

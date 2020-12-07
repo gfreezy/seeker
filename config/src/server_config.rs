@@ -17,7 +17,7 @@ pub enum DnsServerAddr {
     TcpSocketAddr(Url),
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq)]
 pub enum ProxyProtocol {
     Http,
     Https,
