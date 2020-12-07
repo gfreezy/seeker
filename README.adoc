@@ -105,6 +105,7 @@ http_proxy_server:
   addr: domain-or-ip-to-socks5-server:port
   username: username
   password: pass
+  protocol: Https  # Https or Http
 
 shadowsocks_servers:
   - name: server1
