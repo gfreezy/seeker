@@ -22,6 +22,9 @@ socks5_server:
 
 http_proxy_server:
   addr: 127.0.0.1:1087  # 替换成 socks5 代理的地址
+  username:
+  password:
+  protocol: Http
 
 shadowsocks_servers:
   - name: server1

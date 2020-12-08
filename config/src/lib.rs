@@ -1,11 +1,11 @@
 pub mod rule;
 mod server_config;
-pub use server_config::{DnsServerAddr, ShadowsocksServerConfig};
+pub use server_config::{DnsServerAddr, ProxyProtocol, ShadowsocksServerConfig};
 pub use socks5_client::Address;
 
-use crate::server_config::ProxyServerConfig;
 use rule::ProxyRules;
 use serde::Deserialize;
+use server_config::ProxyServerConfig;
 use smoltcp::wire::{Ipv4Address, Ipv4Cidr};
 use std::fs::File;
 use std::io;
