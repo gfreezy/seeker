@@ -1,6 +1,6 @@
 use async_std::io::{Read, Write};
 use async_std::net::TcpStream;
-use http_proxy_client::HttpProxyTcpStream;
+use http_proxy_client::ProxyTcpStream as HttpProxyTcpStream;
 use socks5_client::Socks5TcpStream;
 use ssclient::SSTcpStream;
 use std::io::Result;

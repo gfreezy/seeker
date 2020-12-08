@@ -8,10 +8,10 @@ use async_std::prelude::*;
 use async_std::task::spawn;
 use async_std_resolver::AsyncStdResolver;
 use config::rule::Action;
-use config::{Address, Config};
+use config::{Address, Config, ProxyProtocol};
 use dnsserver::create_dns_server;
 use dnsserver::resolver::RuleBasedDnsResolver;
-use http_proxy_client::HttpProxyTcpStream;
+use http_proxy_client::ProxyTcpStream as HttpProxyTcpStream;
 use parking_lot::RwLock;
 use socks5_client::{Socks5TcpStream, Socks5UdpSocket};
 use ssclient::{SSTcpStream, SSUdpSocket};
@@ -210,7 +210,14 @@ impl ProxyClient {
                         retry_timeout!(
                             self.config.connect_timeout,
                             self.config.max_connect_errors,
-                            HttpProxyTcpStream::connect(server, remote_addr.clone())
+                            HttpProxyTcpStream::connect(
+                                server,
+                                proxy_config.addr.hostname().unwrap_or_default(),
+                                remote_addr.clone(),
+                                proxy_config.username.as_deref(),
+                                proxy_config.password.as_deref(),
+                                proxy_config.protocol == ProxyProtocol::Https,
+                            )
                         )
                         .await?,
                     ));
