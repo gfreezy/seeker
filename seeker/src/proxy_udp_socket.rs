@@ -59,6 +59,7 @@ impl ProxyUdpSocket {
             alive,
         })
     }
+
     pub async fn send_to(&self, buf: &[u8], addr: SocketAddr) -> io::Result<usize> {
         if !self.alive.load(Ordering::SeqCst) {
             return Err(Error::new(
