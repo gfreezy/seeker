@@ -9,3 +9,4 @@ config.yml
 .DS_Store
 /ci/docker/*/stage/
 *.log
+*.log-*
