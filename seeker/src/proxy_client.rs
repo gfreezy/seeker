@@ -1,23 +1,21 @@
 use crate::dns_client::DnsClient;
 use crate::proxy_tcp_stream::ProxyTcpStream;
 use crate::proxy_udp_socket::ProxyUdpSocket;
-use crate::server_chooser::ShadowsocksServerChooser;
+use crate::server_chooser::ServerChooser;
 use async_std::io::{timeout, Read, Write};
 use async_std::net::{SocketAddr, TcpListener, TcpStream, UdpSocket};
 use async_std::prelude::*;
 use async_std::task::spawn;
 use async_std_resolver::AsyncStdResolver;
 use config::rule::Action;
-use config::{Address, Config, ProxyProtocol};
+use config::{Address, Config};
 use dnsserver::create_dns_server;
 use dnsserver::resolver::RuleBasedDnsResolver;
-use http_proxy_client::ProxyTcpStream as HttpProxyTcpStream;
 use parking_lot::RwLock;
-use socks5_client::{Socks5TcpStream, Socks5UdpSocket};
-use ssclient::{SSTcpStream, SSUdpSocket};
 use std::collections::HashMap;
 use std::io;
 use std::io::Result;
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use tracing::{error, trace, trace_span};
 use tracing_futures::Instrument;
@@ -31,7 +29,7 @@ pub struct ProxyClient {
     resolver: RuleBasedDnsResolver,
     dns_client: DnsClient,
     extra_directly_servers: Vec<String>,
-    ss_server_chooser: Option<Arc<ShadowsocksServerChooser>>,
+    server_chooser: Arc<ServerChooser>,
 }
 
 impl ProxyClient {
@@ -42,58 +40,44 @@ impl ProxyClient {
 
         let resolver = run_dns_resolver(&config, dns_client.resolver()).await;
 
-        let mut extra_directly_servers = vec![];
-        // always pass proxy for socks5 server
-        if let Some(socks5_addr) = &config.socks5_server {
-            extra_directly_servers.push(socks5_addr.addr.to_string());
-        }
-        // always pass proxy for socks5 server
-        if let Some(c) = &config.http_proxy_server {
-            extra_directly_servers.push(c.addr.to_string());
-        }
+        let extra_directly_servers = config
+            .servers
+            .iter()
+            .map(|s| s.addr().to_string())
+            .collect();
 
-        if let Some(shadowsocks_servers) = &config.shadowsocks_servers {
-            for shadowsocks_server in shadowsocks_servers.iter() {
-                extra_directly_servers.push(shadowsocks_server.addr().to_string());
-            }
+        let ping_url = vec![
+            (
+                Address::DomainNameAddress("google.com".to_string(), 80),
+                "/".to_string(),
+            ),
+            (
+                Address::DomainNameAddress("twitter.com".to_string(), 80),
+                "/".to_string(),
+            ),
+            (
+                Address::DomainNameAddress("github.com".to_string(), 80),
+                "/".to_string(),
+            ),
+            (
+                Address::DomainNameAddress("youtube.com".to_string(), 80),
+                "/".to_string(),
+            ),
+        ];
+        let chooser = Arc::new(
+            ServerChooser::new(
+                config.servers.clone(),
+                dns_client.clone(),
+                ping_url,
+                config.ping_timeout,
+            )
+            .await,
+        );
+        let chooser_clone = chooser.clone();
+        if config.servers.len() > 1 {
+            let _ = spawn(async move { chooser_clone.ping_servers_forever().await.unwrap() });
         }
-
-        let server_chooser = match (&config.socks5_server, &config.shadowsocks_servers) {
-            (None, Some(shadowsocks_servers)) => {
-                let ping_url = vec![
-                    (
-                        Address::DomainNameAddress("google.com".to_string(), 80),
-                        "/".to_string(),
-                    ),
-                    (
-                        Address::DomainNameAddress("twitter.com".to_string(), 80),
-                        "/".to_string(),
-                    ),
-                    (
-                        Address::DomainNameAddress("github.com".to_string(), 80),
-                        "/".to_string(),
-                    ),
-                    (
-                        Address::DomainNameAddress("youtube.com".to_string(), 80),
-                        "/".to_string(),
-                    ),
-                ];
-                let chooser = Arc::new(
-                    ShadowsocksServerChooser::new(
-                        shadowsocks_servers.clone(),
-                        dns_client.clone(),
-                        ping_url,
-                        config.ping_timeout,
-                    )
-                    .await,
-                );
-                let chooser_clone = chooser.clone();
-                let _ = spawn(async move { chooser_clone.ping_servers_forever().await.unwrap() });
-                chooser.ping_servers().await;
-                Some(chooser)
-            }
-            _ => None,
-        };
+        chooser.ping_servers().await;
 
         Self {
             resolver,
@@ -103,7 +87,7 @@ impl ProxyClient {
             config,
             uid,
             session_manager,
-            ss_server_chooser: server_chooser,
+            server_chooser: chooser,
         }
     }
 
@@ -162,81 +146,29 @@ impl ProxyClient {
 
         match action {
             Action::Proxy => {
-                if let Some(socks5_config) = &self.config.socks5_server {
-                    let server = self.dns_client.lookup_address(&socks5_config.addr).await?;
-                    trace!("choose_proxy_tcp_stream: socks5");
-                    return Ok(ProxyTcpStream::Socks5(
-                        retry_timeout!(
-                            self.config.connect_timeout,
-                            self.config.max_connect_errors,
-                            Socks5TcpStream::connect(server, remote_addr.clone())
-                        )
-                        .await?,
-                    ));
-                }
-
-                if let Some(chooser) = &self.ss_server_chooser {
-                    return retry!(3, async {
-                        let (ss_server, server_alive) =
-                            chooser.candidate().expect("no candidate available");
-                        let server = self.dns_client.lookup_address(&ss_server.addr()).await?;
-                        trace!("choose_proxy_tcp_stream: shadowsocks");
-                        let stream = timeout(
-                            self.config.connect_timeout,
-                            SSTcpStream::connect(
-                                remote_addr.clone(),
-                                server,
-                                server_alive.clone(),
-                                ss_server.method(),
-                                ss_server.key(),
-                            ),
-                        )
-                        .await;
-                        match stream {
-                            Ok(s) => Ok(ProxyTcpStream::Shadowsocks(s)),
-                            Err(e) => {
-                                chooser.take_down_current_and_move_next().await;
-                                Err(e)
-                            }
-                        }
-                    })
-                    .await;
-                }
-
-                if let Some(proxy_config) = &self.config.http_proxy_server {
-                    let server = self.dns_client.lookup_address(&proxy_config.addr).await?;
-                    trace!("choose_proxy_tcp_stream: http proxy");
-                    return Ok(ProxyTcpStream::HttpProxy(
-                        retry_timeout!(
-                            self.config.connect_timeout,
-                            self.config.max_connect_errors,
-                            HttpProxyTcpStream::connect(
-                                server,
-                                proxy_config.addr.hostname().unwrap_or_default(),
-                                remote_addr.clone(),
-                                proxy_config.username.as_deref(),
-                                proxy_config.password.as_deref(),
-                                proxy_config.protocol == ProxyProtocol::Https,
-                            )
-                        )
-                        .await?,
-                    ));
-                }
-
-                // fallback to direct
+                retry_timeout!(
+                    self.config.connect_timeout,
+                    self.config.max_connect_errors,
+                    self.server_chooser
+                        .candidate_tcp_stream(remote_addr.clone())
+                )
+                .await
             }
-            Action::Direct => {}
+            Action::Direct => {
+                retry_timeout!(
+                    self.config.connect_timeout,
+                    self.config.max_connect_errors,
+                    ProxyTcpStream::connect(
+                        remote_addr.clone(),
+                        None,
+                        Arc::new(AtomicBool::new(true)),
+                        self.dns_client.clone()
+                    )
+                )
+                .await
+            }
             _ => unimplemented!(),
         }
-        trace!("choose_proxy_tcp_stream: direct");
-        Ok(ProxyTcpStream::Direct(
-            retry_timeout!(
-                self.config.connect_timeout,
-                self.config.max_connect_errors,
-                TcpStream::connect(sock_addr)
-            )
-            .await?,
-        ))
     }
 
     async fn choose_proxy_udp_socket(
@@ -251,50 +183,27 @@ impl ProxyClient {
 
         match action {
             Action::Proxy => {
-                if let Some(socks5_config) = &self.config.socks5_server {
-                    let server = self.dns_client.lookup_address(&socks5_config.addr).await?;
-                    trace!("choose_proxy_udp_socket: socks5");
-                    return Ok(ProxyUdpSocket::Socks5(Arc::new(
-                        retry_timeout!(
-                            self.config.connect_timeout,
-                            self.config.max_connect_errors,
-                            Socks5UdpSocket::new(server)
-                        )
-                        .await?,
-                    )));
-                }
-
-                if let Some(chooser) = &self.ss_server_chooser {
-                    return retry!(3, async {
-                        let (ss_server, _) = chooser.candidate().expect("no candidate available");
-                        let server = self.dns_client.lookup_address(&ss_server.addr()).await?;
-                        trace!("choose_proxy_udp_socket: shadowsocks");
-                        let udp = timeout(
-                            self.config.connect_timeout,
-                            SSUdpSocket::new(server, ss_server.method(), ss_server.key()),
-                        )
-                        .await;
-                        match udp {
-                            Ok(s) => Ok(ProxyUdpSocket::Shadowsocks(Arc::new(s))),
-                            Err(e) => {
-                                chooser.take_down_current_and_move_next().await;
-                                Err(e)
-                            }
-                        }
-                    })
-                    .await;
-                }
-
-                // fallback to direct
+                retry_timeout!(
+                    self.config.connect_timeout,
+                    self.config.max_connect_errors,
+                    self.server_chooser.candidate_udp_socket()
+                )
+                .await
             }
-            Action::Direct => {}
+            Action::Direct => {
+                retry_timeout!(
+                    self.config.connect_timeout,
+                    self.config.max_connect_errors,
+                    ProxyUdpSocket::new(
+                        None,
+                        Arc::new(AtomicBool::new(true)),
+                        self.dns_client.clone(),
+                    )
+                )
+                .await
+            }
             _ => unreachable!(),
         }
-
-        trace!("choose_proxy_udp_socket: direct");
-        Ok(ProxyUdpSocket::Direct(Arc::new(
-            UdpSocket::bind("0.0.0.0:0").await?,
-        )))
     }
 
     async fn probe_connectivity(&self, addr: SocketAddr) -> bool {
