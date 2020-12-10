@@ -21,23 +21,3 @@ macro_rules! retry_timeout {
         }
     };
 }
-
-macro_rules! retry {
-    ($retries: expr, $fut: expr) => {
-        async {
-            let mut tries = $retries;
-            loop {
-                match $fut.await {
-                    v @ Ok(_) => break v,
-                    Err(e) => {
-                        tracing::warn!("retry: {}", $retries - tries,);
-                        if tries <= 0 {
-                            break Err(e);
-                        }
-                    }
-                }
-                tries -= 1;
-            }
-        }
-    };
-}
