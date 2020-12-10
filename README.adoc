@@ -98,24 +98,34 @@ read_timeout: 30s
 write_timeout: 5s
 max_connect_errors: 2  # ss 服务器重试次数，到达重试次数后会自动选择下一个最快的服务器
 
-socks5_server:
-  addr: domain-or-ip-to-socks5-server:port
+servers:
+  - name: socks5 proxy server
+    addr: domain-or-ip-to-socks5-server:port
+    protocol: Socks5  # Https or Http or Socks5 or Shadowsocks
 
-http_proxy_server:
-  addr: domain-or-ip-to-socks5-server:port
-  username: username
-  password: pass
-  protocol: Https  # Https or Http
+  - name: http proxy server
+    addr: domain-or-ip-to-socks5-server:port
+    username: username
+    password: pass
+    protocol: Https  # Https or Http or Socks5 or Shadowsocks
 
-shadowsocks_servers:
+  - name: https proxy server
+    addr: domain-or-ip-to-socks5-server:port
+    username: username
+    password: pass
+    protocol: Https  # Https or Http or Socks5 or Shadowsocks
+
   - name: server1
     addr: domain-or-ip-to-ss-server:port
     method: chacha20-ietf
     password: password
+    protocol: Shadowsocks
+
   - name: server2
     addr: domain-or-ip-to-ss-server:port
     method: chacha20-ietf
     password: password
+    protocol: Shadowsocks
 
 rules:
   - 'DOMAIN,audio-ssl.itunes.apple.com,DIRECT'
