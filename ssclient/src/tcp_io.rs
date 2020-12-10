@@ -316,7 +316,7 @@ mod tests {
 
             sleep(Duration::from_secs(3)).await;
             trace!("before connect");
-            let mut conn = SSTcpStream::connect(addr, server, method, key_clone)
+            let mut conn = SSTcpStream::connect(server, addr, method, key_clone)
                 .await
                 .unwrap();
             trace!("before write");
