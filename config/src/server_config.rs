@@ -52,7 +52,7 @@ mod cipher_type {
     {
         let s: Option<String> = Option::deserialize(deserializer)?;
         match s {
-            None => return Ok(None),
+            None => Ok(None),
             Some(s) => Ok(Some(CipherType::from_str(&s).map_err(Error::custom)?)),
         }
     }
