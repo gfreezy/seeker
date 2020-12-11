@@ -35,8 +35,8 @@ impl ProxyUdpSocket {
                 }
                 ServerProtocol::Shadowsocks => {
                     let server = dns_client.lookup_address(&config.addr()).await?;
-                    let (method, password) = match (config.method(), config.password()) {
-                        (Some(m), Some(pass)) => (m, pass.as_bytes()),
+                    let (method, key) = match (config.method(), config.key()) {
+                        (Some(m), Some(k)) => (m, k),
                         _ => {
                             return Err(Error::new(
                                 ErrorKind::InvalidData,
@@ -45,7 +45,6 @@ impl ProxyUdpSocket {
                         }
                     };
 
-                    let key = method.bytes_to_key(password);
                     let udp = SSUdpSocket::new(server, method, key).await?;
                     ProxyUdpSocketInner::Shadowsocks(Arc::new(udp))
                 }
