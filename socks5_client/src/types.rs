@@ -319,10 +319,10 @@ impl Address {
         get_addr_len(self)
     }
 
-    pub fn hostname(&self) -> Option<String> {
+    pub fn hostname(&self) -> Option<&str> {
         match self {
             Address::SocketAddress(_) => None,
-            Address::DomainNameAddress(host, _) => Some(host.to_string()),
+            Address::DomainNameAddress(host, _) => Some(host),
         }
     }
 }

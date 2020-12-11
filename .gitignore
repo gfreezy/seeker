@@ -8,3 +8,5 @@ config.yml
 .idea
 .DS_Store
 /ci/docker/*/stage/
+*.log
+*.log-*

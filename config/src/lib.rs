@@ -1,11 +1,10 @@
 pub mod rule;
 mod server_config;
-pub use server_config::{DnsServerAddr, ProxyProtocol, ShadowsocksServerConfig};
+pub use server_config::{DnsServerAddr, ServerConfig, ServerProtocol};
 pub use socks5_client::Address;
 
 use rule::ProxyRules;
 use serde::Deserialize;
-use server_config::ProxyServerConfig;
 use smoltcp::wire::{Ipv4Address, Ipv4Cidr};
 use std::fs::File;
 use std::io;
@@ -16,9 +15,7 @@ use std::time::Duration;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
-    pub shadowsocks_servers: Option<Arc<Vec<ShadowsocksServerConfig>>>,
-    pub socks5_server: Option<ProxyServerConfig>,
-    pub http_proxy_server: Option<ProxyServerConfig>,
+    pub servers: Arc<Vec<ServerConfig>>,
     pub dns_start_ip: Ipv4Addr,
     pub dns_servers: Vec<DnsServerAddr>,
     pub tun_name: String,
@@ -141,14 +138,10 @@ impl Config {
 
     pub fn from_reader<R: Read>(reader: R) -> io::Result<Self> {
         let conf: Config = serde_yaml::from_reader(reader).expect("serde yaml deserialize error");
-        if let (None, None, None) = (
-            &conf.shadowsocks_servers,
-            &conf.socks5_server,
-            &conf.http_proxy_server,
-        ) {
+        if conf.servers.is_empty() {
             return Err(io::Error::new(
                 ErrorKind::InvalidData,
-                "shadowsocks_servers, socks5_server and http_proxy_server should be set one at least.",
+                "servers can not be empty.",
             ));
         };
         Ok(conf)
