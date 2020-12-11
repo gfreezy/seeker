@@ -25,7 +25,6 @@ use async_std::net::TcpStream;
 use config::Address;
 use parking_lot::Mutex;
 use std::net::SocketAddr;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 enum DecryptedReader<T> {
@@ -56,15 +55,13 @@ pub struct SSTcpStream {
     dec: Option<Arc<Mutex<DecryptedReader<TcpStream>>>>,
     enc: Arc<Mutex<EncryptedWriter<TcpStream>>>,
     read_status: Arc<Mutex<ReadStatus>>,
-    server_alive: Arc<AtomicBool>,
 }
 
 impl SSTcpStream {
     /// Create a new CryptoStream with the underlying stream connection
     pub async fn connect(
-        addr: Address,
         server_addr: SocketAddr,
-        server_alive: Arc<AtomicBool>,
+        addr: Address,
         method: CipherType,
         key: Bytes,
     ) -> Result<SSTcpStream> {
@@ -109,7 +106,6 @@ impl SSTcpStream {
                 method,
                 key,
             ))),
-            server_alive,
         };
 
         let mut addr_buf = BytesMut::with_capacity(addr.serialized_len());
@@ -159,7 +155,6 @@ impl SSTcpStream {
                 method,
                 key,
             ))),
-            server_alive: Arc::new(AtomicBool::new(true)),
         }
     }
 
@@ -252,10 +247,6 @@ impl Read for SSTcpStream {
         ctx: &mut Context<'_>,
         buf: &mut [u8],
     ) -> Poll<io::Result<usize>> {
-        if !self.server_alive.load(Ordering::SeqCst) {
-            return Poll::Ready(Err(io::ErrorKind::BrokenPipe.into()));
-        }
-
         self.priv_poll_read(ctx, buf)
     }
 }
@@ -266,26 +257,14 @@ impl Write for SSTcpStream {
         ctx: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<io::Result<usize>> {
-        if !self.server_alive.load(Ordering::SeqCst) {
-            return Poll::Ready(Err(io::ErrorKind::BrokenPipe.into()));
-        }
-
         self.priv_poll_write(ctx, buf)
     }
 
     fn poll_flush(self: Pin<&mut Self>, ctx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        if !self.server_alive.load(Ordering::SeqCst) {
-            return Poll::Ready(Err(io::ErrorKind::BrokenPipe.into()));
-        }
-
         self.priv_poll_flush(ctx)
     }
 
     fn poll_close(self: Pin<&mut Self>, ctx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        if !self.server_alive.load(Ordering::SeqCst) {
-            return Poll::Ready(Err(io::ErrorKind::BrokenPipe.into()));
-        }
-
         self.priv_poll_close(ctx)
     }
 }
@@ -337,15 +316,9 @@ mod tests {
 
             sleep(Duration::from_secs(3)).await;
             trace!("before connect");
-            let mut conn = SSTcpStream::connect(
-                addr,
-                server,
-                Arc::new(AtomicBool::new(true)),
-                method,
-                key_clone,
-            )
-            .await
-            .unwrap();
+            let mut conn = SSTcpStream::connect(server, addr, method, key_clone)
+                .await
+                .unwrap();
             trace!("before write");
             conn.write_all(data).await.unwrap();
             trace!("after write");

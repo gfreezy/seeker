@@ -1,4 +1,4 @@
-use std::{fmt::Debug, net::SocketAddr, string::ToString};
+use std::{fmt::Debug, net::SocketAddr};
 
 use crate::Address;
 use bytes::Bytes;
@@ -17,36 +17,27 @@ pub enum DnsServerAddr {
     TcpSocketAddr(Url),
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq)]
-pub enum ProxyProtocol {
+#[derive(Clone, Debug, Deserialize, PartialEq, Copy)]
+pub enum ServerProtocol {
     Http,
     Https,
     Socks5,
-}
-/// Configuration for a server
-#[derive(Clone, Debug, Deserialize)]
-pub struct ProxyServerConfig {
-    /// Server address
-    #[serde(with = "server_addr")]
-    pub addr: Address,
-    pub protocol: ProxyProtocol,
-    pub username: Option<String>,
-    pub password: Option<String>,
+    Shadowsocks,
 }
 
 /// Configuration for a server
 #[derive(Clone, Debug, Deserialize)]
-pub struct ShadowsocksServerConfig {
-    /// Server name
-    name: String,
+pub struct ServerConfig {
     /// Server address
+    name: String,
     #[serde(with = "server_addr")]
     addr: Address,
-    /// Encryption password (key)
-    password: String,
-    /// Encryption type (method)
+    protocol: ServerProtocol,
+    username: Option<String>,
+    password: Option<String>,
+    #[serde(default)]
     #[serde(with = "cipher_type")]
-    method: CipherType,
+    method: Option<CipherType>,
 }
 
 mod cipher_type {
@@ -55,12 +46,15 @@ mod cipher_type {
     use serde::{Deserialize, Deserializer};
     use std::str::FromStr;
 
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<CipherType, D::Error>
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<CipherType>, D::Error>
     where
         D: Deserializer<'de>,
     {
-        let s = String::deserialize(deserializer)?;
-        CipherType::from_str(&s).map_err(Error::custom)
+        let s: Option<String> = Option::deserialize(deserializer)?;
+        match s {
+            None => Ok(None),
+            Some(s) => Ok(Some(CipherType::from_str(&s).map_err(Error::custom)?)),
+        }
     }
 }
 
@@ -80,51 +74,10 @@ mod server_addr {
     }
 }
 
-impl ShadowsocksServerConfig {
-    /// Creates a new ServerConfig
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        name: String,
-        addr: Address,
-        pwd: String,
-        method: CipherType,
-    ) -> ShadowsocksServerConfig {
-        ShadowsocksServerConfig {
-            name,
-            addr,
-            password: pwd,
-            method,
-        }
-    }
-
-    /// Create a basic config
-    pub fn basic(
-        addr: SocketAddr,
-        password: String,
-        method: CipherType,
-    ) -> ShadowsocksServerConfig {
-        ShadowsocksServerConfig::new(
-            addr.to_string(),
-            Address::SocketAddress(addr),
-            password,
-            method,
-        )
-    }
-
-    /// Set encryption method
-    pub fn set_method(&mut self, t: CipherType, pwd: String) {
-        self.password = pwd;
-        self.method = t;
-    }
-
+impl ServerConfig {
     /// Get server name
     pub fn name(&self) -> &str {
         &self.name
-    }
-
-    /// Set server addr
-    pub fn set_addr(&mut self, a: Address) {
-        self.addr = a;
     }
 
     /// Get server address
@@ -132,18 +85,26 @@ impl ShadowsocksServerConfig {
         &self.addr
     }
 
+    /// Get server protocol
+    pub fn protocol(&self) -> ServerProtocol {
+        self.protocol
+    }
+
     /// Get encryption key
-    pub fn key(&self) -> Bytes {
-        self.method.bytes_to_key(self.password.as_bytes())
+    pub fn key(&self) -> Option<Bytes> {
+        Some(self.method()?.bytes_to_key(self.password()?.as_bytes()))
+    }
+
+    pub fn username(&self) -> Option<&str> {
+        self.username.as_deref()
     }
 
     /// Get password
-    pub fn password(&self) -> &str {
-        &self.password[..]
+    pub fn password(&self) -> Option<&str> {
+        self.password.as_deref()
     }
-
     /// Get method
-    pub fn method(&self) -> CipherType {
+    pub fn method(&self) -> Option<CipherType> {
         self.method
     }
 }
