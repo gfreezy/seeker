@@ -79,8 +79,8 @@ impl ProxyTcpStream {
                 }
                 ServerProtocol::Shadowsocks => {
                     let proxy_socket_addr = dns_client.lookup_address(config.addr()).await?;
-                    let (method, password) = match (config.method(), config.password()) {
-                        (Some(m), Some(pass)) => (m, pass.as_bytes()),
+                    let (method, key) = match (config.method(), config.key()) {
+                        (Some(m), Some(k)) => (m, k),
                         _ => {
                             return Err(Error::new(
                                 ErrorKind::InvalidData,
@@ -88,7 +88,6 @@ impl ProxyTcpStream {
                             ))
                         }
                     };
-                    let key = method.bytes_to_key(password);
                     ProxyTcpStreamInner::Shadowsocks(
                         SSTcpStream::connect(proxy_socket_addr, remote_addr, method, key).await?,
                     )
