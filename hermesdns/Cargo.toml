@@ -12,4 +12,4 @@ chrono = "0.4.13"
 async-trait = "0.1.36"
 tracing = "0.1.19"
 tracing-futures = { version = "0.2.4", features = ["std-future"], default-features = false }
-async-std = { version = "1.6.5", features = ["unstable"] }
+async-std = { version = "1.8.0", features = ["unstable"] }
