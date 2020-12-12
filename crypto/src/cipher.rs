@@ -168,7 +168,7 @@ const CIPHER_CHACHA20_IETF_POLY1305: &str = "chacha20-ietf-poly1305";
 const CIPHER_XCHACHA20_IETF_POLY1305: &str = "xchacha20-ietf-poly1305";
 
 /// ShadowSocks cipher type
-#[derive(Clone, Debug, Copy)]
+#[derive(Clone, Debug, Copy, PartialEq)]
 pub enum CipherType {
     Table,
     Plain,

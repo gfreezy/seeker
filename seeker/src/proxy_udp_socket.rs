@@ -1,4 +1,6 @@
 use crate::dns_client::DnsClient;
+use crate::proxy_connection::ProxyConnection;
+use crate::traffic::Traffic;
 use async_std::net::{SocketAddr, UdpSocket};
 use config::{ServerConfig, ServerProtocol};
 use socks5_client::Socks5UdpSocket;
@@ -19,14 +21,12 @@ enum ProxyUdpSocketInner {
 pub struct ProxyUdpSocket {
     inner: ProxyUdpSocketInner,
     alive: Arc<AtomicBool>,
+    config: Option<ServerConfig>,
+    traffic: Traffic,
 }
 
 impl ProxyUdpSocket {
-    pub async fn new(
-        config: Option<&ServerConfig>,
-        alive: Arc<AtomicBool>,
-        dns_client: DnsClient,
-    ) -> io::Result<Self> {
+    pub async fn new(config: Option<&ServerConfig>, dns_client: DnsClient) -> io::Result<Self> {
         let socket = if let Some(config) = config {
             match config.protocol() {
                 ServerProtocol::Socks5 => {
@@ -48,14 +48,21 @@ impl ProxyUdpSocket {
                     let udp = SSUdpSocket::new(server, method, key).await?;
                     ProxyUdpSocketInner::Shadowsocks(Arc::new(udp))
                 }
-                _ => ProxyUdpSocketInner::Direct(Arc::new(UdpSocket::bind("0.0.0.0:0").await?)),
+                protocol => {
+                    return Err(Error::new(
+                        ErrorKind::ConnectionRefused,
+                        format!("udp not supported for {:?}.", protocol),
+                    ))
+                }
             }
         } else {
             ProxyUdpSocketInner::Direct(Arc::new(UdpSocket::bind("0.0.0.0:0").await?))
         };
         Ok(ProxyUdpSocket {
             inner: socket,
-            alive,
+            alive: Arc::new(AtomicBool::new(true)),
+            config: config.cloned(),
+            traffic: Default::default(),
         })
     }
 
@@ -85,5 +92,27 @@ impl ProxyUdpSocket {
             ProxyUdpSocketInner::Socks5(socket) => socket.recv_from(buf).await,
             ProxyUdpSocketInner::Shadowsocks(socket) => socket.recv_from(buf).await,
         }
+    }
+}
+
+impl ProxyConnection for ProxyUdpSocket {
+    fn traffic(&self) -> Traffic {
+        self.traffic.clone()
+    }
+
+    fn config(&self) -> Option<&ServerConfig> {
+        self.config.as_ref()
+    }
+
+    fn has_config(&self, config: Option<&ServerConfig>) -> bool {
+        self.config.as_ref() == config
+    }
+
+    fn shutdown(&self) {
+        self.alive.store(false, Ordering::SeqCst);
+    }
+
+    fn strong_count(&self) -> usize {
+        Arc::strong_count(&self.alive)
     }
 }
