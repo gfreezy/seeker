@@ -26,7 +26,7 @@ pub enum ServerProtocol {
 }
 
 /// Configuration for a server
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq)]
 pub struct ServerConfig {
     /// Server address
     name: String,

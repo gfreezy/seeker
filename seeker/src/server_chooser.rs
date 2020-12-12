@@ -1,15 +1,15 @@
 use crate::dns_client::DnsClient;
+use crate::proxy_connection::ProxyConnection;
 use crate::proxy_tcp_stream::ProxyTcpStream;
 use crate::proxy_udp_socket::ProxyUdpSocket;
 use async_std::io::timeout;
 use async_std::prelude::*;
 use async_std::task::{sleep, spawn};
+use config::rule::Action;
 use config::{Address, ServerConfig};
 use futures_util::stream::FuturesUnordered;
-use parking_lot::Mutex;
-use std::collections::HashMap;
+use parking_lot::{Mutex, RwLock};
 use std::io::Result;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tracing::info;
@@ -21,7 +21,7 @@ pub struct ServerChooser {
     servers: Arc<Vec<ServerConfig>>,
     candidates: Arc<Mutex<Vec<ServerConfig>>>,
     dns_client: DnsClient,
-    server_aliveness: Arc<Mutex<HashMap<String, Arc<AtomicBool>>>>,
+    live_connections: Arc<RwLock<Vec<Box<dyn ProxyConnection + Sync + Send>>>>,
 }
 
 impl ServerChooser {
@@ -37,91 +37,110 @@ impl ServerChooser {
             candidates: Arc::new(Mutex::new(servers.iter().cloned().collect())),
             servers,
             dns_client,
-            server_aliveness: Arc::new(Mutex::new(HashMap::new())),
+            live_connections: Arc::new(RwLock::new(vec![])),
         };
         chooser.ping_servers().await;
         chooser
     }
 
-    fn get_server_aliveness(&self, config: &ServerConfig) -> Arc<AtomicBool> {
-        let mut server_aliveness = self.server_aliveness.lock();
-        let entry = server_aliveness
-            .entry(config.name().to_string())
-            .or_insert_with(|| Arc::new(AtomicBool::new(true)));
-        entry.clone()
-    }
-
     fn set_server_down(&self, config: &ServerConfig) {
-        let mut server_aliveness = self.server_aliveness.lock();
-        let entry = server_aliveness
-            .entry(config.name().to_string())
-            .or_insert_with(|| Arc::new(AtomicBool::new(true)));
-        entry.store(false, Ordering::SeqCst);
+        let mut live_connections = self.live_connections.write();
+        live_connections
+            .iter()
+            .filter(|stream| stream.has_config(Some(&config)))
+            .for_each(|stream| stream.shutdown());
+        live_connections.retain(|stream| stream.strong_count() > 1);
     }
 
-    fn set_server_alive(&self, config: &ServerConfig) {
-        let mut server_aliveness = self.server_aliveness.lock();
-        let entry = server_aliveness
-            .entry(config.name().to_string())
-            .or_insert_with(|| Arc::new(AtomicBool::new(true)));
-        entry.store(true, Ordering::SeqCst);
+    pub async fn candidate_tcp_stream(
+        &self,
+        remote_addr: Address,
+        action: Action,
+    ) -> Result<ProxyTcpStream> {
+        let stream = match action {
+            Action::Proxy => {
+                let config = self.candidates.lock().first().cloned().unwrap();
+                let stream =
+                    ProxyTcpStream::connect(remote_addr, Some(&config), self.dns_client.clone())
+                        .await;
+                if stream.is_err() {
+                    self.take_down_current_and_move_next();
+                }
+                stream?
+            }
+            Action::Direct => {
+                ProxyTcpStream::connect(remote_addr, None, self.dns_client.clone()).await?
+            }
+            _ => unreachable!(),
+        };
+
+        // store all on-fly connections
+        let stream_clone = stream.clone();
+        self.live_connections.write().push(Box::new(stream_clone));
+
+        Ok(stream)
     }
 
-    pub async fn candidate_tcp_stream(&self, remote_addr: Address) -> Result<ProxyTcpStream> {
-        let config = self.candidates.lock().first().cloned().unwrap();
-        let alive = self.get_server_aliveness(&config);
-        let stream =
-            ProxyTcpStream::connect(remote_addr, Some(&config), alive, self.dns_client.clone())
-                .await;
-        if stream.is_err() {
-            self.take_down_current_and_move_next();
-        }
-        stream
-    }
-
-    pub async fn candidate_udp_socket(&self) -> Result<ProxyUdpSocket> {
-        let config = self.candidates.lock().first().cloned().unwrap();
-        let alive = self.get_server_aliveness(&config);
-        let socket = ProxyUdpSocket::new(Some(&config), alive, self.dns_client.clone()).await;
-        if socket.is_err() {
-            self.take_down_current_and_move_next();
-        }
-        socket
+    pub async fn candidate_udp_socket(&self, action: Action) -> Result<ProxyUdpSocket> {
+        let socket = match action {
+            Action::Direct => ProxyUdpSocket::new(None, self.dns_client.clone()).await?,
+            Action::Proxy => {
+                let config = self.candidates.lock().first().cloned().unwrap();
+                let socket = ProxyUdpSocket::new(Some(&config), self.dns_client.clone()).await;
+                if socket.is_err() {
+                    self.take_down_current_and_move_next();
+                }
+                socket?
+            }
+            _ => unreachable!(),
+        };
+        let socket_clone = socket.clone();
+        self.live_connections.write().push(Box::new(socket_clone));
+        Ok(socket)
     }
 
     pub fn take_down_current_and_move_next(&self) {
         // make sure `candidates` drop after block ends to avoid deadlock.
         let mut candidates = self.candidates.lock();
-        if candidates.len() > 1 {
-            let removed = candidates.remove(0);
-            self.set_server_down(&removed);
-            let new = &candidates[0];
-            info!(
-                old_name = removed.name(),
-                old_server = ?removed.addr(),
-                new_name = new.name(),
-                new_server = ?new.addr(),
-                "Change shadowsocks server"
-            );
+        if candidates.len() <= 1 {
+            return;
         }
+        let removed = candidates.remove(0);
+        self.set_server_down(&removed);
+        let new = &candidates[0];
+        info!(
+            old_name = removed.name(),
+            old_server = ?removed.addr(),
+            new_name = new.name(),
+            new_server = ?new.addr(),
+            "Change shadowsocks server"
+        );
     }
 
     pub async fn ping_servers_forever(&self) -> Result<()> {
         loop {
             self.ping_servers().await;
+            self.print_connection_stats();
             sleep(Duration::from_secs(30)).await;
+        }
+    }
+
+    fn print_connection_stats(&self) {
+        for conn in self.live_connections.read().iter() {
+            if let Some(c) = conn.config() {
+                let traffic = conn.traffic();
+                println!(
+                    "name: {} recv: {}, send: {}",
+                    c.name(),
+                    traffic.received_bytes(),
+                    traffic.sent_bytes()
+                )
+            }
         }
     }
 
     pub async fn ping_servers(&self) {
         let mut candidates = vec![];
-        let candidate_config = self.candidates.lock().first().cloned();
-        if let Some(current_config) = candidate_config {
-            if self.ping_server(current_config.clone()).await.is_ok() {
-                candidates.push(current_config);
-            }
-        }
-
         let mut fut: FuturesUnordered<_> = self
             .servers
             .iter()
@@ -166,13 +185,9 @@ impl ServerChooser {
         let instant = Instant::now();
         for (host, path) in &self.ping_url {
             let ret: Result<_> = timeout(self.ping_timeout, async {
-                let mut conn = ProxyTcpStream::connect(
-                    host.clone(),
-                    Some(&config),
-                    Arc::new(AtomicBool::new(true)),
-                    self.dns_client.clone(),
-                )
-                .await?;
+                let mut conn =
+                    ProxyTcpStream::connect(host.clone(), Some(&config), self.dns_client.clone())
+                        .await?;
                 conn.write_all(format!("GET {} HTTP/1.1\r\n\r\n", path).as_bytes())
                     .await?;
                 let mut buf = vec![0; 1024];
@@ -185,7 +200,6 @@ impl ServerChooser {
                 return Err(e);
             }
         }
-        self.set_server_alive(&config);
         Ok(instant.elapsed())
     }
 }
