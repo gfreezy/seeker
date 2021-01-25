@@ -41,9 +41,9 @@ use std::{
     u16,
 };
 
+use async_std::task::ready;
 use byteorder::{BigEndian, ByteOrder};
 use bytes::{BufMut, Bytes, BytesMut};
-use futures_util::ready;
 
 use crate::BUFFER_SIZE;
 use async_std::io::{Read, Write};

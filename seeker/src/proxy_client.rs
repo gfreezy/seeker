@@ -15,7 +15,6 @@ use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::io;
 use std::io::Result;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use tracing::{error, trace, trace_span};
 use tracing_futures::Instrument;
@@ -77,7 +76,6 @@ impl ProxyClient {
         if config.servers.len() > 1 {
             let _ = spawn(async move { chooser_clone.ping_servers_forever().await.unwrap() });
         }
-        chooser.ping_servers().await;
 
         Self {
             resolver,
@@ -143,32 +141,13 @@ impl ProxyClient {
             .get_action_for_addr(original_addr, sock_addr, &remote_addr)
             .await?;
         trace!(?action, "selected action");
-
-        match action {
-            Action::Proxy => {
-                retry_timeout!(
-                    self.config.connect_timeout,
-                    self.config.max_connect_errors,
-                    self.server_chooser
-                        .candidate_tcp_stream(remote_addr.clone())
-                )
-                .await
-            }
-            Action::Direct => {
-                retry_timeout!(
-                    self.config.connect_timeout,
-                    self.config.max_connect_errors,
-                    ProxyTcpStream::connect(
-                        remote_addr.clone(),
-                        None,
-                        Arc::new(AtomicBool::new(true)),
-                        self.dns_client.clone()
-                    )
-                )
-                .await
-            }
-            _ => unimplemented!(),
-        }
+        retry_timeout!(
+            self.config.connect_timeout,
+            self.config.max_connect_errors,
+            self.server_chooser
+                .candidate_tcp_stream(remote_addr.clone(), action)
+        )
+        .await
     }
 
     async fn choose_proxy_udp_socket(
@@ -181,29 +160,12 @@ impl ProxyClient {
             .get_action_for_addr(original_addr, sock_addr, &addr)
             .await?;
 
-        match action {
-            Action::Proxy => {
-                retry_timeout!(
-                    self.config.connect_timeout,
-                    self.config.max_connect_errors,
-                    self.server_chooser.candidate_udp_socket()
-                )
-                .await
-            }
-            Action::Direct => {
-                retry_timeout!(
-                    self.config.connect_timeout,
-                    self.config.max_connect_errors,
-                    ProxyUdpSocket::new(
-                        None,
-                        Arc::new(AtomicBool::new(true)),
-                        self.dns_client.clone(),
-                    )
-                )
-                .await
-            }
-            _ => unreachable!(),
-        }
+        retry_timeout!(
+            self.config.connect_timeout,
+            self.config.max_connect_errors,
+            self.server_chooser.candidate_udp_socket(action)
+        )
+        .await
     }
 
     async fn probe_connectivity(&self, addr: SocketAddr) -> bool {

@@ -11,8 +11,8 @@ use std::{
     task::{Context, Poll},
 };
 
+use async_std::task::ready;
 use bytes::{Bytes, BytesMut};
-use futures_util::ready;
 use tracing::trace;
 
 use crypto::{CipherCategory, CipherType};

@@ -8,11 +8,11 @@ use std::sync::Mutex;
 
 use crate::dns::buffer::{BytePacketBuffer, PacketBuffer};
 use crate::dns::protocol::{DnsPacket, DnsQuestion, QueryType};
+use async_std::channel::{bounded, Receiver, Sender};
 use async_std::future;
 use async_std::io::timeout;
 use async_std::net::UdpSocket;
 use async_std::prelude::FutureExt;
-use async_std::sync::{channel, Receiver, Sender};
 use async_std::task;
 use async_trait::async_trait;
 use std::time::Duration;
@@ -62,7 +62,7 @@ struct DnsRequest {
 
 impl DnsNetworkClient {
     pub async fn new(bind_port: u16, timeout: Duration) -> DnsNetworkClient {
-        let (sender, receiver) = channel(1);
+        let (sender, receiver) = bounded(1);
         let client = DnsNetworkClient {
             total_sent: Arc::new(AtomicUsize::new(0)),
             total_failed: Arc::new(AtomicUsize::new(0)),
@@ -115,7 +115,7 @@ impl DnsNetworkClient {
                 if let Ok(packet) = DnsPacket::from_buffer(&mut res_buffer) {
                     let resp = { req_resp_map2.lock().unwrap().remove(&packet.header.id) };
                     if let Some(resp) = resp {
-                        resp.send(packet).await;
+                        resp.send(packet).await.expect("send error");
                     }
                 } else {
                     error!("invalid udp packet");
@@ -182,7 +182,7 @@ impl DnsNetworkClient {
             .questions
             .push(DnsQuestion::new(qname.to_string(), qtype));
 
-        let (sender, receiver) = channel(1);
+        let (sender, receiver) = bounded(1);
 
         self.sender
             .send(DnsRequest {
@@ -190,7 +190,8 @@ impl DnsNetworkClient {
                 server: (server.to_string(), port),
                 resp: sender,
             })
-            .await;
+            .await
+            .expect("send error");
 
         match future::timeout(self.timeout, receiver.recv()).await {
             Ok(Ok(qr)) => Ok(qr),

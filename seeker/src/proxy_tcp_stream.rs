@@ -9,6 +9,9 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use crate::dns_client::DnsClient;
+use crate::proxy_connection::ProxyConnection;
+use crate::traffic::Traffic;
+use async_std::task::ready;
 use std::io::{Error, ErrorKind};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -26,15 +29,18 @@ enum ProxyTcpStreamInner {
 pub struct ProxyTcpStream {
     inner: ProxyTcpStreamInner,
     alive: Arc<AtomicBool>,
+    remote_addr: Address,
+    config: Option<ServerConfig>,
+    traffic: Traffic,
 }
 
 impl ProxyTcpStream {
     pub async fn connect(
         remote_addr: Address,
         config: Option<&ServerConfig>,
-        alive: Arc<AtomicBool>,
         dns_client: DnsClient,
     ) -> Result<ProxyTcpStream> {
+        let remote_addr_clone = remote_addr.clone();
         let stream = if let Some(config) = config {
             match config.protocol() {
                 ServerProtocol::Https => {
@@ -100,8 +106,33 @@ impl ProxyTcpStream {
 
         Ok(ProxyTcpStream {
             inner: stream,
-            alive,
+            alive: Arc::new(AtomicBool::new(true)),
+            remote_addr: remote_addr_clone,
+            config: config.cloned(),
+            traffic: Default::default(),
         })
+    }
+}
+
+impl ProxyConnection for ProxyTcpStream {
+    fn traffic(&self) -> Traffic {
+        self.traffic.clone()
+    }
+
+    fn config(&self) -> Option<&ServerConfig> {
+        self.config.as_ref()
+    }
+
+    fn has_config(&self, config: Option<&ServerConfig>) -> bool {
+        self.config.as_ref() == config
+    }
+
+    fn shutdown(&self) {
+        self.alive.store(false, Ordering::SeqCst);
+    }
+
+    fn strong_count(&self) -> usize {
+        Arc::strong_count(&self.alive)
     }
 }
 
@@ -118,13 +149,15 @@ impl Read for ProxyTcpStream {
                 "ProxyTcpStream not alive",
             )));
         }
-        match &mut stream.inner {
+        let size = ready!(match &mut stream.inner {
             ProxyTcpStreamInner::Direct(conn) => Pin::new(conn).poll_read(cx, buf),
             ProxyTcpStreamInner::Socks5(conn) => Pin::new(conn).poll_read(cx, buf),
             ProxyTcpStreamInner::Shadowsocks(conn) => Pin::new(conn).poll_read(cx, buf),
             ProxyTcpStreamInner::HttpProxy(conn) => Pin::new(conn).poll_read(cx, buf),
             ProxyTcpStreamInner::HttpsProxy(conn) => Pin::new(conn).poll_read(cx, buf),
-        }
+        })?;
+        self.traffic.recv(size);
+        Poll::Ready(Ok(size))
     }
 }
 
@@ -141,13 +174,15 @@ impl Write for ProxyTcpStream {
                 "ProxyTcpStream not alive",
             )));
         }
-        match &mut stream.inner {
+        let size = ready!(match &mut stream.inner {
             ProxyTcpStreamInner::Direct(conn) => Pin::new(conn).poll_write(cx, buf),
             ProxyTcpStreamInner::Socks5(conn) => Pin::new(conn).poll_write(cx, buf),
             ProxyTcpStreamInner::Shadowsocks(conn) => Pin::new(conn).poll_write(cx, buf),
             ProxyTcpStreamInner::HttpProxy(conn) => Pin::new(conn).poll_write(cx, buf),
             ProxyTcpStreamInner::HttpsProxy(conn) => Pin::new(conn).poll_write(cx, buf),
-        }
+        })?;
+        self.traffic.send(size);
+        Poll::Ready(Ok(size))
     }
 
     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<()>> {

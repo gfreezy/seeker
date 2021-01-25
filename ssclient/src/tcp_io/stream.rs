@@ -7,9 +7,9 @@ use std::{
 };
 
 use async_std::io::{Read, Write};
+use async_std::task::ready;
 use bytes::{BufMut, Bytes, BytesMut};
 use crypto::{new_stream, BoxStreamCipher, CipherType, CryptoMode};
-use futures_util::ready;
 use std::io::Result;
 
 use crate::BUFFER_SIZE;

@@ -5,9 +5,11 @@ mod config_encryptor;
 mod dns_client;
 mod logger;
 mod proxy_client;
+mod proxy_connection;
 mod proxy_tcp_stream;
 mod proxy_udp_socket;
 mod server_chooser;
+mod traffic;
 
 use std::error::Error;
 
