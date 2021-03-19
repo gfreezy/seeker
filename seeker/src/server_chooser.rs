@@ -9,6 +9,7 @@ use config::rule::Action;
 use config::{Address, ServerConfig};
 use futures_util::stream::FuturesUnordered;
 use parking_lot::{Mutex, RwLock};
+use std::collections::HashMap;
 use std::io::Result;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -126,17 +127,30 @@ impl ServerChooser {
     }
 
     fn print_connection_stats(&self) {
+        #[derive(Default)]
+        struct Stats {
+            count: usize,
+            send: usize,
+            recv: usize,
+        }
+        let mut map: HashMap<String, Stats> = HashMap::new();
         for conn in self.live_connections.read().iter() {
-            if let Some(c) = conn.config() {
+            if let Some(config) = conn.config() {
+                let entry = map.entry(config.addr().to_string()).or_default();
+                entry.count += 1;
                 let traffic = conn.traffic();
-                println!(
-                    "name: {} recv: {}, send: {}",
-                    c.name(),
-                    traffic.received_bytes(),
-                    traffic.sent_bytes()
-                )
+                entry.send += traffic.sent_bytes();
+                entry.recv += traffic.received_bytes();
             }
         }
+        println!("Connections:");
+        for (remote_addr, stats) in map.iter() {
+            println!(
+                "{}: {}, sent_bytes: {}, recv_bytes: {}",
+                remote_addr, stats.count, stats.send, stats.recv
+            );
+        }
+        println!();
     }
 
     pub async fn ping_servers(&self) {

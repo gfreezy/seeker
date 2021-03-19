@@ -154,10 +154,10 @@ impl ProxyClient {
         &self,
         original_addr: SocketAddr,
         sock_addr: SocketAddr,
-        addr: &Address,
+        remote_addr: &Address,
     ) -> Result<ProxyUdpSocket> {
         let action = self
-            .get_action_for_addr(original_addr, sock_addr, &addr)
+            .get_action_for_addr(original_addr, sock_addr, &remote_addr)
             .await?;
 
         retry_timeout!(
