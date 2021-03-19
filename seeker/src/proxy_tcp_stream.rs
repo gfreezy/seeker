@@ -134,6 +134,10 @@ impl ProxyConnection for ProxyTcpStream {
     fn strong_count(&self) -> usize {
         Arc::strong_count(&self.alive)
     }
+
+    fn remote_addr(&self) -> Option<&Address> {
+        Some(&self.remote_addr)
+    }
 }
 
 impl Read for ProxyTcpStream {

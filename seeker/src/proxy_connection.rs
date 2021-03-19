@@ -1,5 +1,5 @@
 use crate::traffic::Traffic;
-use config::ServerConfig;
+use config::{Address, ServerConfig};
 
 pub trait ProxyConnection {
     fn traffic(&self) -> Traffic;
@@ -7,4 +7,7 @@ pub trait ProxyConnection {
     fn has_config(&self, config: Option<&ServerConfig>) -> bool;
     fn shutdown(&self);
     fn strong_count(&self) -> usize;
+    fn remote_addr(&self) -> Option<&Address> {
+        None
+    }
 }
