@@ -135,7 +135,10 @@ fn load_config(
                 .timeout_write(5000)
                 .call();
             if !resp.ok() {
-                return Err(anyhow::anyhow!("Load config from remote host error"));
+                return Err(anyhow::anyhow!(
+                    "Load config from remote host error: {}",
+                    resp.into_string().unwrap()
+                ));
             }
             let config =
                 config_encryptor::decrypt_config(resp.into_reader(), CipherType::ChaCha20Ietf, key)
