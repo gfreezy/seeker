@@ -203,7 +203,7 @@ blocked app from Allow apps downloaded from pane at the bottom of the window.
 ----
 git clone https://github.com/gfreezy/seeker.git
 cd seeker
-OPENSSL_STATIC=yes SODIUM_STATIC=yes SODIUM_BUILD_STATIC=yes cargo build --release
+OPENSSL_STATIC=yes cargo build --release
 ----
 
 编译完成后，程序在 `target/release/seeker`。
@@ -212,7 +212,7 @@ OPENSSL_STATIC=yes SODIUM_STATIC=yes SODIUM_BUILD_STATIC=yes cargo build --relea
 
 [source,shell]
 ----
-docker run -v $PWD:/volume --rm -t -e SODIUM_BUILD_STATIC=yes clux/muslrust cargo build --release
+docker run -v $PWD:/volume --rm -t clux/muslrust cargo build --release
 ----
 
 会在 `target/x86_64-unknown-linux-musl/release` 目录下生成 `seeker` 文件。
