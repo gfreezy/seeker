@@ -172,7 +172,9 @@ impl DnsNetworkClient {
 
         packet.header.id = self.seq.fetch_add(1, Ordering::SeqCst) as u16;
         if packet.header.id + 1 == 0xFFFF {
-            self.seq.compare_and_swap(0xFFFF, 0, Ordering::SeqCst);
+            let _ = self
+                .seq
+                .compare_exchange(0xFFFF, 0, Ordering::SeqCst, Ordering::SeqCst);
         }
 
         packet.header.questions = 1;
