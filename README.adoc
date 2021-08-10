@@ -150,18 +150,11 @@ rules:
 
 比如我希望 `8.8.8.8` 这个 IP 所有流量都走代理，且使用本地 ClashX 创建的 socks5 代理：
 
-1. 将 `8.8.8.8` 路由到 utun4
+将 `8.8.8.8` 路由到 utun4
 +
 [source,shell script]
 ----
 sudo route -n add -net 8.8.8.8 utun4
-----
-
-2. 修改 clashx 的规则，增加下面一条
-+
-[source]
-----
-- 'IP-CIDR,8.8.8.8/32,rixCloud'
 ----
 
 == 代理局域网内其他机器
