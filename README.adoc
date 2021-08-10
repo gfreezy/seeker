@@ -151,7 +151,7 @@ rules:
 比如我希望 `8.8.8.8` 这个 IP 所有流量都走代理，且使用本地 ClashX 创建的 socks5 代理：
 
 将 `8.8.8.8` 路由到 utun4
-+
+
 [source,shell script]
 ----
 sudo route -n add -net 8.8.8.8 utun4
