@@ -9,7 +9,9 @@ edition = "2018"
 [dependencies]
 tracing = "0.1.19"
 tracing-subscriber = "0.2.11"
-tracing-futures = { version = "0.2.4", features = ["std-future"], default-features = false }
+tracing-futures = { version = "0.2.4", features = [
+    "std-future",
+], default-features = false }
 config = { path = "../config" }
 dnsserver = { path = "../dnsserver" }
 ssclient = { path = "../ssclient" }
@@ -17,7 +19,7 @@ socks5_client = { path = "../socks5_client" }
 http_proxy_client = { path = "../http_proxy_client" }
 sysconfig = { path = "../sysconfig" }
 tun_nat = { path = "../tun_nat" }
-file-rotate = { git = "https://github.com/gfreezy/file-rotate", rev = "0fc0f02" }
+file-rotate = { git = "https://github.com/gfreezy/file-rotate", rev = "2a7cd8b5c52c5ee17db72d80cf49b74764e97679" }
 async-std = "1.8.0"
 parking_lot = { version = "0.11.0", features = ["deadlock_detection"] }
 async-signals = "0.3.1"
