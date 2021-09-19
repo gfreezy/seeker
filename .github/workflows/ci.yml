@@ -95,11 +95,18 @@ jobs:
       - name: Install packages (Ubuntu)
         if: matrix.os == 'ubuntu-latest'
         run: |
+          # Disable TCP/UDP offload
+          sudo ethtool -K eth0 tx off rx off
+
           sudo ci/ubuntu-install-packages
 
       - name: Install packages (macOS)
         if: matrix.os == 'macos-latest'
         run: |
+          # Disable TCP/UDP offload
+          sudo sysctl -w net.link.generic.system.hwcksum_tx=0
+          sudo sysctl -w net.link.generic.system.hwcksum_rx=0
+
           sudo ci/macos-install-packages
 
       - name: Install Rust
