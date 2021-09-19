@@ -25,11 +25,12 @@ jobs:
     # env:
     # Set to force version number, e.g., when no tag exists.
     # VERSION: TEST-0.0.0
+    outputs:
+      upload_url: ${{ steps.release.outputs.upload_url }}
+      version: ${{ env.VERSION }}
     steps:
-      - name: Create artifacts directory
-        run: mkdir artifacts
-
       - name: Get the release version from the tag
+        shell: bash
         if: env.VERSION == ''
         run: |
           # Apparently, this is the right way to get a tag name. Really?
@@ -45,18 +46,6 @@ jobs:
         with:
           tag_name: ${{ env.VERSION }}
           release_name: ${{ env.VERSION }}
-
-      - name: Save release upload URL to artifact
-        run: echo "${{ steps.release.outputs.upload_url }}" > artifacts/release-upload-url
-
-      - name: Save version number to artifact
-        run: echo "${{ env.VERSION }}" > artifacts/release-version
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v1
-        with:
-          name: artifacts
-          path: artifacts
 
   build-release:
     name: build-release
@@ -113,10 +102,12 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo ci/ubuntu-install-packages
+
       - name: Install packages (macOS)
         if: matrix.os == 'macos-latest'
         run: |
           sudo ci/macos-install-packages
+
       - name: Install Rust
         uses: actions-rs/toolchain@v1
         with:
@@ -128,37 +119,16 @@ jobs:
       - name: Use Cross
         # if: matrix.os != 'windows-2019'
         run: |
-          # FIXME: to work around bugs in latest cross release, install master.
-          # See: https://github.com/rust-embedded/cross/issues/357
-          cargo install --git https://github.com/rust-embedded/cross
+          cargo install cross
           echo "CARGO=cross" >> $GITHUB_ENV
           echo "TARGET_FLAGS=--target ${{ matrix.target }}" >> $GITHUB_ENV
           echo "TARGET_DIR=./target/${{ matrix.target }}" >> $GITHUB_ENV
+
       - name: Show command used for Cargo
         run: |
           echo "cargo command is: ${{ env.CARGO }}"
           echo "target flag is: ${{ env.TARGET_FLAGS }}"
           echo "target dir is: ${{ env.TARGET_DIR }}"
-      - name: Get release download URL
-        uses: actions/download-artifact@v1
-        with:
-          name: artifacts
-          path: artifacts
-
-      - name: Set release upload URL and release version
-        shell: bash
-        run: |
-          release_upload_url="$(cat artifacts/release-upload-url)"
-          echo "RELEASE_UPLOAD_URL=$release_upload_url" >> $GITHUB_ENV
-          echo "release upload url: $RELEASE_UPLOAD_URL"
-          release_version="$(cat artifacts/release-version)"
-          echo "RELEASE_VERSION=$release_version" >> $GITHUB_ENV
-          echo "release version: $RELEASE_VERSION"
-
-      - name: Build cross docker images
-        if: matrix.target != ''
-        run: |
-          [ -d ci/docker/${{ matrix.target }} ] && cd ci/docker/${{ matrix.target }} && ./build || true
 
       - name: Build release binary
         run: ${{ env.CARGO }} build --verbose --release ${{ env.TARGET_FLAGS }}
@@ -175,28 +145,32 @@ jobs:
             rustembedded/cross:arm-unknown-linux-gnueabihf \
             arm-linux-gnueabihf-strip \
             /target/arm-unknown-linux-gnueabihf/release/${{ env.BINARY_NAME }}
+
       - name: Build archive
         shell: bash
         run: |
           outdir="$(ci/cargo-out-dir "${{ env.TARGET_DIR }}")"
-          staging="${{ env.BINARY_NAME }}-${{ env.RELEASE_VERSION }}-${{ matrix.target }}"
-          mkdir -p "$staging"
-
+          staging="${{ env.BINARY_NAME }}-${{ needs.create-release.outputs.version }}-${{ matrix.target }}"
+          mkdir -p "$staging"/doc
+          cp {README.md,COPYING,UNLICENSE,LICENSE-MIT} "$staging/" || true
+          cp {CHANGELOG.md,FAQ.md,GUIDE.md} "$staging/doc/" || true
           if [ "${{ matrix.os }}" = "windows-2019" ]; then
             cp "target/${{ matrix.target }}/release/${{ env.BINARY_NAME }}.exe" "$staging/"
             7z a "$staging.zip" "$staging"
             echo "ASSET=$staging.zip" >> $GITHUB_ENV
           else
+            # The man page is only generated on Unix systems. ¯\_(ツ)_/¯
             cp "target/${{ matrix.target }}/release/${{ env.BINARY_NAME }}" "$staging/"
             tar czf "$staging.tar.gz" "$staging"
             echo "ASSET=$staging.tar.gz" >> $GITHUB_ENV
           fi
+
       - name: Upload release archive
         uses: actions/upload-release-asset@v1.0.1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          upload_url: ${{ env.RELEASE_UPLOAD_URL }}
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
           asset_path: ${{ env.ASSET }}
           asset_name: ${{ env.ASSET }}
           asset_content_type: application/octet-stream

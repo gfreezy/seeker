@@ -19,6 +19,7 @@ jobs:
         with:
           toolchain: stable
           override: true
+          profile: minimal
           components: rustfmt
 
       - name: Check formatting
@@ -94,11 +95,13 @@ jobs:
       - name: Install packages (Ubuntu)
         if: matrix.os == 'ubuntu-latest'
         run: |
-          sudo ci/ubuntu-install-packages
+          ci/ubuntu-install-packages
+
       - name: Install packages (macOS)
         if: matrix.os == 'macos-latest'
         run: |
-          sudo ci/macos-install-packages
+          ci/macos-install-packages
+
       - name: Install Rust
         uses: actions-rs/toolchain@v1
         with:
@@ -109,21 +112,20 @@ jobs:
       - name: Use Cross
         if: matrix.target != ''
         run: |
-          # FIXME: to work around bugs in latest cross release, install master.
-          # See: https://github.com/rust-embedded/cross/issues/357
-          cargo install --git https://github.com/rust-embedded/cross
+          cargo install cross
           echo "CARGO=cross" >> $GITHUB_ENV
           echo "TARGET_FLAGS=--target ${{ matrix.target }}" >> $GITHUB_ENV
           echo "TARGET_DIR=./target/${{ matrix.target }}" >> $GITHUB_ENV
+
       - name: Show command used for Cargo
         run: |
           echo "cargo command is: ${{ env.CARGO }}"
           echo "target flag is: ${{ env.TARGET_FLAGS }}"
 
-      - name: Build cross docker images
-        if: matrix.target != ''
-        run: |
-          [ -d ci/docker/${{ matrix.target }} ] && cd ci/docker/${{ matrix.target }} && ./build || true
+      # - name: Build cross docker images
+      #   if: matrix.target != ''
+      #   run: |
+      #     [ -d ci/docker/${{ matrix.target }} ] && cd ci/docker/${{ matrix.target }} && ./build || true
 
       - name: Build all crates
         run: ${{ env.CARGO }} build --verbose --all ${{ env.TARGET_FLAGS }}
