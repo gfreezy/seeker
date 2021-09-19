@@ -95,12 +95,12 @@ jobs:
       - name: Install packages (Ubuntu)
         if: matrix.os == 'ubuntu-latest'
         run: |
-          ci/ubuntu-install-packages
+          sudo ci/ubuntu-install-packages
 
       - name: Install packages (macOS)
         if: matrix.os == 'macos-latest'
         run: |
-          ci/macos-install-packages
+          sudo ci/macos-install-packages
 
       - name: Install Rust
         uses: actions-rs/toolchain@v1
@@ -125,7 +125,7 @@ jobs:
       - name: Build cross docker images
         if: matrix.target != ''
         run: |
-          [ -d ci/docker/${{ matrix.target }} ] && cd ci/docker/${{ matrix.target }} && sudo ./build || true
+          [ -d ci/docker/${{ matrix.target }} ] && cd ci/docker/${{ matrix.target }} && ./build || true
 
       - name: Build all crates
         run: ${{ env.CARGO }} build --verbose --all ${{ env.TARGET_FLAGS }}
