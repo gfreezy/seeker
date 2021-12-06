@@ -11,7 +11,7 @@ use std::net::Ipv4Addr;
 use std::path::Path;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
-use tracing::debug;
+use tracing::{debug, error, trace};
 use trust_dns_proto::rr::RData;
 
 const NEXT_IP: &str = "next_ip";
@@ -100,12 +100,11 @@ impl RuleBasedDnsResolver {
 
         match self.inner.rules.action_for_domain(domain) {
             Some(Action::Direct) => {
-                let lookup_ip = self
-                    .inner
-                    .resolver
-                    .lookup_ip(domain)
-                    .await
-                    .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+                let lookup_ip = self.inner.resolver.lookup_ip(domain).await.map_err(|e| {
+                    let msg = e.to_string();
+                    error!("directly lookup host error: {}", &msg);
+                    io::Error::new(io::ErrorKind::Other, msg)
+                })?;
                 let mut ips: Vec<IpAddr> = vec![];
                 for record in lookup_ip.as_lookup().record_iter() {
                     let rdata = match record.rdata() {
@@ -125,7 +124,10 @@ impl RuleBasedDnsResolver {
                                 ttl: TransientTtl(record.ttl()),
                             }
                         }
-                        _ => continue,
+                        other => {
+                            trace!("resolve return other: {:?}", other);
+                            continue;
+                        }
                     };
                     packet.answers.push(rdata)
                 }

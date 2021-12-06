@@ -24,6 +24,7 @@ impl DnsClient {
                         socket_addr: *addr,
                         protocol: Protocol::Udp,
                         tls_dns_name: None,
+                        trust_nx_responses: false,
                     };
                     name_servers.push(udp);
                 }
@@ -37,6 +38,7 @@ impl DnsClient {
                             .unwrap(),
                         protocol: Protocol::Tcp,
                         tls_dns_name: None,
+                        trust_nx_responses: false,
                     };
                     name_servers.push(tcp);
                 }
@@ -48,10 +50,11 @@ impl DnsClient {
         // Construct a new Resolver with default configuration options
         let resolver = resolver(
             ResolverConfig::from_parts(None, Vec::new(), name_servers),
-            ResolverOpts {
-                timeout,
-                num_concurrent_reqs,
-                ..Default::default()
+            {
+                let mut opts = ResolverOpts::default();
+                opts.timeout = timeout;
+                opts.num_concurrent_reqs = num_concurrent_reqs;
+                opts
             },
         )
         .await
