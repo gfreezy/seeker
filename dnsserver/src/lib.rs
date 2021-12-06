@@ -41,7 +41,8 @@ pub(crate) mod tests {
     }
 
     pub(crate) async fn new_resolver(ip: String, port: u16) -> AsyncStdResolver {
-        let name_servers = NameServerConfigGroup::from_ips_clear(&[ip.parse().unwrap()], port);
+        let name_servers =
+            NameServerConfigGroup::from_ips_clear(&[ip.parse().unwrap()], port, false);
 
         // Construct a new Resolver with default configuration options
         async_std_resolver::resolver(
