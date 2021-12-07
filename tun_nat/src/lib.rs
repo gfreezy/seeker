@@ -156,6 +156,14 @@ impl SessionManager {
             None
         }
     }
+
+    pub fn update_activity_for_port(&self, port: u16) {
+        self.inner.write().update_activity_for_port(port);
+    }
+
+    pub fn recycle_port(&self, port: u16) {
+        self.inner.write().recycle_port(port);
+    }
 }
 
 struct InnerSessionManager {
@@ -210,7 +218,20 @@ impl InnerSessionManager {
 
     pub fn update_activity_for_port(&mut self, port: u16) {
         if let Some(assoc) = self.map.get_mut(&port) {
-            assoc.last_activity_ts = now();
+            // if last_activity_ts is 0, the port is marked recycle. We shouldn't update activity ts.
+            if assoc.last_activity_ts > 0 {
+                assoc.last_activity_ts = now();
+            }
+        } else {
+            panic!("no port exists");
+        }
+    }
+
+    pub fn recycle_port(&mut self, port: u16) {
+        if let Some(assoc) = self.map.get_mut(&port) {
+            assoc.last_activity_ts = 0;
+        } else {
+            panic!("no port exists");
         }
     }
 
