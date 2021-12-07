@@ -179,9 +179,14 @@ impl ProxyClient {
         let mut incoming = listener.incoming();
         while let Some(Ok(conn)) = incoming.next().await {
             let peer_addr = conn.peer_addr()?;
-            let (real_src, real_dest) = match self.session_manager.get_by_port(peer_addr.port()) {
+            trace!(peer_addr = ?peer_addr, "new connection");
+            let session_port = peer_addr.port();
+            let (real_src, real_dest) = match self.session_manager.get_by_port(session_port) {
                 Some(s) => s,
-                None => continue,
+                None => {
+                    error!("session manager not found port");
+                    continue;
+                }
             };
 
             async {
@@ -210,7 +215,11 @@ impl ProxyClient {
                 {
                     Ok(remote_conn) => {
                         trace!("connect successfully");
-                        spawn(async move { tunnel_tcp_stream(conn, remote_conn).await });
+                        let session_manager = self.session_manager.clone();
+                        spawn(async move {
+                            tunnel_tcp_stream(conn, remote_conn, session_manager, session_port)
+                                .await
+                        });
                     }
                     Err(e) => {
                         error!(?e, "connect error");
@@ -278,9 +287,10 @@ impl ProxyClient {
         loop {
             let (size, peer_addr) = udp_listener.recv_from(&mut buf).await?;
             assert!(size < 2000);
-            let (socket, dest_addr) = match self.get_udp_socket_and_dest_addr(peer_addr.port()) {
+            let session_port = peer_addr.port();
+            let (socket, dest_addr) = match self.get_udp_socket_and_dest_addr(session_port) {
                 None => {
-                    let (socket, dest_addr) = match self.new_udp_socket(peer_addr.port()).await {
+                    let (socket, dest_addr) = match self.new_udp_socket(session_port).await {
                         Ok(r) => r,
                         Err(e) => {
                             error!(?e, "new udp socket");
@@ -291,10 +301,12 @@ impl ProxyClient {
                     let udp_listener_clone = udp_listener.clone();
 
                     let udp_manager = self.udp_manager.clone();
+                    let session_manager = self.session_manager.clone();
                     spawn(async move {
                         let _: Result<()> = async {
                             let mut buf = vec![0; 2000];
                             loop {
+                                session_manager.update_activity_for_port(session_port);
                                 let (recv_size, _peer) =
                                     timeout(recv_timeout, socket_clone.recv_from(&mut buf)).await?;
                                 assert!(recv_size < 2000);
@@ -308,6 +320,7 @@ impl ProxyClient {
                         }
                         .await;
                         let _ = udp_manager.write().remove(&peer_addr.port());
+                        session_manager.recycle_port(session_port);
                     });
                     (socket, dest_addr)
                 }
@@ -319,6 +332,7 @@ impl ProxyClient {
                 }
                 Err(e) => error!(?e, "send to {}", dest_addr),
             };
+            self.session_manager.update_activity_for_port(session_port);
         }
     }
 }
@@ -326,12 +340,15 @@ impl ProxyClient {
 async fn tunnel_tcp_stream<T1: Read + Write + Unpin + Clone, T2: Read + Write + Unpin + Clone>(
     mut conn1: T1,
     mut conn2: T2,
+    session_manager: SessionManager,
+    session_port: u16,
 ) -> Result<()> {
     let mut conn1_clone = conn1.clone();
     let mut conn2_clone = conn2.clone();
     let f1 = async {
         let mut buf = vec![0; 1500];
         loop {
+            session_manager.update_activity_for_port(session_port);
             let size = conn1.read(&mut buf).await?;
             if size == 0 {
                 break Ok(());
@@ -342,6 +359,7 @@ async fn tunnel_tcp_stream<T1: Read + Write + Unpin + Clone, T2: Read + Write + 
     let f2 = async {
         let mut buf = vec![0; 1500];
         loop {
+            session_manager.update_activity_for_port(session_port);
             let size = conn2_clone.read(&mut buf).await?;
             if size == 0 {
                 break Ok(());
@@ -349,7 +367,9 @@ async fn tunnel_tcp_stream<T1: Read + Write + Unpin + Clone, T2: Read + Write + 
             conn1_clone.write_all(&buf[..size]).await?;
         }
     };
-    f1.race(f2).await
+    let ret = f1.race(f2).await;
+    session_manager.recycle_port(session_port);
+    ret
 }
 
 async fn run_dns_resolver(config: &Config, resolver: AsyncStdResolver) -> RuleBasedDnsResolver {
