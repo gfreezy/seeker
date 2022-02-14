@@ -2159,6 +2159,7 @@ dependencies = [
  "parking_lot",
  "smoltcp",
  "sysconfig",
+ "tracing",
 ]
 
 [[package]]

@@ -223,7 +223,7 @@ impl InnerSessionManager {
                 assoc.last_activity_ts = now();
             }
         } else {
-            panic!("no port exists");
+            tracing::error!("no port exists");
         }
     }
 
@@ -231,7 +231,7 @@ impl InnerSessionManager {
         if let Some(assoc) = self.map.get_mut(&port) {
             assoc.last_activity_ts = 0;
         } else {
-            panic!("no port exists");
+            tracing::error!("no port exists");
         }
     }
 
