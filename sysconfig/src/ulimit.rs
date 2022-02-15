@@ -1,7 +1,7 @@
 use std::io;
 
 pub fn set_rlimit_no_file(no: u64) -> io::Result<()> {
-    #[cfg(target_arch = "x86_64")]
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     let rlim = libc::rlimit {
         rlim_cur: no,
         rlim_max: no,

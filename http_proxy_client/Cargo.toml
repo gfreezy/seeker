@@ -9,6 +9,6 @@ edition = "2018"
 [dependencies]
 async-std = "1.8.0"
 config = { path = "../config" }
-base64= "0.13.0"
-async-tls = "0.10.2"
+base64 = "0.13.0"
+async-tls = "0.10"
 parking_lot = "0.11.0"
