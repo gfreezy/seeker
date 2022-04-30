@@ -48,7 +48,7 @@ impl ServerChooser {
         let mut live_connections = self.live_connections.write();
         live_connections
             .iter()
-            .filter(|stream| stream.has_config(Some(&config)))
+            .filter(|stream| stream.has_config(Some(config)))
             .for_each(|stream| stream.shutdown());
         live_connections.retain(|stream| stream.strong_count() > 1);
     }

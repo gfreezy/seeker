@@ -30,11 +30,11 @@ impl ProxyUdpSocket {
         let socket = if let Some(config) = config {
             match config.protocol() {
                 ServerProtocol::Socks5 => {
-                    let server = dns_client.lookup_address(&config.addr()).await?;
+                    let server = dns_client.lookup_address(config.addr()).await?;
                     ProxyUdpSocketInner::Socks5(Arc::new(Socks5UdpSocket::new(server).await?))
                 }
                 ServerProtocol::Shadowsocks => {
-                    let server = dns_client.lookup_address(&config.addr()).await?;
+                    let server = dns_client.lookup_address(config.addr()).await?;
                     let (method, key) = match (config.method(), config.key()) {
                         (Some(m), Some(k)) => (m, k),
                         _ => {

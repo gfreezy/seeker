@@ -138,7 +138,7 @@ impl ProxyClient {
         remote_addr: &Address,
     ) -> Result<ProxyTcpStream> {
         let action = self
-            .get_action_for_addr(original_addr, sock_addr, &remote_addr)
+            .get_action_for_addr(original_addr, sock_addr, remote_addr)
             .await?;
         trace!(?action, "selected action");
         retry_timeout!(
@@ -157,7 +157,7 @@ impl ProxyClient {
         remote_addr: &Address,
     ) -> Result<ProxyUdpSocket> {
         let action = self
-            .get_action_for_addr(original_addr, sock_addr, &remote_addr)
+            .get_action_for_addr(original_addr, sock_addr, remote_addr)
             .await?;
 
         retry_timeout!(

@@ -60,7 +60,7 @@ impl SodiumStreamCipher {
         let padding = self.padding_len();
 
         let mut plain_text = vec![0u8; data.len() + padding];
-        (&mut plain_text[padding..]).copy_from_slice(&data);
+        (&mut plain_text[padding..]).copy_from_slice(data);
 
         let mut out_buf = BytesMut::with_capacity((data.len() + padding) * 2);
 
