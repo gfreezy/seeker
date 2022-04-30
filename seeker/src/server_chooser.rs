@@ -17,7 +17,7 @@ use tracing::info;
 
 #[derive(Clone)]
 pub struct ServerChooser {
-    ping_url: Vec<(Address, String)>,
+    ping_urls: Vec<(Address, String)>,
     ping_timeout: Duration,
     servers: Arc<Vec<ServerConfig>>,
     candidates: Arc<Mutex<Vec<ServerConfig>>>,
@@ -33,7 +33,7 @@ impl ServerChooser {
         ping_timeout: Duration,
     ) -> Self {
         let chooser = ServerChooser {
-            ping_url,
+            ping_urls: ping_url,
             ping_timeout,
             candidates: Arc::new(Mutex::new(servers.iter().cloned().collect())),
             servers,
@@ -197,7 +197,7 @@ impl ServerChooser {
 
     async fn ping_server(&self, config: ServerConfig) -> Result<Duration> {
         let instant = Instant::now();
-        for (host, path) in &self.ping_url {
+        for (host, path) in &self.ping_urls {
             let ret: Result<_> = timeout(self.ping_timeout, async {
                 let mut conn =
                     ProxyTcpStream::connect(host.clone(), Some(&config), self.dns_client.clone())

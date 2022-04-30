@@ -20,7 +20,7 @@ use anyhow::Context;
 use async_signals::Signals;
 use async_std::prelude::{FutureExt, StreamExt};
 use async_std::task::block_on;
-use clap::{App, Arg};
+use clap::{Arg, Command};
 use config::Config;
 use crypto::CipherType;
 use std::fs::File;
@@ -28,49 +28,49 @@ use sysconfig::{set_rlimit_no_file, DNSSetup, IpForward};
 
 fn main() -> Result<(), Box<dyn Error>> {
     let version = env!("CARGO_PKG_VERSION");
-    let matches = App::new("Seeker")
+    let matches = Command::new("Seeker")
         .version(version)
         .author("gfreezy <gfreezy@gmail.com>")
         .about("Tun to Shadowsockets proxy. https://github.com/gfreezy/seeker")
         .arg(
-            Arg::with_name("config")
-                .short("c")
+            Arg::new("config")
+                .short('c')
                 .long("config")
                 .value_name("FILE")
                 .help("Sets config file. Sample config at https://github.com/gfreezy/seeker/blob/master/sample_config.yml")
                 .required(false),
         )
         .arg(
-            Arg::with_name("config-url")
+            Arg::new("config-url")
                 .long("config-url")
                 .value_name("CONFIG_URL")
                 .help("URL to config")
                 .required(false),
         )
         .arg(
-            Arg::with_name("key")
+            Arg::new("key")
                 .long("key")
                 .help("Key for encryption/decryption")
                 .value_name("KEY")
                 .required(false),
         )
         .arg(
-            Arg::with_name("user_id")
-                .short("u")
+            Arg::new("user_id")
+                .short('u')
                 .long("uid")
                 .value_name("UID")
                 .help("User id to proxy")
                 .required(false),
         )
         .arg(
-            Arg::with_name("encrypt")
+            Arg::new("encrypt")
                 .long("encrypt")
                 .help("Encrypt config file and output to terminal")
                 .required(false),
         )
         .arg(
-            Arg::with_name("log")
-                .short("l")
+            Arg::new("log")
+                .short('l')
                 .long("log")
                 .value_name("PATH")
                 .help("Log file")
