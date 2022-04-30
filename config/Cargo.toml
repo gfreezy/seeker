@@ -2,7 +2,7 @@
 name = "config"
 version = "0.1.0"
 authors = ["gfreezy <gfreezy@gmail.com>"]
-edition = "2018"
+edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -14,5 +14,8 @@ serde_yaml = "0.8.13"
 bytes = "0.5.6"
 crypto = { path = "../crypto" }
 socks5_client = { path = "../socks5_client" }
-smoltcp = { version = "0.6.0", default-features = false, features = ["proto-ipv6", "proto-ipv4", "std"] }
-
+smoltcp = { version = "0.6.0", default-features = false, features = [
+    "proto-ipv6",
+    "proto-ipv4",
+    "std",
+] }
