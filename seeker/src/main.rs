@@ -12,6 +12,7 @@ mod server_chooser;
 mod traffic;
 
 use std::error::Error;
+use std::time::Duration;
 
 use crate::logger::setup_logger;
 use crate::proxy_client::ProxyClient;
@@ -129,17 +130,16 @@ fn load_config(
     match (path, url, decrypt_key) {
         (Some(p), ..) => Config::from_config_file(p).context("Load config from path error"),
         (_, Some(url), Some(key)) => {
-            let resp = ureq::get(url)
-                .timeout_read(5000)
-                .timeout_connect(5000)
-                .timeout_write(5000)
-                .call();
-            if !resp.ok() {
-                return Err(anyhow::anyhow!(
-                    "Load config from remote host error: {}",
-                    resp.into_string().unwrap()
-                ));
-            }
+            let ret = ureq::get(url).timeout(Duration::from_secs(5)).call();
+            let resp = match ret {
+                Err(e) => {
+                    return Err(anyhow::anyhow!(
+                        "Load config from remote host error: {}",
+                        e.to_string()
+                    ));
+                }
+                Ok(resp) => resp,
+            };
             let config =
                 config_encryptor::decrypt_config(resp.into_reader(), CipherType::ChaCha20Ietf, key)
                     .context("Decrypt remote config error")?;
