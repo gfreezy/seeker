@@ -7,14 +7,14 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-serde = { version = "1.0.115", features = ["derive", "rc"] }
-url = "1.7.2"
+serde = { version = "1.0.136", features = ["derive", "rc"] }
+url = { version = "2.2.2", features = ["serde"] }
 url_serde = "0.2.0"
-serde_yaml = "0.8.13"
-bytes = "0.5.6"
+serde_yaml = "0.8.23"
+bytes = "1.1.0"
 crypto = { path = "../crypto" }
 socks5_client = { path = "../socks5_client" }
-smoltcp = { version = "0.6.0", default-features = false, features = [
+smoltcp = { version = "0.8.0", default-features = false, features = [
     "proto-ipv6",
     "proto-ipv4",
     "std",

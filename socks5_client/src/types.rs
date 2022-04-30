@@ -5,7 +5,7 @@
 //! Taken from https://github.com/shadowsocks/shadowsocks-rust/blob/master/src/relay/socks5.rs
 
 use async_std::prelude::*;
-use bytes::{buf::BufExt, Buf, BufMut, BytesMut};
+use bytes::{Buf, BufMut, BytesMut};
 use std::{
     convert::From,
     error,
@@ -227,7 +227,7 @@ impl Address {
                 buf.resize(6, 0);
                 stream.read_exact(&mut buf).await?;
 
-                let mut cursor = buf.to_bytes();
+                let mut cursor: &[u8] = &buf;
                 let v4addr = Ipv4Addr::new(
                     cursor.get_u8(),
                     cursor.get_u8(),
@@ -271,9 +271,9 @@ impl Address {
                 buf.resize(buf_length, 0);
                 stream.read_exact(&mut buf).await?;
 
-                let mut cursor = buf.to_bytes();
+                let mut cursor: &[u8] = &buf;
                 let mut raw_addr = Vec::with_capacity(length);
-                raw_addr.put(&mut BufExt::take(&mut cursor, length));
+                raw_addr.put(&mut Buf::take(&mut cursor, length));
                 let addr = match String::from_utf8(raw_addr) {
                     Ok(addr) => addr,
                     Err(..) => {

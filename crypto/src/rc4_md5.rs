@@ -19,7 +19,7 @@ impl Rc4Md5Cipher {
         md5_digest.update(key);
         md5_digest.update(iv);
         let mut key = BytesMut::with_capacity(md5_digest.digest_len());
-        md5_digest.digest(&mut key);
+        md5_digest.digest_reset(&mut key);
 
         Rc4Md5Cipher {
             crypto: OpenSSLCrypto::new(CipherType::Rc4, &key, b"", mode),

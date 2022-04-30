@@ -25,6 +25,7 @@ impl DnsClient {
                         protocol: Protocol::Udp,
                         tls_dns_name: None,
                         trust_nx_responses: false,
+                        bind_addr: None,
                     };
                     name_servers.push(udp);
                 }
@@ -39,6 +40,7 @@ impl DnsClient {
                         protocol: Protocol::Tcp,
                         tls_dns_name: None,
                         trust_nx_responses: false,
+                        bind_addr: None,
                     };
                     name_servers.push(tcp);
                 }
