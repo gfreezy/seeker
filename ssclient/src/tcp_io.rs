@@ -183,7 +183,7 @@ impl SSTcpStream {
                         self.stream.clone(),
                         method,
                         key,
-                        &buf,
+                        buf,
                     ))
                 }
                 CipherCategory::Aead => {
@@ -192,7 +192,7 @@ impl SSTcpStream {
                         self.stream.clone(),
                         method,
                         key,
-                        &buf,
+                        buf,
                     ))
                 }
             };

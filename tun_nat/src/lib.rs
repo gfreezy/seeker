@@ -28,16 +28,14 @@ macro_rules! route_packet {
         if let Some((new_src_addr, new_src_port, new_dst_addr, new_dest_port)) =
             if src_addr == $relay_addr && src_port == $relay_port {
                 let session_manager = $session_manager.read();
-                if let Some(assoc) = session_manager.get_by_port(dest_port) {
-                    Some((
+                session_manager.get_by_port(dest_port).map(|assoc| {
+                    (
                         assoc.dest_addr.into(),
                         assoc.dest_port,
                         assoc.src_addr.into(),
                         assoc.src_port,
-                    ))
-                } else {
-                    None
-                }
+                    )
+                })
             } else {
                 let mut session_manager = $session_manager.write();
                 let port =
@@ -147,14 +145,12 @@ pub struct SessionManager {
 impl SessionManager {
     pub fn get_by_port(&self, port: u16) -> Option<(SocketAddr, SocketAddr)> {
         let inner = self.inner.read();
-        if let Some(assoc) = inner.map.get(&port) {
-            Some((
+        inner.map.get(&port).map(|assoc| {
+            (
                 SocketAddr::new(assoc.src_addr.into(), assoc.src_port),
                 SocketAddr::new(assoc.dest_addr.into(), assoc.dest_port),
-            ))
-        } else {
-            None
-        }
+            )
+        })
     }
 
     pub fn update_activity_for_port(&self, port: u16) {
