@@ -224,6 +224,15 @@ docker run -v $PWD:/volume -e OPENSSL_STATIC=yes --rm -t clux/muslrust cargo bui
 
 只有通过域名访问网络的应用可以被代理。如果某个应用直接使用 IP 访问网络，则 `seeker` 对这类应用无效。
 
+
+== 如何发布新版本
+```
+git tag 10.0.0
+git push origin 10.0.0
+```
+
+Github Action 会自动编译并发布新的 release。
+
 == License
 
 Licensed under either of
