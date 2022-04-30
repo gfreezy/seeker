@@ -9,7 +9,6 @@ edition = "2021"
 [dependencies]
 serde = { version = "1.0.136", features = ["derive", "rc"] }
 url = { version = "2.2.2", features = ["serde"] }
-url_serde = "0.2.0"
 serde_yaml = "0.8.23"
 bytes = "1.1.0"
 crypto = { path = "../crypto" }
