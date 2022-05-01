@@ -1,5 +1,6 @@
 //! Message digest algorithm
 
+use digest::OutputSizeUser;
 use md5::Md5;
 use sha1::Sha1;
 
@@ -11,13 +12,10 @@ pub trait Digest: Send {
     fn update(&mut self, data: &[u8]);
 
     /// Generates digest
-    fn digest<B: BufMut>(&mut self, buf: &mut B);
+    fn digest_reset<B: BufMut>(&mut self, buf: &mut B);
 
     /// Length of digest
     fn digest_len(&self) -> usize;
-
-    /// Reset digest
-    fn reset(&mut self);
 }
 
 /// Type of defined digests
@@ -47,34 +45,23 @@ impl Digest for DigestVariant {
         use md5::Digest;
 
         match *self {
-            DigestVariant::Md5(ref mut d) => d.input(data),
-            DigestVariant::Sha1(ref mut d) => d.input(data),
+            DigestVariant::Md5(ref mut d) => d.update(data),
+            DigestVariant::Sha1(ref mut d) => d.update(data),
         }
     }
 
-    fn digest<B: BufMut>(&mut self, buf: &mut B) {
-        use md5::Digest;
-
-        match *self {
-            DigestVariant::Md5(ref d) => buf.put(&*d.clone().result()),
-            DigestVariant::Sha1(ref d) => buf.put(&*d.clone().result()),
+    fn digest_reset<B: BufMut>(&mut self, buf: &mut B) {
+        use digest::Digest;
+        match self {
+            DigestVariant::Md5(d) => buf.put(&*d.finalize_reset()),
+            DigestVariant::Sha1(d) => buf.put(&*d.finalize_reset()),
         }
     }
 
     fn digest_len(&self) -> usize {
-        use digest::FixedOutput;
-        use typenum::Unsigned;
-
         match *self {
-            DigestVariant::Md5(_) => <Md5 as FixedOutput>::OutputSize::to_usize(),
-            DigestVariant::Sha1(_) => <Md5 as FixedOutput>::OutputSize::to_usize(),
-        }
-    }
-
-    fn reset(&mut self) {
-        match *self {
-            DigestVariant::Md5(ref mut d) => d.clone_from(&Md5::default()),
-            DigestVariant::Sha1(ref mut d) => d.clone_from(&Sha1::default()),
+            DigestVariant::Md5(_) => <Md5 as OutputSizeUser>::output_size(),
+            DigestVariant::Sha1(_) => <Sha1 as OutputSizeUser>::output_size(),
         }
     }
 }

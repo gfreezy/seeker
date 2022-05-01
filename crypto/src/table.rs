@@ -22,7 +22,7 @@ impl TableCipher {
         let mut md5_digest = digest::with_type(DigestType::Md5);
         md5_digest.update(key);
         let mut key_digest = BytesMut::with_capacity(md5_digest.digest_len());
-        md5_digest.digest(&mut key_digest);
+        md5_digest.digest_reset(&mut key_digest);
 
         let mut bufr = Cursor::new(&key_digest[..]);
         let a = bufr.read_u64::<LittleEndian>().unwrap();

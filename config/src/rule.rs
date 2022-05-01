@@ -1,7 +1,6 @@
 use crate::parse_cidr;
-use serde::export::Formatter;
 use smoltcp::wire::Ipv4Cidr;
-use std::fmt;
+use std::fmt::{self, Formatter};
 use std::net::Ipv4Addr;
 use std::str::FromStr;
 use std::sync::Arc;

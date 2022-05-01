@@ -23,7 +23,7 @@ impl DNSSetup {
         if !original_dns.is_empty() {
             let mut args = vec!["-setdnsservers", &network, "127.0.0.1"];
             for dns in &original_dns {
-                args.push(&dns);
+                args.push(dns);
             }
             let _ = run_cmd("networksetup", &args);
         } else if dns.is_empty() {

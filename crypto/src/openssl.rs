@@ -180,7 +180,7 @@ impl OpenSSLCipher {
         mode: CryptoMode,
     ) -> OpenSSLCipher {
         OpenSSLCipher {
-            worker: OpenSSLCrypto::new(cipher_type, &key[..], &iv[..], mode),
+            worker: OpenSSLCrypto::new(cipher_type, key, iv, mode),
         }
     }
 }

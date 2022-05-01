@@ -60,7 +60,7 @@ impl SodiumStreamCipher {
         let padding = self.padding_len();
 
         let mut plain_text = vec![0u8; data.len() + padding];
-        (&mut plain_text[padding..]).copy_from_slice(&data);
+        (&mut plain_text[padding..]).copy_from_slice(data);
 
         let mut out_buf = BytesMut::with_capacity((data.len() + padding) * 2);
 
@@ -88,12 +88,12 @@ fn crypto_stream_xor_ic<B: BufMut>(
     data: &[u8],
     out: &mut B,
 ) -> CipherResult<()> {
-    assert!(data.len() <= out.bytes_mut().len());
+    assert!(data.len() <= out.chunk_mut().len());
 
     let ret = unsafe {
         match t {
             CipherType::ChaCha20 => crypto_stream_chacha20_xor_ic(
-                out.bytes_mut().as_mut_ptr() as *mut u8,
+                out.chunk_mut().as_mut_ptr() as *mut u8,
                 data.as_ptr(),
                 data.len() as c_ulonglong,
                 iv.as_ptr(),
@@ -101,7 +101,7 @@ fn crypto_stream_xor_ic<B: BufMut>(
                 key.as_ptr(),
             ),
             CipherType::ChaCha20Ietf => crypto_stream_chacha20_ietf_xor_ic(
-                out.bytes_mut().as_mut_ptr() as *mut u8,
+                out.chunk_mut().as_mut_ptr() as *mut u8,
                 data.as_ptr(),
                 data.len() as c_ulonglong,
                 iv.as_ptr(),
@@ -109,7 +109,7 @@ fn crypto_stream_xor_ic<B: BufMut>(
                 key.as_ptr(),
             ),
             CipherType::Salsa20 => crypto_stream_salsa20_xor_ic(
-                out.bytes_mut().as_mut_ptr() as *mut u8,
+                out.chunk_mut().as_mut_ptr() as *mut u8,
                 data.as_ptr(),
                 data.len() as c_ulonglong,
                 iv.as_ptr(),
@@ -117,7 +117,7 @@ fn crypto_stream_xor_ic<B: BufMut>(
                 key.as_ptr(),
             ),
             CipherType::XSalsa20 => crypto_stream_xsalsa20_xor_ic(
-                out.bytes_mut().as_mut_ptr() as *mut u8,
+                out.chunk_mut().as_mut_ptr() as *mut u8,
                 data.as_ptr(),
                 data.len() as c_ulonglong,
                 iv.as_ptr(),
