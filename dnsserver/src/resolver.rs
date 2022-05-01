@@ -107,8 +107,8 @@ impl RuleBasedDnsResolver {
                 })?;
                 let mut ips: Vec<IpAddr> = vec![];
                 for record in lookup_ip.as_lookup().record_iter() {
-                    let rdata = match record.rdata() {
-                        RData::A(ip) => {
+                    let rdata = match record.data() {
+                        Some(RData::A(ip)) => {
                             ips.push(IpAddr::V4(*ip));
                             DnsRecord::A {
                                 domain: domain.to_string(),
@@ -116,7 +116,7 @@ impl RuleBasedDnsResolver {
                                 ttl: TransientTtl(record.ttl()),
                             }
                         }
-                        RData::AAAA(ip) => {
+                        Some(RData::AAAA(ip)) => {
                             ips.push(IpAddr::V6(*ip));
                             DnsRecord::AAAA {
                                 domain: domain.to_string(),

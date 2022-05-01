@@ -148,7 +148,7 @@ impl<T: Read + Write + Unpin> DecryptedReader<T> {
         unsafe {
             // It has enough space, I am sure about that
             let buffer =
-                slice::from_raw_parts_mut(self.data.bytes_mut().as_mut_ptr() as *mut u8, size);
+                slice::from_raw_parts_mut(self.data.chunk_mut().as_mut_ptr() as *mut u8, size);
             self.cipher.decrypt(&self.buffer[..], buffer)?;
 
             // Move forward the pointer
@@ -179,7 +179,7 @@ impl<T: Read + Write + Unpin> DecryptedReader<T> {
             unsafe {
                 // It has enough space, I am sure about that
                 let buffer = slice::from_raw_parts_mut(
-                    self.buffer.bytes_mut().as_mut_ptr() as *mut u8,
+                    self.buffer.chunk_mut().as_mut_ptr() as *mut u8,
                     remaining,
                 );
                 let n = ready!(Pin::new(&mut self.conn).poll_read(ctx, buffer))?;
@@ -285,7 +285,7 @@ impl<T: Read + Write + Unpin> EncryptedWriter<T> {
 
                     unsafe {
                         let b = slice::from_raw_parts_mut(
-                            buf.bytes_mut().as_mut_ptr() as *mut u8,
+                            buf.chunk_mut().as_mut_ptr() as *mut u8,
                             output_length,
                         );
 

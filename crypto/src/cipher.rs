@@ -406,8 +406,7 @@ impl CipherType {
             vkey.put(key);
 
             digest.update(&vkey);
-            digest.digest(&mut m);
-            digest.reset();
+            digest.digest_reset(&mut m);
 
             result.put_slice(&m);
         }

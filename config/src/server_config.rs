@@ -13,7 +13,6 @@ pub enum DnsServerAddr {
     /// IP Address
     UdpSocketAddr(SocketAddr),
     /// eg. tcp://114.114.114.114:53
-    #[serde(with = "url_serde")]
     TcpSocketAddr(Url),
 }
 

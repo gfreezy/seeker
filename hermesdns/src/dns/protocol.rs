@@ -574,6 +574,7 @@ impl DnsRecord {
 }
 
 /// The result code for a DNS query, as described in the specification
+#[allow(clippy::upper_case_acronyms)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum ResultCode {
     NOERROR = 0,
