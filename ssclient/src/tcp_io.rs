@@ -4,6 +4,7 @@ mod stream;
 use async_std::io::{Read, Write};
 use async_std::prelude::*;
 use std::io::{ErrorKind, Result};
+use tcp_connection::TcpConnection;
 
 use std::{
     io,
@@ -21,10 +22,8 @@ use self::{
     aead::{DecryptedReader as AeadDecryptedReader, EncryptedWriter as AeadEncryptedWriter},
     stream::{DecryptedReader as StreamDecryptedReader, EncryptedWriter as StreamEncryptedWriter},
 };
-use async_std::net::TcpStream;
 use config::Address;
 use parking_lot::Mutex;
-use std::net::SocketAddr;
 use std::sync::Arc;
 
 enum DecryptedReader<T> {
@@ -51,21 +50,20 @@ enum ReadStatus {
 /// A bidirectional stream for communicating with ShadowSocks' server
 #[derive(Clone)]
 pub struct SSTcpStream {
-    stream: TcpStream,
-    dec: Option<Arc<Mutex<DecryptedReader<TcpStream>>>>,
-    enc: Arc<Mutex<EncryptedWriter<TcpStream>>>,
+    stream: TcpConnection,
+    dec: Option<Arc<Mutex<DecryptedReader<TcpConnection>>>>,
+    enc: Arc<Mutex<EncryptedWriter<TcpConnection>>>,
     read_status: Arc<Mutex<ReadStatus>>,
 }
 
 impl SSTcpStream {
     /// Create a new CryptoStream with the underlying stream connection
     pub async fn connect(
-        server_addr: SocketAddr,
+        stream: TcpConnection,
         addr: Address,
         method: CipherType,
         key: Bytes,
     ) -> Result<SSTcpStream> {
-        let stream = TcpStream::connect(server_addr).await?;
         let prev_len = match method.category() {
             CipherCategory::Stream => method.iv_size(),
             CipherCategory::Aead => method.salt_size(),
@@ -114,7 +112,7 @@ impl SSTcpStream {
         Ok(ss_stream)
     }
 
-    pub fn accept(stream: TcpStream, method: CipherType, key: Bytes) -> SSTcpStream {
+    pub fn accept(stream: TcpConnection, method: CipherType, key: Bytes) -> SSTcpStream {
         let prev_len = match method.category() {
             CipherCategory::Stream => method.iv_size(),
             CipherCategory::Aead => method.salt_size(),
@@ -159,7 +157,7 @@ impl SSTcpStream {
     }
 
     /// Return a reference to the underlying stream
-    pub fn get_ref(&self) -> &TcpStream {
+    pub fn get_ref(&self) -> &TcpConnection {
         &self.stream
     }
 
@@ -303,7 +301,7 @@ mod tests {
             let h = spawn(async move {
                 let (stream, _) = listener.accept().await.unwrap();
                 trace!("accept conn");
-                let mut ss_server = SSTcpStream::accept(stream, method, key);
+                let mut ss_server = SSTcpStream::accept(TcpConnection::new(stream), method, key);
                 let addr = Address::read_from(&mut ss_server).await.unwrap();
                 trace!("read address");
                 assert_eq!(addr, addr_clone);
@@ -316,7 +314,8 @@ mod tests {
 
             sleep(Duration::from_secs(3)).await;
             trace!("before connect");
-            let mut conn = SSTcpStream::connect(server, addr, method, key_clone)
+            let conn = TcpConnection::connect_tcp(server).await.unwrap();
+            let mut conn = SSTcpStream::connect(conn, addr, method, key_clone)
                 .await
                 .unwrap();
             trace!("before write");
