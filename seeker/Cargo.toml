@@ -7,8 +7,8 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-tracing = "0.1.34"
-tracing-subscriber = { version = "0.3.11", features = ["env-filter"] }
+tracing = "0.1.35"
+tracing-subscriber = { version = "0.3.12", features = ["env-filter"] }
 tracing-futures = { version = "0.2.5", features = [
     "std-future",
 ], default-features = false }
@@ -20,15 +20,16 @@ http_proxy_client = { path = "../http_proxy_client" }
 sysconfig = { path = "../sysconfig" }
 tun_nat = { path = "../tun_nat" }
 file-rotate = { git = "https://github.com/gfreezy/file-rotate", rev = "2a7cd8b5c52c5ee17db72d80cf49b74764e97679" }
-async-std = "1.11.0"
-parking_lot = { version = "0.12.0", features = ["deadlock_detection"] }
+async-std = "1.12.0"
+parking_lot = { version = "0.12.1", features = ["deadlock_detection"] }
 async-signals = "0.4.0"
-libc = "0.2.125"
+libc = "0.2.126"
 futures-util = "0.3.21"
-clap = "3.1.13"
+clap = "3.2.7"
 async-std-resolver = "0.21.2"
 ureq = "2.4.0"
 crypto = { path = "../crypto" }
 bytes = "1.1.0"
 base64 = "0.13.0"
-anyhow = "1.0.57"
+anyhow = "1.0.58"
+tcp_connection = { path = "../tcp_connection" }

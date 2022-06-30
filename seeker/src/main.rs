@@ -113,7 +113,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         client
             .run()
             .race(async {
-                signals.next().await.unwrap();
+                let signal = signals.next().await.unwrap();
+                println!("Signal {signal} received.");
             })
             .await;
     });
