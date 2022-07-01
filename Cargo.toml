@@ -1,5 +1,17 @@
 [workspace]
-members = ["seeker", "dnsserver", "ssclient", "sysconfig", "config", "crypto", "hermesdns", "socks5_client", "tun_nat", "http_proxy_client"]
+members = [
+    "seeker",
+    "dnsserver",
+    "ssclient",
+    "sysconfig",
+    "config",
+    "crypto",
+    "hermesdns",
+    "socks5_client",
+    "tun_nat",
+    "http_proxy_client",
+    "tcp_connection",
+]
 
 [profile.release]
 lto = "fat"

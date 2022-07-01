@@ -4,6 +4,7 @@ use crate::Address;
 use bytes::Bytes;
 use crypto::CipherType;
 use serde::Deserialize;
+use tcp_connection::ObfsMode;
 use url::Url;
 
 /// Server address
@@ -37,6 +38,13 @@ pub struct ServerConfig {
     #[serde(default)]
     #[serde(with = "cipher_type")]
     method: Option<CipherType>,
+    obfs: Option<Obfs>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+pub struct Obfs {
+    pub mode: ObfsMode,
+    pub host: String,
 }
 
 mod cipher_type {
@@ -105,5 +113,9 @@ impl ServerConfig {
     /// Get method
     pub fn method(&self) -> Option<CipherType> {
         self.method
+    }
+
+    pub fn obfs(&self) -> Option<&Obfs> {
+        self.obfs.as_ref()
     }
 }

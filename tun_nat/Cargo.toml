@@ -7,13 +7,13 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-libc = "0.2.125"
+libc = "0.2.126"
 sysconfig = { path = "../sysconfig" }
-parking_lot = "0.12.0"
+parking_lot = "0.12.1"
 bitvec = "1.0.0"
-smoltcp = { version = "0.8.0", default-features = false, features = [
+smoltcp = { version = "0.8.1", default-features = false, features = [
     "proto-ipv6",
     "proto-ipv4",
     "std",
 ] }
-tracing = "0.1.34"
+tracing = "0.1.35"
