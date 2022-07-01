@@ -96,13 +96,9 @@ impl ProxyTcpStream {
                             ))
                         }
                     };
-                    let stream = if let Some(obfs_mode) = config.obfs() {
-                        TcpConnection::connect_obfs(
-                            proxy_socket_addr,
-                            remote_addr.to_string(),
-                            obfs_mode,
-                        )
-                        .await?
+                    let stream = if let Some(obfs) = config.obfs() {
+                        TcpConnection::connect_obfs(proxy_socket_addr, obfs.host.clone(), obfs.mode)
+                            .await?
                     } else {
                         TcpConnection::connect_tcp(proxy_socket_addr).await?
                     };
