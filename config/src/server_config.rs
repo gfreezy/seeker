@@ -38,7 +38,13 @@ pub struct ServerConfig {
     #[serde(default)]
     #[serde(with = "cipher_type")]
     method: Option<CipherType>,
-    obfs: Option<ObfsMode>,
+    obfs: Option<Obfs>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+pub struct Obfs {
+    pub mode: ObfsMode,
+    pub host: String,
 }
 
 mod cipher_type {
@@ -109,7 +115,7 @@ impl ServerConfig {
         self.method
     }
 
-    pub fn obfs(&self) -> Option<ObfsMode> {
-        self.obfs
+    pub fn obfs(&self) -> Option<&Obfs> {
+        self.obfs.as_ref()
     }
 }

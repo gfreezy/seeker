@@ -192,18 +192,18 @@ impl Read for ObfsHttpTcpStream {
         }
 
         if !self.recvd_first_response {
-            self.recvd_first_response = true;
-
             let this = self.deref_mut();
             let mut recv_buf = this.recv_buf.lock().unwrap();
-            *recv_buf = vec![0; 1024];
+            recv_buf.resize(1024, 0);
 
-            match ready!(Pin::new(&mut this.conn).poll_read(cx, &mut recv_buf)) {
-                Ok(total_read_size) => {
+            return match Pin::new(&mut this.conn).poll_read(cx, &mut recv_buf) {
+                Poll::Ready(Ok(total_read_size)) => {
+                    this.recvd_first_response = true;
+
                     let index = memchr::memmem::find(&recv_buf, b"\r\n\r\n");
                     match index {
                         Some(i) => {
-                            let content_offset = i + 3;
+                            let content_offset = i + 4;
                             let content_size = total_read_size - content_offset;
                             let consumed = content_size.min(buf.len());
                             buf[..consumed].copy_from_slice(
@@ -211,14 +211,16 @@ impl Read for ObfsHttpTcpStream {
                             );
                             recv_buf.drain(0..content_offset + consumed);
                             recv_buf.truncate(total_read_size - content_offset - consumed);
-                            return Poll::Ready(Ok(consumed));
+                            Poll::Ready(Ok(consumed))
                         }
-                        None => {
-                            return Poll::Ready(Err(ErrorKind::UnexpectedEof.into()));
-                        }
+                        None => Poll::Ready(Err(ErrorKind::UnexpectedEof.into())),
                     }
                 }
-                e => return Poll::Ready(e),
+                Poll::Ready(e) => Poll::Ready(e),
+                Poll::Pending => {
+                    recv_buf.truncate(0);
+                    Poll::Pending
+                }
             };
         }
 
