@@ -22,7 +22,7 @@ pub struct ServerChooser {
     servers: Arc<Vec<ServerConfig>>,
     candidates: Arc<Mutex<Vec<ServerConfig>>>,
     dns_client: DnsClient,
-    live_connections: Arc<RwLock<Vec<Box<dyn ProxyConnection + Sync + Send>>>>,
+    live_connections: Arc<RwLock<Vec<Box<dyn ProxyConnection + Send + Sync>>>>,
 }
 
 impl ServerChooser {

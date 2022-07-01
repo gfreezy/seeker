@@ -1,0 +1,13 @@
+[package]
+name = "tcp_connection"
+version = "0.0.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+dyn-clone = "1.0"
+async-std = "1.12"
+nanorand = "0.7"
+memchr = "2.5"
+serde = { version = "1.0.137", features = ["derive"] }

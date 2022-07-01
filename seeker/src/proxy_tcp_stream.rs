@@ -7,6 +7,7 @@ use ssclient::SSTcpStream;
 use std::io::Result;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+use tcp_connection::TcpConnection;
 
 use crate::dns_client::DnsClient;
 use crate::proxy_connection::ProxyConnection;
@@ -79,6 +80,7 @@ impl ProxyTcpStream {
                 }
                 ServerProtocol::Socks5 => {
                     let proxy_socket_addr = dns_client.lookup_address(config.addr()).await?;
+
                     ProxyTcpStreamInner::Socks5(
                         Socks5TcpStream::connect(proxy_socket_addr, remote_addr).await?,
                     )
@@ -94,8 +96,14 @@ impl ProxyTcpStream {
                             ))
                         }
                     };
+                    let stream = if let Some(obfs) = config.obfs() {
+                        TcpConnection::connect_obfs(proxy_socket_addr, obfs.host.clone(), obfs.mode)
+                            .await?
+                    } else {
+                        TcpConnection::connect_tcp(proxy_socket_addr).await?
+                    };
                     ProxyTcpStreamInner::Shadowsocks(
-                        SSTcpStream::connect(proxy_socket_addr, remote_addr, method, key).await?,
+                        SSTcpStream::connect(stream, remote_addr, method, key).await?,
                     )
                 }
             }

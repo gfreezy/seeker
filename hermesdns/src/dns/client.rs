@@ -299,17 +299,17 @@ pub mod tests {
 
             let res = timeout(
                 Duration::from_secs(3),
-                client.send_udp_query("google.com", QueryType::A, (&dns, 53), true),
+                client.send_udp_query("baidu.com", QueryType::A, (&dns, 53), true),
             )
             .await
             .unwrap();
 
-            assert_eq!(res.questions[0].name, "google.com");
+            assert_eq!(res.questions[0].name, "baidu.com");
             assert!(!res.answers.is_empty());
 
             match res.answers[0] {
                 DnsRecord::A { ref domain, .. } => {
-                    assert_eq!("google.com", domain);
+                    assert_eq!("baidu.com", domain);
                 }
                 _ => panic!(),
             }
