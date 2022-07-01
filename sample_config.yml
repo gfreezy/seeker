@@ -32,7 +32,9 @@ servers:
     method: chacha20-ietf
     password: password
     protocol: Shadowsocks
-
+    obfs:  # 不设置默认不使用 obfs
+      mode: Http  # 目前只支持 Http
+      host: c61be5399e.microsoft.com
 rules:
   - 'DOMAIN,audio-ssl.itunes.apple.com,DIRECT'
   - 'DOMAIN,gspe1-ssl.ls.apple.com,REJECT'
