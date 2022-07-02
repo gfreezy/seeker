@@ -135,8 +135,8 @@ impl ServerChooser {
         }
         let mut map: HashMap<String, Stats> = HashMap::new();
         for conn in self.live_connections.read().iter() {
-            if let Some(config) = conn.config() {
-                let entry = map.entry(config.addr().to_string()).or_default();
+            if let Some(addr) = conn.remote_addr() {
+                let entry = map.entry(addr.to_string()).or_default();
                 entry.count += 1;
                 let traffic = conn.traffic();
                 entry.send += traffic.sent_bytes();
@@ -146,7 +146,7 @@ impl ServerChooser {
         println!("Connections:");
         for (remote_addr, stats) in map.iter() {
             println!(
-                "{}: {}, sent_bytes: {}, recv_bytes: {}",
+                "{}, conns: {}, sent_bytes: {}, recv_bytes: {}",
                 remote_addr, stats.count, stats.send, stats.recv
             );
         }
