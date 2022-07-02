@@ -7,6 +7,7 @@ use ssclient::SSTcpStream;
 use std::io::Result;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+use std::time::Instant;
 use tcp_connection::TcpConnection;
 
 use crate::dns_client::DnsClient;
@@ -117,7 +118,7 @@ impl ProxyTcpStream {
             alive: Arc::new(AtomicBool::new(true)),
             remote_addr: remote_addr_clone,
             config: config.cloned(),
-            traffic: Default::default(),
+            traffic: Traffic::default(),
         })
     }
 }
