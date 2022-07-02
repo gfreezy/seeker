@@ -15,6 +15,7 @@ https://join.slack.com/t/allsunday/shared_invite/zt-f8xw3uzl-qchMa2jQOfQF1T89w3l
 ----
 chmod +x seeker-osx  # or  chmod+x seeker-linux
 ----
+
 == Usage
 
 1. 启动 `seeker`
