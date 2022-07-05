@@ -18,6 +18,15 @@
 			],
 			"group": "build",
 			"label": "rust: cargo fix"
+		},
+		{
+			"type": "cargo",
+			"command": "test",
+			"problemMatcher": [
+				"$rustc"
+			],
+			"group": "build",
+			"label": "rust: cargo test"
 		}
 	]
 }
