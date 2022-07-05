@@ -9,6 +9,15 @@
 			],
 			"group": "build",
 			"label": "rust: cargo clippy"
+		},
+		{
+			"type": "cargo",
+			"command": "fix",
+			"problemMatcher": [
+				"$rustc"
+			],
+			"group": "build",
+			"label": "rust: cargo fix"
 		}
 	]
 }

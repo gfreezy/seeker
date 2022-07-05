@@ -11,3 +11,6 @@ async-std = "1.12"
 nanorand = "0.7"
 memchr = "2.5"
 serde = { version = "1.0.137", features = ["derive"] }
+
+[dev-dependencies]
+async-std = { version = "1.12", features = ["attributes"] }
