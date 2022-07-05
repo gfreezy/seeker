@@ -3,22 +3,17 @@ mod obfs_http;
 use async_std::{
     io::{Read, Write},
     net::TcpStream,
-    task::ready,
 };
 use dyn_clone::DynClone;
-use nanorand::{tls_rng, Rng};
+
 use obfs_http::ObfsHttpTcpStream;
 use serde::Deserialize;
 
 use std::{
     fmt::Debug,
-    io::{ErrorKind, IoSlice, IoSliceMut, Result},
+    io::{IoSlice, IoSliceMut, Result},
     net::SocketAddr,
-    ops::DerefMut,
     pin::Pin,
-    sync::{Arc, Mutex},
-    task::Poll,
-    vec,
 };
 
 pub trait Connection: Read + Write + Unpin + Send + Sync + DynClone {}
