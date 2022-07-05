@@ -7,7 +7,7 @@ use ssclient::SSTcpStream;
 use std::io::Result;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use std::time::Instant;
+
 use tcp_connection::TcpConnection;
 
 use crate::dns_client::DnsClient;
