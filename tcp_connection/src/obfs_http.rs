@@ -3,7 +3,10 @@ use std::{
     net::SocketAddr,
     ops::DerefMut,
     pin::Pin,
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
     task::Poll,
 };
 
@@ -19,8 +22,8 @@ use crate::Connection;
 #[derive(Clone)]
 pub(crate) struct ObfsHttpTcpStream {
     conn: TcpStream,
-    sent_first_request: bool,
-    recvd_first_response: bool,
+    sent_first_request: Arc<AtomicBool>,
+    recvd_first_response: Arc<AtomicBool>,
     host: String,
 
     // ObfsHttpTcpStream is a cloneable object, so we can use Arc<Mutex> to protect the state.
@@ -30,25 +33,13 @@ pub(crate) struct ObfsHttpTcpStream {
 impl Connection for ObfsHttpTcpStream {}
 
 impl ObfsHttpTcpStream {
-    /// Constructs a new ObfsHttpTcpStream from TcpStream, used only in tests.
-    #[cfg(test)]
-    fn new(conn: TcpStream, host: String) -> Self {
-        ObfsHttpTcpStream {
-            conn,
-            sent_first_request: false,
-            recvd_first_response: false,
-            host,
-            recv_buf: Arc::new(Mutex::new(vec![])),
-        }
-    }
-
     pub(crate) async fn connect(addr: SocketAddr, host: String) -> std::io::Result<Self> {
         let conn = TcpStream::connect(addr).await?;
 
         Ok(ObfsHttpTcpStream {
             conn,
-            sent_first_request: false,
-            recvd_first_response: false,
+            sent_first_request: Arc::new(AtomicBool::new(false)),
+            recvd_first_response: Arc::new(AtomicBool::new(false)),
             host,
             recv_buf: Arc::new(Mutex::new(vec![])),
         })
@@ -109,7 +100,7 @@ impl Read for ObfsHttpTcpStream {
             }
         }
 
-        if !self.recvd_first_response {
+        if !self.recvd_first_response.load(Ordering::SeqCst) {
             let this = self.deref_mut();
             let mut recv_buf = this.recv_buf.lock().unwrap();
             // Initialize the receive buffer only once.
@@ -118,7 +109,7 @@ impl Read for ObfsHttpTcpStream {
             // Read the first response from the server.
             return match Pin::new(&mut this.conn).poll_read(cx, &mut recv_buf) {
                 Poll::Ready(Ok(total_read_size)) => {
-                    this.recvd_first_response = true;
+                    this.recvd_first_response.store(true, Ordering::SeqCst);
 
                     // Find the end of the headers.
                     let index = memchr::memmem::find(&recv_buf, b"\r\n\r\n");
@@ -161,10 +152,10 @@ impl Write for ObfsHttpTcpStream {
         cx: &mut std::task::Context<'_>,
         bufs: &[IoSlice<'_>],
     ) -> std::task::Poll<Result<usize>> {
-        if !self.sent_first_request {
+        if !self.sent_first_request.load(Ordering::SeqCst) {
             let buf_len = bufs.iter().map(|b| b.len()).sum();
             let send_buf = self.build_request(buf_len);
-            self.sent_first_request = true;
+            self.sent_first_request.store(true, Ordering::SeqCst);
 
             let http_req_size = send_buf.len();
             let buf = IoSlice::new(&send_buf);
@@ -191,9 +182,9 @@ impl Write for ObfsHttpTcpStream {
         cx: &mut std::task::Context<'_>,
         buf: &[u8],
     ) -> std::task::Poll<Result<usize>> {
-        if !self.sent_first_request {
+        if !self.sent_first_request.load(Ordering::SeqCst) {
             let mut send_buf = self.build_request(buf.len());
-            self.sent_first_request = true;
+            self.sent_first_request.store(true, Ordering::SeqCst);
 
             let http_req_size = send_buf.len();
             send_buf.extend_from_slice(buf);
