@@ -132,6 +132,7 @@ impl ServerChooser {
             count: usize,
             send: usize,
             recv: usize,
+            max_duration: Duration,
         }
         let mut map: HashMap<String, Stats> = HashMap::new();
         for conn in self.live_connections.read().iter() {
@@ -141,13 +142,18 @@ impl ServerChooser {
                 let traffic = conn.traffic();
                 entry.send += traffic.sent_bytes();
                 entry.recv += traffic.received_bytes();
+                entry.max_duration = traffic.duration().max(entry.max_duration);
             }
         }
         println!("Connections:");
         for (remote_addr, stats) in map.iter() {
             println!(
-                "{}, conns: {}, sent_bytes: {}, recv_bytes: {}",
-                remote_addr, stats.count, stats.send, stats.recv
+                "{}, conns: {}, max_duration: {}, sent_bytes: {}, recv_bytes: {}",
+                remote_addr,
+                stats.count,
+                stats.max_duration.as_secs(),
+                stats.send,
+                stats.recv
             );
         }
         println!();
