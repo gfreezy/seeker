@@ -1467,7 +1467,7 @@ dependencies = [
 
 [[package]]
 name = "seeker"
-version = "0.4.4"
+version = "0.4.8"
 dependencies = [
  "anyhow",
  "async-signals",
@@ -1685,7 +1685,7 @@ checksum = "55937e1799185b12863d447f42597ed69d9928686b8d88a1df17376a097d8369"
 
 [[package]]
 name = "tcp_connection"
-version = "0.0.0"
+version = "0.4.8"
 dependencies = [
  "async-std",
  "dyn-clone",

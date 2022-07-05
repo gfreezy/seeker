@@ -1,6 +1,6 @@
 [package]
 name = "seeker"
-version = "0.4.4"
+version = "0.4.8"
 authors = ["gfreezy <gfreezy@gmail.com>"]
 edition = "2021"
 
