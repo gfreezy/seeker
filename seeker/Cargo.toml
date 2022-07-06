@@ -19,7 +19,7 @@ socks5_client = { path = "../socks5_client" }
 http_proxy_client = { path = "../http_proxy_client" }
 sysconfig = { path = "../sysconfig" }
 tun_nat = { path = "../tun_nat" }
-file-rotate = { git = "https://github.com/gfreezy/file-rotate", rev = "2a7cd8b5c52c5ee17db72d80cf49b74764e97679" }
+file-rotate = "0.6"
 async-std = "1.12.0"
 parking_lot = { version = "0.12.1", features = ["deadlock_detection"] }
 async-signals = "0.4.0"
