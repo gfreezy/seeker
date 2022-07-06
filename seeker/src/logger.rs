@@ -1,4 +1,4 @@
-use file_rotate::{FileRotate, RotationMode};
+use file_rotate::{suffix::AppendTimestamp, FileRotate};
 use std::error::Error;
 use std::io;
 use std::path::PathBuf;
@@ -7,11 +7,11 @@ use tracing_subscriber::{EnvFilter, FmtSubscriber};
 
 #[derive(Clone)]
 struct TracingWriter {
-    file_rotate: Arc<Mutex<FileRotate>>,
+    file_rotate: Arc<Mutex<FileRotate<AppendTimestamp>>>,
 }
 
 impl TracingWriter {
-    fn new(file_rotate: Arc<Mutex<FileRotate>>) -> Self {
+    fn new(file_rotate: Arc<Mutex<FileRotate<AppendTimestamp>>>) -> Self {
         TracingWriter { file_rotate }
     }
 }
@@ -41,8 +41,9 @@ pub fn setup_logger(log_path: Option<&str>) -> Result<(), Box<dyn Error>> {
         }
         let logger = Arc::new(Mutex::new(FileRotate::new(
             log_path,
-            RotationMode::Lines(100_000),
-            20,
+            AppendTimestamp::default(file_rotate::suffix::FileLimit::MaxFiles(10)),
+            file_rotate::ContentLimit::Bytes(10_000_000),
+            file_rotate::compression::Compression::None,
         )));
         let my_subscriber = FmtSubscriber::builder()
             .with_env_filter(env_filter)
