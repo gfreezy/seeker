@@ -8,12 +8,12 @@ use std::io::Read;
 
 const HOSTS_PATH: &str = "/etc/hosts";
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Hosts {
     map: HashMap<String, Ipv4Addr>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct LoadHostError(String);
 
 impl Display for LoadHostError {

@@ -66,7 +66,7 @@ fn get_original_dns(content: &str, dns: &str) -> Vec<String> {
     let mut dns_list: Vec<_> = content
         .lines()
         .filter(|l| l.contains("nameserver"))
-        .filter_map(|l| l.trim().split_whitespace().last())
+        .filter_map(|l| l.split_whitespace().last())
         .filter(|l| *l != dns && *l != "127.0.0.1")
         .filter_map(|ip| ip.parse::<IpAddr>().ok())
         .map(|ip| ip.to_string())

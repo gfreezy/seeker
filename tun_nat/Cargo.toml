@@ -10,7 +10,7 @@ edition = "2021"
 libc = "0.2.126"
 sysconfig = { path = "../sysconfig" }
 parking_lot = "0.12.1"
-bitvec = "1.0.0"
+bitvec = "1.0.1"
 smoltcp = { version = "0.8.1", default-features = false, features = [
     "proto-ipv6",
     "proto-ipv4",
