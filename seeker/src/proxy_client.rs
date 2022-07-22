@@ -13,9 +13,10 @@ use dnsserver::create_dns_server;
 use dnsserver::resolver::RuleBasedDnsResolver;
 use parking_lot::RwLock;
 use std::collections::HashMap;
-use std::io;
 use std::io::Result;
+use std::io::{self, ErrorKind};
 use std::sync::Arc;
+use std::time::Duration;
 use tracing::{error, trace, trace_span};
 use tracing_futures::Instrument;
 use tun_nat::{run_nat, SessionManager};
@@ -216,9 +217,18 @@ impl ProxyClient {
                     Ok(remote_conn) => {
                         trace!("connect successfully");
                         let session_manager = self.session_manager.clone();
+                        let read_timeout = self.config.read_timeout;
+                        let write_timeout = self.config.write_timeout;
                         spawn(async move {
-                            tunnel_tcp_stream(conn, remote_conn, session_manager, session_port)
-                                .await
+                            tunnel_tcp_stream(
+                                conn,
+                                remote_conn,
+                                session_manager,
+                                session_port,
+                                read_timeout,
+                                write_timeout,
+                            )
+                            .await
                         });
                     }
                     Err(e) => {
@@ -342,14 +352,18 @@ async fn tunnel_tcp_stream<T1: Read + Write + Unpin + Clone, T2: Read + Write + 
     mut conn2: T2,
     session_manager: SessionManager,
     session_port: u16,
+    read_timeout: Duration,
+    write_timeout: Duration,
 ) -> Result<()> {
     let mut conn1_clone = conn1.clone();
     let mut conn2_clone = conn2.clone();
     let f1 = async {
         let mut buf = vec![0; 1500];
         loop {
-            session_manager.update_activity_for_port(session_port);
-            let size = conn1.read(&mut buf).await?;
+            if !session_manager.update_activity_for_port(session_port) {
+                break Err(ErrorKind::ConnectionAborted.into());
+            }
+            let size = timeout(read_timeout, conn1.read(&mut buf)).await?;
             if size == 0 {
                 break Ok(());
             }
@@ -359,8 +373,10 @@ async fn tunnel_tcp_stream<T1: Read + Write + Unpin + Clone, T2: Read + Write + 
     let f2 = async {
         let mut buf = vec![0; 1500];
         loop {
-            session_manager.update_activity_for_port(session_port);
-            let size = conn2_clone.read(&mut buf).await?;
+            if !session_manager.update_activity_for_port(session_port) {
+                break Err(ErrorKind::ConnectionAborted.into());
+            }
+            let size = timeout(write_timeout, conn2_clone.read(&mut buf)).await?;
             if size == 0 {
                 break Ok(());
             }
