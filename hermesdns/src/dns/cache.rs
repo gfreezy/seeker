@@ -278,7 +278,8 @@ impl SynchronizedCache {
 
         let mut list = Vec::new();
 
-        for rs in cache.domain_entries.values() {
+        let values = cache.domain_entries.values();
+        for rs in values {
             list.push(rs.clone());
         }
 

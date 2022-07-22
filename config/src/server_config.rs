@@ -17,7 +17,7 @@ pub enum DnsServerAddr {
     TcpSocketAddr(Url),
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Copy)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Copy)]
 pub enum ServerProtocol {
     Http,
     Https,
@@ -26,7 +26,7 @@ pub enum ServerProtocol {
 }
 
 /// Configuration for a server
-#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 pub struct ServerConfig {
     /// Server address
     name: String,
@@ -41,7 +41,7 @@ pub struct ServerConfig {
     obfs: Option<Obfs>,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 pub struct Obfs {
     pub mode: ObfsMode,
     pub host: String,
