@@ -8,7 +8,7 @@ pub fn list_system_proc_socks() -> Result<HashMap<i32, Vec<SocketInfo>>> {
 
     // build up a map between socket inodes and processes:
     let mut map = HashMap::new();
-    for process in &all_procs {
+    for process in all_procs {
         if let Ok(fds) = process.fd() {
             for fd in fds {
                 if let FDTarget::Socket(inode) = fd.target {
@@ -41,7 +41,7 @@ pub fn list_user_proc_socks(uid: u32) -> Result<HashMap<i32, Vec<SocketInfo>>> {
 
     // build up a map between socket inodes and processes:
     let mut map = HashMap::new();
-    for process in all_procs.iter().filter(|p| p.owner == uid) {
+    for process in all_procs.filter(|p| p.owner == uid) {
         if let Ok(fds) = process.fd() {
             for fd in fds {
                 if let FDTarget::Socket(inode) = fd.target {
