@@ -51,7 +51,7 @@ mod consts {
 }
 
 /// SOCKS5 command
-#[derive(Clone, Debug, Copy, PartialEq)]
+#[derive(Clone, Debug, Copy, PartialEq, Eq)]
 pub enum Command {
     /// CONNECT command (TCP tunnel)
     TcpConnect,
@@ -85,7 +85,7 @@ impl Command {
 }
 
 /// SOCKS5 reply code
-#[derive(Clone, Debug, Copy, PartialEq)]
+#[derive(Clone, Debug, Copy, PartialEq, Eq)]
 pub enum Reply {
     Succeeded,
     GeneralFailure,

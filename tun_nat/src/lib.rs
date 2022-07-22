@@ -15,7 +15,7 @@ use sysconfig::setup_ip;
 
 const BEGIN_PORT: u16 = 50000;
 const END_PORT: u16 = 60000;
-const EXPIRE_SECONDS: u64 = 60 * 1000;
+const EXPIRE_SECONDS: u64 = 24 * 60 * 60;
 
 macro_rules! route_packet {
     ($packet_ty: tt, $ipv4_packet: expr, $session_manager: expr, $relay_addr: expr, $relay_port: expr) => {{
@@ -153,8 +153,8 @@ impl SessionManager {
         })
     }
 
-    pub fn update_activity_for_port(&self, port: u16) {
-        self.inner.write().update_activity_for_port(port);
+    pub fn update_activity_for_port(&self, port: u16) -> bool {
+        self.inner.write().update_activity_for_port(port)
     }
 
     pub fn recycle_port(&self, port: u16) {
@@ -212,15 +212,17 @@ impl InnerSessionManager {
         self.map.get(&port)
     }
 
-    pub fn update_activity_for_port(&mut self, port: u16) {
+    pub fn update_activity_for_port(&mut self, port: u16) -> bool {
         if let Some(assoc) = self.map.get_mut(&port) {
             // if last_activity_ts is 0, the port is marked recycle. We shouldn't update activity ts.
             if assoc.last_activity_ts > 0 {
                 assoc.last_activity_ts = now();
+                return true;
             }
         } else {
             tracing::error!("no port exists");
         }
+        false
     }
 
     pub fn recycle_port(&mut self, port: u16) {
