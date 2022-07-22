@@ -8,7 +8,7 @@ edition = "2021"
 
 [dependencies]
 tracing = "0.1.35"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3.15", features = ["env-filter"] }
 tracing-futures = { version = "0.2.5", features = [
     "std-future",
 ], default-features = false }
@@ -19,17 +19,17 @@ socks5_client = { path = "../socks5_client" }
 http_proxy_client = { path = "../http_proxy_client" }
 sysconfig = { path = "../sysconfig" }
 tun_nat = { path = "../tun_nat" }
-file-rotate = "0.6"
+file-rotate = "0.6.0"
 async-std = "1.12.0"
 parking_lot = { version = "0.12.1", features = ["deadlock_detection"] }
 async-signals = "0.4.0"
 libc = "0.2.126"
 futures-util = "0.3.21"
-clap = "3.2.7"
+clap = "3.2.14"
 async-std-resolver = "0.21.2"
-ureq = "2.4.0"
+ureq = "2.5.0"
 crypto = { path = "../crypto" }
-bytes = "1.1.0"
+bytes = "1.2.0"
 base64 = "0.13.0"
 anyhow = "1.0.58"
 tcp_connection = { path = "../tcp_connection" }
