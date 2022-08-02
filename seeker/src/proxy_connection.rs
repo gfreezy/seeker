@@ -1,8 +1,9 @@
 use crate::traffic::Traffic;
-use config::{Address, ServerConfig};
+use config::{rule::Action, Address, ServerConfig};
 
 pub trait ProxyConnection {
     fn traffic(&self) -> Traffic;
+    fn action(&self) -> Action;
     fn config(&self) -> Option<&ServerConfig>;
     fn has_config(&self, config: Option<&ServerConfig>) -> bool;
     fn shutdown(&self);

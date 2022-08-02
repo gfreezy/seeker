@@ -2,6 +2,7 @@ use crate::dns_client::DnsClient;
 use crate::proxy_connection::ProxyConnection;
 use crate::traffic::Traffic;
 use async_std::net::{SocketAddr, UdpSocket};
+use config::rule::Action;
 use config::{ServerConfig, ServerProtocol};
 use socks5_client::Socks5UdpSocket;
 use ssclient::SSUdpSocket;
@@ -98,6 +99,13 @@ impl ProxyUdpSocket {
 impl ProxyConnection for ProxyUdpSocket {
     fn traffic(&self) -> Traffic {
         self.traffic.clone()
+    }
+
+    fn action(&self) -> config::rule::Action {
+        match self.inner {
+            ProxyUdpSocketInner::Direct(_) => Action::Direct,
+            ProxyUdpSocketInner::Socks5(_) | ProxyUdpSocketInner::Shadowsocks(_) => Action::Proxy,
+        }
     }
 
     fn config(&self) -> Option<&ServerConfig> {
