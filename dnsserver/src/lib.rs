@@ -11,11 +11,12 @@ pub async fn create_dns_server<P: AsRef<Path>>(
     path: P,
     listen: String,
     start_ip: Ipv4Addr,
+    bypass_direct: bool,
     rules: ProxyRules,
     async_resolver: AsyncStdResolver,
 ) -> (DnsUdpServer, RuleBasedDnsResolver) {
     let n = u32::from_be_bytes(start_ip.octets());
-    let resolver = RuleBasedDnsResolver::new(path, n, rules, async_resolver).await;
+    let resolver = RuleBasedDnsResolver::new(path, n, bypass_direct, rules, async_resolver).await;
     let server = DnsUdpServer::new(listen, Box::new(resolver.clone())).await;
     (server, resolver)
 }
@@ -63,6 +64,7 @@ pub(crate) mod tests {
                 dir.path(),
                 format!("0.0.0.0:{}", LOCAL_UDP_PORT),
                 "10.0.0.1".parse().unwrap(),
+                true,
                 ProxyRules::new(vec![]),
                 resolver,
             )
