@@ -18,6 +18,7 @@ pub struct Config {
     pub servers: Arc<Vec<ServerConfig>>,
     pub dns_start_ip: Ipv4Addr,
     pub dns_servers: Vec<DnsServerAddr>,
+    pub tun_bypass_direct: bool,
     pub tun_name: String,
     pub tun_ip: Ipv4Addr,
     #[serde(default)]

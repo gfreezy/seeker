@@ -14,8 +14,9 @@ pub enum Rule {
     Match(Action),
 }
 
-#[derive(Eq, PartialEq, Copy, Clone, Debug, Hash)]
+#[derive(Eq, PartialEq, Copy, Clone, Debug, Hash, PartialOrd, Ord, Default)]
 pub enum Action {
+    #[default]
     Reject,
     Direct,
     Proxy,

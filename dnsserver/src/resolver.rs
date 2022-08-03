@@ -29,6 +29,7 @@ struct Inner {
     rules: ProxyRules,
     db: Db,
     next_ip: AtomicU32,
+    bypass_direct: bool,
     resolver: AsyncStdResolver,
 }
 
@@ -36,6 +37,7 @@ impl RuleBasedDnsResolver {
     pub async fn new<P: AsRef<Path>>(
         path: P,
         next_ip: u32,
+        bypass_direct: bool,
         rules: ProxyRules,
         resolver: AsyncStdResolver,
     ) -> Self {
@@ -56,6 +58,7 @@ impl RuleBasedDnsResolver {
             inner: Arc::new(Inner {
                 hosts: Hosts::load().expect("load /etc/hosts"),
                 rules,
+                bypass_direct,
                 next_ip: AtomicU32::new(next_ip),
                 db,
                 resolver,
@@ -98,8 +101,10 @@ impl RuleBasedDnsResolver {
             return Ok(packet);
         }
 
+        // direct traffic bypass tun.
+        let bypass_direct = self.inner.bypass_direct;
         match self.inner.rules.action_for_domain(domain) {
-            Some(Action::Direct) => {
+            Some(Action::Direct) if bypass_direct => {
                 let lookup_ip = self.inner.resolver.lookup_ip(domain).await.map_err(|e| {
                     let msg = e.to_string();
                     error!("directly lookup host error: {}", &msg);
@@ -206,6 +211,7 @@ mod tests {
             let resolver = RuleBasedDnsResolver::new(
                 dir.path(),
                 n,
+                true,
                 ProxyRules::new(vec![]),
                 new_resolver(dns, 53).await,
             )

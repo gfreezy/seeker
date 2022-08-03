@@ -393,6 +393,7 @@ async fn run_dns_resolver(config: &Config, resolver: AsyncStdResolver) -> RuleBa
         "dns.db",
         config.dns_listen.clone(),
         config.dns_start_ip,
+        config.tun_bypass_direct,
         config.rules.clone(),
         resolver,
     )

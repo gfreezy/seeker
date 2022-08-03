@@ -1,5 +1,6 @@
 use async_std::io::{Read, Write};
 use async_std::net::TcpStream;
+use config::rule::Action;
 use config::{Address, ServerConfig, ServerProtocol};
 use http_proxy_client::{HttpProxyTcpStream, HttpsProxyTcpStream};
 use socks5_client::Socks5TcpStream;
@@ -146,6 +147,16 @@ impl ProxyConnection for ProxyTcpStream {
 
     fn remote_addr(&self) -> Option<&Address> {
         Some(&self.remote_addr)
+    }
+
+    fn action(&self) -> config::rule::Action {
+        match self.inner {
+            ProxyTcpStreamInner::Direct(_) => Action::Direct,
+            ProxyTcpStreamInner::Socks5(_)
+            | ProxyTcpStreamInner::HttpProxy(_)
+            | ProxyTcpStreamInner::HttpsProxy(_)
+            | ProxyTcpStreamInner::Shadowsocks(_) => Action::Proxy,
+        }
     }
 }
 

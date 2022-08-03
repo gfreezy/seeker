@@ -21,7 +21,7 @@ chmod +x seeker-osx  # or  chmod+x seeker-linux
 +
 [source,bash]
 ----
-Seeker 0.2.0
+Seeker 0.5.0
 gfreezy <gfreezy@gmail.com>
 Tun to Shadowsockets proxy. https://github.com/gfreezy/seeker
 
@@ -86,6 +86,7 @@ dns_servers:
   - 114.114.114.114:53
   - tcp://114.114.114.114:53
 dns_timeout: 1s
+tun_bypass_direct: true  # 直连的域名直接返回真实IP，不走tun
 tun_name: utun4
 tun_ip: 10.0.0.1
 tun_cidr: 10.0.0.0/16
@@ -142,6 +143,57 @@ rules:
   - 'MATCH,PROBE'
 ----
 
+=== 支持的 method
+```
+Table
+Plain
+
+Aes128Cfb
+Aes128Cfb1
+Aes128Cfb8
+Aes128Cfb128
+Aes192Cfb
+Aes192Cfb1
+Aes192Cfb8
+Aes192Cfb128
+Aes256Cfb
+Aes256Cfb1
+Aes256Cfb8
+Aes256Cfb128
+Aes128Ctr
+Aes192Ctr
+Aes256Ctr
+
+Camellia128Cfb
+Camellia192Cfb
+Camellia256Cfb
+Camellia128Cfb1
+Camellia192Cfb1
+Camellia256Cfb1
+Camellia128Cfb8
+Camellia192Cfb8
+Camellia256Cfb8
+Camellia128Cfb128
+Camellia192Cfb128
+Camellia256Cfb128
+
+Rc4
+Rc4Md5
+
+ChaCha20
+Salsa20
+XSalsa20
+ChaCha20Ietf
+
+Aes128Gcm
+Aes256Gcm
+
+ChaCha20IetfPoly1305
+XChaCha20IetfPoly1305
+
+Aes128PmacSiv
+Aes256PmacSiv
+```
 == ⚠️使用 Socks5 或 http 代理服务器
 使用 socks5 代理的时候，需要将所有直连的域名设置在配置文件里面，如果使用 ss 或者 vmess 之类的，需要将 ss 或 vmess server
 的域名也加入配置文件。否则有可能会导致死循环，没法正常使用。
