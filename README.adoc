@@ -86,6 +86,7 @@ dns_servers:
   - 114.114.114.114:53
   - tcp://114.114.114.114:53
 dns_timeout: 1s
+tun_bypass_direct: true  # 直连的域名直接返回真实IP，不走tun
 tun_name: utun4
 tun_ip: 10.0.0.1
 tun_cidr: 10.0.0.0/16
