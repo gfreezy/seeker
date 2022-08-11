@@ -32,6 +32,7 @@ pub struct Config {
     pub gateway_mode: bool,
     #[serde(with = "duration", default = "default_connect_timeout")]
     pub ping_timeout: Duration,
+    pub ping_urls: Vec<PingURL>,
     #[serde(with = "duration", default = "default_connect_timeout")]
     pub dns_timeout: Duration,
     #[serde(with = "duration", default = "default_ping_timeout")]
@@ -43,6 +44,27 @@ pub struct Config {
     #[serde(with = "duration", default = "default_write_timeout")]
     pub write_timeout: Duration,
     pub max_connect_errors: usize,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct PingURL {
+    host: String,
+    port: u16,
+    path: String,
+}
+
+impl PingURL {
+    pub fn new(host: String, port: u16, path: String) -> Self {
+        Self { host, port, path }
+    }
+
+    pub fn address(&self) -> Address {
+        Address::DomainNameAddress(self.host.clone(), self.port)
+    }
+
+    pub fn path(&self) -> &str {
+        &self.path
+    }
 }
 
 fn default_read_timeout() -> Duration {
