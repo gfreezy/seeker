@@ -17,6 +17,16 @@ connect_timeout: 2s
 read_timeout: 300s
 write_timeout: 300s
 max_connect_errors: 2
+ping_urls:
+  - host: www.facebook.com
+    port: 80
+    path: /
+  - host: www.youtube.com
+    port: 80
+    path: /
+  - host: twitter.com
+    port: 80
+    path: /
 
 servers:
   - addr: 127.0.0.1:1087  # 替换成 http 代理的地址

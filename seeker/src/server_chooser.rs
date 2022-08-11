@@ -6,7 +6,7 @@ use async_std::io::timeout;
 use async_std::prelude::*;
 use async_std::task::{sleep, spawn};
 use config::rule::Action;
-use config::{Address, ServerConfig};
+use config::{Address, PingURL, ServerConfig};
 use futures_util::stream::FuturesUnordered;
 use parking_lot::{Mutex, RwLock};
 use std::collections::HashMap;
@@ -17,7 +17,7 @@ use tracing::info;
 
 #[derive(Clone)]
 pub struct ServerChooser {
-    ping_urls: Vec<(Address, String)>,
+    ping_urls: Vec<PingURL>,
     ping_timeout: Duration,
     servers: Arc<Vec<ServerConfig>>,
     candidates: Arc<Mutex<Vec<ServerConfig>>>,
@@ -29,11 +29,11 @@ impl ServerChooser {
     pub async fn new(
         servers: Arc<Vec<ServerConfig>>,
         dns_client: DnsClient,
-        ping_url: Vec<(Address, String)>,
+        ping_urls: Vec<PingURL>,
         ping_timeout: Duration,
     ) -> Self {
         let chooser = ServerChooser {
-            ping_urls: ping_url,
+            ping_urls,
             ping_timeout,
             candidates: Arc::new(Mutex::new(servers.iter().cloned().collect())),
             servers,
@@ -165,6 +165,10 @@ impl ServerChooser {
     }
 
     pub async fn ping_servers(&self) {
+        if self.ping_urls.is_empty() {
+            return;
+        }
+
         let mut candidates = vec![];
         let mut fut: FuturesUnordered<_> = self
             .servers
@@ -208,11 +212,12 @@ impl ServerChooser {
 
     async fn ping_server(&self, config: ServerConfig) -> Result<Duration> {
         let instant = Instant::now();
-        for (host, path) in &self.ping_urls {
+        for ping_url in &self.ping_urls {
+            let addr = ping_url.address();
+            let path = ping_url.path();
             let ret: Result<_> = timeout(self.ping_timeout, async {
                 let mut conn =
-                    ProxyTcpStream::connect(host.clone(), Some(&config), self.dns_client.clone())
-                        .await?;
+                    ProxyTcpStream::connect(addr, Some(&config), self.dns_client.clone()).await?;
                 conn.write_all(format!("GET {} HTTP/1.1\r\n\r\n", path).as_bytes())
                     .await?;
                 let mut buf = vec![0; 1024];
