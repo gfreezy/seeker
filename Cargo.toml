@@ -21,3 +21,4 @@ opt-level = "z"
 
 [workspace.metadata.workspaces]
 no_individual_tags = true
+independent = false
