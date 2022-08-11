@@ -309,8 +309,8 @@ cargo ws version
 
 === Plain git
 ```
-git tag 10.0.0
-git push origin 10.0.0
+git tag v10.0.0
+git push origin v10.0.0
 ```
 
 Github Action 会自动编译并发布新的 release。
