@@ -149,7 +149,7 @@ impl ServerChooser {
         }
         println!("Connections:");
         let mut v: Vec<_> = map.into_iter().collect();
-        v.sort_unstable_by(|(addr1, _), (addr2, _)| addr1.cmp(&addr2));
+        v.sort_unstable_by(|(addr1, _), (addr2, _)| addr1.cmp(addr2));
         for (remote_addr, stats) in v {
             println!(
                 "[{}] {}, conns: {}, max_duration: {}, sent_bytes: {}, recv_bytes: {}",
