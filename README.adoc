@@ -302,6 +302,12 @@ cargo build --release
 
 
 == 如何发布新版本
+=== With `cargo-workspace`
+```
+cargo ws version
+```
+
+=== Plain git
 ```
 git tag 10.0.0
 git push origin 10.0.0
