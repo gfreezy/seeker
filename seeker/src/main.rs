@@ -37,7 +37,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 .short('c')
                 .long("config")
                 .value_name("FILE")
-                .help("Set config file. Sample config at https://github.com/gfreezy/seeker/blob/master/sample_config.yml")
+                .help("Set config file. The sample config at https://github.com/gfreezy/seeker/blob/master/sample_config.yml")
                 .required(false),
         )
         .arg(
