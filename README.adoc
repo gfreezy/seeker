@@ -98,6 +98,16 @@ connect_timeout: 1s
 read_timeout: 30s
 write_timeout: 5s
 max_connect_errors: 2  # ss 服务器重试次数，到达重试次数后会自动选择下一个最快的服务器
+ping_urls:
+  - host: www.facebook.com
+    port: 80
+    path: /
+  - host: www.youtube.com
+    port: 80
+    path: /
+  - host: twitter.com
+    port: 80
+    path: /
 
 servers:
   - name: socks5 proxy server
