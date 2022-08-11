@@ -18,3 +18,6 @@ lto = "fat"
 codegen-units = 1
 incremental = false
 opt-level = "z"
+
+[workspace.metadata.workspaces]
+no_individual_tags = true
