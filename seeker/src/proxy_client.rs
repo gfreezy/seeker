@@ -46,29 +46,12 @@ impl ProxyClient {
             .map(|s| s.addr().to_string())
             .collect();
 
-        let ping_url = vec![
-            (
-                Address::DomainNameAddress("google.com".to_string(), 80),
-                "/".to_string(),
-            ),
-            (
-                Address::DomainNameAddress("twitter.com".to_string(), 80),
-                "/".to_string(),
-            ),
-            (
-                Address::DomainNameAddress("github.com".to_string(), 80),
-                "/".to_string(),
-            ),
-            (
-                Address::DomainNameAddress("youtube.com".to_string(), 80),
-                "/".to_string(),
-            ),
-        ];
+        let ping_urls = config.ping_urls.clone();
         let chooser = Arc::new(
             ServerChooser::new(
                 config.servers.clone(),
                 dns_client.clone(),
-                ping_url,
+                ping_urls,
                 config.ping_timeout,
             )
             .await,
