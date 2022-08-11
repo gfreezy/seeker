@@ -44,6 +44,8 @@ pub fn setup_logger(log_path: Option<&str>) -> Result<(), Box<dyn Error>> {
             AppendTimestamp::default(file_rotate::suffix::FileLimit::MaxFiles(10)),
             file_rotate::ContentLimit::Bytes(10_000_000),
             file_rotate::compression::Compression::None,
+            #[cfg(unix)]
+            None,
         )));
         let my_subscriber = FmtSubscriber::builder()
             .with_env_filter(env_filter)
