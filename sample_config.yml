@@ -1,6 +1,6 @@
 verbose: false
 dns_start_ip: 11.0.0.10
-dns_server:
+dns_servers:
   - 223.5.5.5:53
   - 114.114.114.114:53
   - tcp://114.114.114.114:53
@@ -29,7 +29,8 @@ ping_urls:
     path: /
 
 servers:
-  - addr: 127.0.0.1:1087  # 替换成 http 代理的地址
+  - name: a
+    addr: 127.0.0.1:1087  # 替换成 http 代理的地址
     username:
     password:
     protocol: Http

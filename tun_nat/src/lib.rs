@@ -268,7 +268,8 @@ impl InnerSessionManager {
         let available_ports = &mut self.available_ports;
         let begin_port = self.begin_port;
         map.retain(|port, assoc| {
-            let retain = now - assoc.last_activity_ts < EXPIRE_SECONDS;
+            // when sleeping on Mac m1, subtract with overflow happens.
+            let retain = now.wrapping_sub(assoc.last_activity_ts) < EXPIRE_SECONDS;
             if !retain {
                 reverse_map.remove(&(
                     assoc.src_addr,
