@@ -57,9 +57,24 @@ impl Drop for DNSSetup {
     }
 }
 
-pub fn setup_ip(tun_name: &str, ip: &str, _cidr: &str) {
+pub fn setup_ip(tun_name: &str, ip: &str, cidr: &str, additional_cidrs: Vec<String>) {
     let _ = run_cmd("ip", &["addr", "add", ip, "dev", tun_name]);
     let _ = run_cmd("ip", &["link", "set", tun_name, "up"]);
+    let _ = run_cmd("ip", &["route", "add", cidr, "via", ip, "dev", tun_name]);
+    for additional_cidr in additional_cidrs {
+        let _ = run_cmd(
+            "ip",
+            &[
+                "route",
+                "add",
+                additional_cidr.as_str(),
+                "via",
+                ip,
+                "dev",
+                tun_name,
+            ],
+        );
+    }
 }
 
 fn get_original_dns(content: &str, dns: &str) -> Vec<String> {
