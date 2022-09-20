@@ -150,6 +150,8 @@ rules:
   - 'DOMAIN-KEYWORD,uk-live,PROXY'
   - 'DOMAIN-SUFFIX,snssdk.com,DIRECT'
   - 'DOMAIN-SUFFIX,toutiao.com,PROBE'
+  - 'IP-CIDR,19.23.212.0/16,PROXY'
+  - 'IP-CIDR,19.23.21.0/16,PROBE'
   - 'MATCH,PROBE'
 ----
 
@@ -211,15 +213,13 @@ Aes256PmacSiv
 ⚠️ http 代理只支持 `CONNECT` 协议，而且不支持 UDP 协议。
 
 == 指定 IP 或某网段走代理
-修改路由表，将希望走代理的 IP 或者网段路由到虚拟网卡。
+在配置文件中增加 `IP-CIDR` 规则即可。默认情况下 IP 都是是直连，所以只需要添加 `PROXY` 和 `PROBE`。如下：
 
-比如我希望 `8.8.8.8` 这个 IP 所有流量都走代理，且使用本地 ClashX 创建的 socks5 代理：
-
-将 `8.8.8.8` 路由到 utun4
-
-[source,shell script]
+[source,yaml]
 ----
-sudo route -n add -net 8.8.8.8 utun4
+rules:
+  - 'IP-CIDR,19.23.212.0/16,PROXY'
+  - 'IP-CIDR,19.23.21.0/16,PROBE'
 ----
 
 == 代理局域网内其他机器

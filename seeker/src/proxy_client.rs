@@ -34,8 +34,15 @@ pub struct ProxyClient {
 
 impl ProxyClient {
     pub async fn new(config: Config, uid: Option<u32>) -> Self {
-        let session_manager =
-            run_nat(&config.tun_name, config.tun_ip, config.tun_cidr, 1300).expect("run nat");
+        let additional_cidrs = config.rules.additional_cidrs();
+        let session_manager = run_nat(
+            &config.tun_name,
+            config.tun_ip,
+            config.tun_cidr,
+            1300,
+            &additional_cidrs,
+        )
+        .expect("run nat");
         let dns_client = DnsClient::new(&config.dns_servers, config.dns_timeout).await;
 
         let resolver = run_dns_resolver(&config, dns_client.resolver()).await;
