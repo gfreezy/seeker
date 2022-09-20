@@ -118,7 +118,7 @@ impl ServerChooser {
         );
     }
 
-    pub async fn ping_servers_forever(&self) -> Result<()> {
+    pub async fn run_background_tasks(&self) -> Result<()> {
         loop {
             self.ping_servers().await;
             self.print_connection_stats();
@@ -165,7 +165,7 @@ impl ServerChooser {
     }
 
     pub async fn ping_servers(&self) {
-        if self.ping_urls.is_empty() {
+        if self.ping_urls.is_empty() || self.servers.len() <= 1 {
             return;
         }
 

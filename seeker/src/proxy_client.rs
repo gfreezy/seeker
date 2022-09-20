@@ -57,9 +57,7 @@ impl ProxyClient {
             .await,
         );
         let chooser_clone = chooser.clone();
-        if config.servers.len() > 1 {
-            let _ = spawn(async move { chooser_clone.ping_servers_forever().await.unwrap() });
-        }
+        let _ = spawn(async move { chooser_clone.run_background_tasks().await.unwrap() });
 
         Self {
             resolver,
@@ -231,10 +229,12 @@ impl ProxyClient {
     }
 
     pub async fn run(&self) {
-        self.run_tcp_relay_server()
+        let ret = self
+            .run_tcp_relay_server()
             .race(self.run_udp_relay_server())
-            .await
-            .unwrap();
+            .await;
+        tracing::error!(?ret, "run error");
+        ret.expect("run");
     }
 
     fn get_udp_socket_and_dest_addr(&self, port: u16) -> Option<(ProxyUdpSocket, SocketAddr)> {
