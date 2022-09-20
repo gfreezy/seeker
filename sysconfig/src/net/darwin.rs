@@ -57,9 +57,12 @@ impl Drop for DNSSetup {
     }
 }
 
-pub fn setup_ip(tun_name: &str, ip: &str, cidr: &str) {
+pub fn setup_ip(tun_name: &str, ip: &str, cidr: &str, additional_cidrs: Vec<String>) {
     let _ = run_cmd("ifconfig", &[tun_name, ip, ip]);
     let _ = run_cmd("route", &["add", cidr, ip]);
+    for additional_cidr in additional_cidrs {
+        let _ = run_cmd("route", &["add", additional_cidr.as_str(), ip]);
+    }
 }
 
 fn get_primary_network() -> String {

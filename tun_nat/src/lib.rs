@@ -66,6 +66,7 @@ pub fn run_nat(
     tun_ip: Ipv4Addr,
     tun_cidr: Ipv4Cidr,
     relay_port: u16,
+    addition_cidrs: &[Ipv4Cidr],
 ) -> Result<SessionManager> {
     let mut tun = TunSocket::new(tun_name)?;
     let tun_name = tun.name()?;
@@ -74,14 +75,14 @@ pub fn run_nat(
             &tun_name,
             tun_ip.to_string().as_str(),
             tun_cidr.to_string().as_str(),
+            addition_cidrs.iter().map(|cidr| cidr.to_string()).collect(),
         );
     } else {
-        let new_ip =
-            Ipv4Cidr::from_netmask(tun_ip.into(), tun_cidr.netmask()).expect("convert netmask");
         setup_ip(
             &tun_name,
-            new_ip.to_string().as_str(),
+            tun_ip.to_string().as_str(),
             tun_cidr.to_string().as_str(),
+            addition_cidrs.iter().map(|cidr| cidr.to_string()).collect(),
         );
     }
 
