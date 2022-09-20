@@ -64,6 +64,16 @@ impl ProxyRules {
     pub fn default_action(&self) -> Action {
         Action::Direct
     }
+
+    pub fn additional_cidrs(&self) -> Vec<Ipv4Cidr> {
+        self.rules
+            .iter()
+            .filter_map(|rule| match rule {
+                Rule::IpCidr(cidr, Action::Probe | Action::Proxy) => Some(*cidr),
+                _ => None,
+            })
+            .collect()
+    }
 }
 
 impl FromStr for Action {
