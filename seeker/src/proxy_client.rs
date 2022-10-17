@@ -1,4 +1,5 @@
 use crate::dns_client::DnsClient;
+use crate::proxy_connection::ProxyConnection;
 use crate::proxy_tcp_stream::ProxyTcpStream;
 use crate::proxy_udp_socket::ProxyUdpSocket;
 use crate::server_chooser::ServerChooser;
@@ -208,15 +209,16 @@ impl ProxyClient {
                         let read_timeout = self.config.read_timeout;
                         let write_timeout = self.config.write_timeout;
                         spawn(async move {
-                            tunnel_tcp_stream(
+                            let _ = tunnel_tcp_stream(
                                 conn,
-                                remote_conn,
+                                remote_conn.clone(),
                                 session_manager,
                                 session_port,
                                 read_timeout,
                                 write_timeout,
                             )
-                            .await
+                            .await;
+                            remote_conn.shutdown();
                         });
                     }
                     Err(e) => {
@@ -357,7 +359,7 @@ async fn tunnel_tcp_stream<T1: Read + Write + Unpin + Clone, T2: Read + Write + 
             if size == 0 {
                 break Ok(());
             }
-            conn2.write_all(&buf[..size]).await?;
+            timeout(write_timeout, conn2.write_all(&buf[..size])).await?;
         }
     };
     let f2 = async {
@@ -366,11 +368,11 @@ async fn tunnel_tcp_stream<T1: Read + Write + Unpin + Clone, T2: Read + Write + 
             if !session_manager.update_activity_for_port(session_port) {
                 break Err(ErrorKind::ConnectionAborted.into());
             }
-            let size = timeout(write_timeout, conn2_clone.read(&mut buf)).await?;
+            let size = timeout(read_timeout, conn2_clone.read(&mut buf)).await?;
             if size == 0 {
                 break Ok(());
             }
-            conn1_clone.write_all(&buf[..size]).await?;
+            timeout(write_timeout, conn1_clone.write_all(&buf[..size])).await?;
         }
     };
     let ret = f1.race(f2).await;

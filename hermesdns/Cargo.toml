@@ -8,9 +8,9 @@ edition = "2021"
 
 [dependencies]
 rand = "0.8.5"
-chrono = "0.4.19"
-async-trait = "0.1.56"
-tracing = "0.1.35"
+chrono = "0.4.22"
+async-trait = "0.1.57"
+tracing = "0.1.36"
 tracing-futures = { version = "0.2.5", features = [
     "std-future",
 ], default-features = false }

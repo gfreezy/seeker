@@ -7,15 +7,15 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-bytes = "1.2.0"
+bytes = "1.2.1"
 rand = "0.8.5"
-md-5 = "0.10.1"
-digest = "0.10.3"
+md-5 = "0.10.4"
+digest = "0.10.5"
 typenum = "1.15.0"
 byte_string = "1.0.0"
 byteorder = "1.4.3"
 openssl = { version = "0.10.41", optional = true, features = ["vendored"] }
-libc = "0.2.126"
+libc = "0.2.133"
 hkdf = "0.12.3"
 sha-1 = "0.10.0"
 libsodium-sys = { version = "0.2.7", optional = true }
