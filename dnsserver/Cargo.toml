@@ -11,10 +11,10 @@ async-std = "1.12.0"
 hermesdns = { path = "../hermesdns" }
 config = { path = "../config" }
 sled = "0.34.7"
-async-trait = "0.1.56"
-tracing = "0.1.35"
-async-std-resolver = "0.21.2"
-trust-dns-proto = { version = "0.21.2", default-features = false }
+async-trait = "0.1.57"
+tracing = "0.1.36"
+async-std-resolver = "0.22.0"
+trust-dns-proto = { version = "0.22.0", default-features = false }
 
 [dev-dependencies]
 tempfile = "3.3.0"

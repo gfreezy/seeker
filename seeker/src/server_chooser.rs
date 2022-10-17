@@ -45,12 +45,17 @@ impl ServerChooser {
     }
 
     fn set_server_down(&self, config: &ServerConfig) {
-        let mut live_connections = self.live_connections.write();
+        let live_connections = self.live_connections.write();
         live_connections
             .iter()
             .filter(|stream| stream.has_config(Some(config)))
             .for_each(|stream| stream.shutdown());
-        live_connections.retain(|stream| stream.strong_count() > 1);
+    }
+
+    fn recycle_live_connections(&self) {
+        self.live_connections
+            .write()
+            .retain(|stream| stream.strong_count() > 1);
     }
 
     pub async fn candidate_tcp_stream(
@@ -122,6 +127,7 @@ impl ServerChooser {
         loop {
             self.ping_servers().await;
             self.print_connection_stats();
+            self.recycle_live_connections();
             sleep(Duration::from_secs(30)).await;
         }
     }
