@@ -9,7 +9,7 @@ use ssclient::SSUdpSocket;
 use std::io;
 use std::io::{Error, ErrorKind};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Weak};
+use std::sync::Arc;
 
 #[derive(Clone)]
 enum ProxyUdpSocketInner {
