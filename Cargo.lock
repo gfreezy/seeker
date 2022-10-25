@@ -406,13 +406,16 @@ dependencies = [
 name = "config"
 version = "0.5.1"
 dependencies = [
+ "base64",
  "bytes",
  "crypto",
+ "percent-encoding",
  "serde",
  "serde_yaml",
  "smoltcp",
  "socks5_client",
  "tcp_connection",
+ "tracing",
  "url",
 ]
 
@@ -1587,6 +1590,7 @@ dependencies = [
  "tracing-subscriber",
  "tun_nat",
  "ureq",
+ "url",
 ]
 
 [[package]]
@@ -1607,6 +1611,17 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "serde_json"
+version = "1.0.85"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e55a28e3aaef9d5ce0506d0a14dbba8054ddc7e499ef522dd8b26859ec9d4a44"
+dependencies = [
+ "itoa",
+ "ryu",
+ "serde",
 ]
 
 [[package]]
@@ -2065,6 +2080,8 @@ dependencies = [
  "log",
  "once_cell",
  "rustls 0.20.6",
+ "serde",
+ "serde_json",
  "url",
  "webpki 0.22.0",
  "webpki-roots 0.22.4",

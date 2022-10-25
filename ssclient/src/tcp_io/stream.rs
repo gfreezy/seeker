@@ -72,7 +72,7 @@ impl<T: Read + Write + Unpin> DecryptedReader<T> {
 
         let remaining_len = self.buffer.len() - self.pos;
         let n = cmp::min(dst.len(), remaining_len);
-        (&mut dst[..n]).copy_from_slice(&self.buffer[self.pos..self.pos + n]);
+        dst[..n].copy_from_slice(&self.buffer[self.pos..self.pos + n]);
         self.pos += n;
         Poll::Ready(Ok(n))
     }
@@ -88,7 +88,7 @@ impl<T: Read + Write + Unpin> Read for DecryptedReader<T> {
         cx: &mut Context<'_>,
         buf: &mut [u8],
     ) -> Poll<Result<usize>> {
-        (&mut *self).poll_read_decrypted(cx, buf)
+        (*self).poll_read_decrypted(cx, buf)
     }
 }
 
@@ -189,7 +189,7 @@ impl<T: Read + Write + Unpin> Write for EncryptedWriter<T> {
         cx: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<Result<usize>> {
-        (&mut *self).poll_write_encrypted(cx, buf)
+        (*self).poll_write_encrypted(cx, buf)
     }
 
     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<()>> {
