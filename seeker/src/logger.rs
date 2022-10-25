@@ -1,5 +1,4 @@
 use file_rotate::{suffix::AppendTimestamp, FileRotate};
-use std::error::Error;
 use std::io;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -28,7 +27,7 @@ impl io::Write for TracingWriter {
     }
 }
 
-pub fn setup_logger(log_path: Option<&str>) -> Result<(), Box<dyn Error>> {
+pub fn setup_logger(log_path: Option<&str>) -> anyhow::Result<()> {
     let env_filter = EnvFilter::new("seeker=trace")
         .add_directive("dnsserver=debug".parse()?)
         .add_directive("seeker=trace".parse()?)
