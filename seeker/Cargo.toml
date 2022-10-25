@@ -27,9 +27,10 @@ libc = "0.2.133"
 futures-util = "0.3.24"
 clap = "3.2.22"
 async-std-resolver = "0.22.0"
-ureq = "2.5.0"
+ureq = { version = "2.5.0", features = ["json"] }
 crypto = { path = "../crypto" }
 bytes = "1.2.1"
 base64 = "0.13.0"
 anyhow = "1.0.65"
 tcp_connection = { path = "../tcp_connection" }
+url = "2.3"
