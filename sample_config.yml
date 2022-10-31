@@ -28,6 +28,9 @@ ping_urls:
     port: 80
     path: /
 
+remote_config_urls:  # ss 订阅地址，启动时自动拉群配置，并将配置的服务器地址自动加入服务器列表
+  - https://addr-to-ss-subscribe-url.com
+
 servers:
   - name: a
     addr: 127.0.0.1:1087  # 替换成 http 代理的地址
