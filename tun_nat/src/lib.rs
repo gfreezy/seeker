@@ -9,7 +9,7 @@ use std::io::Result;
 use std::io::{Read, Write};
 use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
-use std::thread;
+use std::thread::{self, JoinHandle};
 use std::time::SystemTime;
 use sysconfig::setup_ip;
 
@@ -67,7 +67,7 @@ pub fn run_nat(
     tun_cidr: Ipv4Cidr,
     relay_port: u16,
     addition_cidrs: &[Ipv4Cidr],
-) -> Result<SessionManager> {
+) -> Result<(SessionManager, JoinHandle<()>)> {
     let mut tun = TunSocket::new(tun_name)?;
     let tun_name = tun.name()?;
     if cfg!(target_os = "macos") {
@@ -90,7 +90,7 @@ pub fn run_nat(
 
     let session_manager = Arc::new(RwLock::new(InnerSessionManager::new(BEGIN_PORT, END_PORT)));
     let sesion_mamager_clone = session_manager.clone();
-    let _handle = thread::spawn(move || {
+    let handle = thread::spawn(move || {
         let mut buf = vec![0; 2000];
 
         loop {
@@ -125,9 +125,12 @@ pub fn run_nat(
             }
         }
     });
-    Ok(SessionManager {
-        inner: sesion_mamager_clone,
-    })
+    Ok((
+        SessionManager {
+            inner: sesion_mamager_clone,
+        },
+        handle,
+    ))
 }
 
 pub struct Association {
