@@ -5,8 +5,8 @@ use crate::proxy_udp_socket::ProxyUdpSocket;
 use crate::server_chooser::ServerChooser;
 use async_std::io::{timeout, Read, Write};
 use async_std::net::{SocketAddr, TcpListener, TcpStream, UdpSocket};
-use async_std::prelude::*;
-use async_std::task::spawn;
+use async_std::task::{spawn, JoinHandle};
+use async_std::{prelude::*, task};
 use async_std_resolver::AsyncStdResolver;
 use config::rule::Action;
 use config::{Address, Config};
@@ -31,12 +31,15 @@ pub struct ProxyClient {
     dns_client: DnsClient,
     extra_directly_servers: Vec<String>,
     server_chooser: Arc<ServerChooser>,
+    nat_join_handle: Option<JoinHandle<()>>,
+    dns_server_join_handle: Option<JoinHandle<()>>,
+    chooser_join_handle: Option<JoinHandle<()>>,
 }
 
 impl ProxyClient {
     pub async fn new(config: Config, uid: Option<u32>) -> Self {
         let additional_cidrs = config.rules.additional_cidrs();
-        let session_manager = run_nat(
+        let (session_manager, blocking_join_handle) = run_nat(
             &config.tun_name,
             config.tun_ip,
             config.tun_cidr,
@@ -44,9 +47,15 @@ impl ProxyClient {
             &additional_cidrs,
         )
         .expect("run nat");
+        let nat_join_handle = task::spawn_blocking(move || match blocking_join_handle.join() {
+            Ok(()) => tracing::info!("nat stopped"),
+            Err(e) => tracing::error!("nat stopped with error: {:?}", e),
+        });
+
         let dns_client = DnsClient::new(&config.dns_servers, config.dns_timeout).await;
 
-        let resolver = run_dns_resolver(&config, dns_client.resolver()).await;
+        let (resolver, dns_server_join_handle) =
+            run_dns_resolver(&config, dns_client.resolver()).await;
 
         let extra_directly_servers = config
             .servers
@@ -65,7 +74,8 @@ impl ProxyClient {
             .await,
         );
         let chooser_clone = chooser.clone();
-        let _ = spawn(async move { chooser_clone.run_background_tasks().await.unwrap() });
+        let chooser_join_handle =
+            spawn(async move { chooser_clone.run_background_tasks().await.unwrap() });
 
         Self {
             resolver,
@@ -76,6 +86,9 @@ impl ProxyClient {
             uid,
             session_manager,
             server_chooser: chooser,
+            nat_join_handle: Some(nat_join_handle),
+            dns_server_join_handle: Some(dns_server_join_handle),
+            chooser_join_handle: Some(chooser_join_handle),
         }
     }
 
@@ -237,10 +250,31 @@ impl ProxyClient {
         Ok::<(), io::Error>(())
     }
 
-    pub async fn run(&self) {
+    pub async fn run(mut self) {
+        let chooser_join_handle = self.chooser_join_handle.take();
+        let dns_server_join_handle = self.dns_server_join_handle.take();
+        let nat_join_handle = self.nat_join_handle.take();
         let ret = self
             .run_tcp_relay_server()
             .race(self.run_udp_relay_server())
+            .race(async move {
+                if let Some(chooser_join_handle) = chooser_join_handle {
+                    chooser_join_handle.await
+                };
+                Ok(())
+            })
+            .race(async move {
+                if let Some(dns_server_join_handle) = dns_server_join_handle {
+                    dns_server_join_handle.await;
+                };
+                Ok(())
+            })
+            .race(async move {
+                if let Some(nat_join_handle) = nat_join_handle {
+                    nat_join_handle.await;
+                };
+                Ok(())
+            })
             .await;
         tracing::error!(?ret, "run error");
         ret.expect("run");
@@ -380,7 +414,10 @@ async fn tunnel_tcp_stream<T1: Read + Write + Unpin + Clone, T2: Read + Write + 
     ret
 }
 
-async fn run_dns_resolver(config: &Config, resolver: AsyncStdResolver) -> RuleBasedDnsResolver {
+async fn run_dns_resolver(
+    config: &Config,
+    resolver: AsyncStdResolver,
+) -> (RuleBasedDnsResolver, JoinHandle<()>) {
     let (dns_server, resolver) = create_dns_server(
         "dns.db",
         config.dns_listen.clone(),
@@ -391,12 +428,12 @@ async fn run_dns_resolver(config: &Config, resolver: AsyncStdResolver) -> RuleBa
     )
     .await;
     println!("Spawn DNS server");
-    spawn(
+    let handle = spawn(
         dns_server
             .run_server()
             .instrument(trace_span!("dns_server.run_server")),
     );
-    resolver
+    (resolver, handle)
 }
 
 #[cfg(target_arch = "x86_64")]
