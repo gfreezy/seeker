@@ -79,9 +79,9 @@ fn main() -> anyhow::Result<()> {
         )
         .get_matches();
 
-    let path = matches.value_of("config");
-    let key = matches.value_of("key");
-    let to_encrypt = matches.is_present("encrypt");
+    let path = matches.get_one::<String>("config").map(String::as_ref);
+    let key = matches.get_one::<String>("key").map(String::as_ref);
+    let to_encrypt = matches.get_flag("encrypt");
     if to_encrypt {
         println!(
             "Encrypted content is as below:\n\n\n{}\n\n",
@@ -89,11 +89,11 @@ fn main() -> anyhow::Result<()> {
         );
         return Ok(());
     }
-    let config_url = matches.value_of("config-url");
+    let config_url = matches.get_one::<String>("config-url").map(String::as_ref);
     let config = load_config(path, config_url, key)?;
 
-    let uid = matches.value_of("user_id").map(|uid| uid.parse().unwrap());
-    let log_path = matches.value_of("log");
+    let uid = matches.get_one::<u32>("user_id").copied();
+    let log_path = matches.get_one::<String>("log").map(String::as_ref);
 
     setup_logger(log_path)?;
 
