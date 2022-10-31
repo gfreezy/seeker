@@ -97,6 +97,7 @@ probe_timeout: 30ms  # probe_timeout 时间内如果 TCP 可以直接连接，�
 connect_timeout: 1s
 read_timeout: 30s
 write_timeout: 5s
+
 max_connect_errors: 2  # ss 服务器重试次数，到达重试次数后会自动选择下一个最快的服务器
 ping_urls:
   - host: www.facebook.com
@@ -108,6 +109,9 @@ ping_urls:
   - host: twitter.com
     port: 80
     path: /
+
+remote_config_urls:  # ss 订阅地址，启动时自动拉群配置，并将配置的服务器地址自动加入服务器列表
+  - https://addr-to-ss-subscribe-url
 
 servers:
   - name: socks5 proxy server
