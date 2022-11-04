@@ -21,7 +21,7 @@ use anyhow::Context;
 use async_signals::Signals;
 use async_std::prelude::{FutureExt, StreamExt};
 use async_std::task::block_on;
-use clap::{Arg, Command};
+use clap::{Arg, ArgAction, Command};
 use config::{Config, ServerConfig};
 use crypto::CipherType;
 use std::fs::File;
@@ -67,6 +67,7 @@ fn main() -> anyhow::Result<()> {
             Arg::new("encrypt")
                 .long("encrypt")
                 .help("Encrypt config file and output to terminal")
+                .action(ArgAction::SetTrue)
                 .required(false),
         )
         .arg(
@@ -159,12 +160,12 @@ fn load_config(
 }
 
 fn encrypt_config(path: Option<&str>, encrypt_key: Option<&str>) -> anyhow::Result<String> {
-    if let (Some(path), Some(key)) = (path, encrypt_key) {
-        let file = File::open(&path).context("Open config error")?;
-        return config_encryptor::encrypt_config(file, CipherType::ChaCha20Ietf, key)
-            .context("Encrypt config error");
-    }
-    Err(anyhow::anyhow!("Parameters error"))
+    let (Some(path), Some(key)) = (path, encrypt_key) else {
+        return Err(anyhow::anyhow!("path and encrypt_key must be provided"));
+    };
+    let file = File::open(&path).context("Open config error")?;
+    return config_encryptor::encrypt_config(file, CipherType::ChaCha20Ietf, key)
+        .context("Encrypt config error");
 }
 
 fn read_servers_from_remote_config(url: &str) -> anyhow::Result<Vec<ServerConfig>> {
