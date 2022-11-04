@@ -260,7 +260,7 @@ blocked app from Allow apps downloaded from pane at the bottom of the window.
 
 . Ubuntu 提示 `Address already used`, 查看这里 https://unix.stackexchange.com/questions/304050/how-to-avoid-conflicts-between-dnsmasq-and-systemd-resolved
 
-== Build (rust >= 1.39)
+== Build (latest stable)
 
 [source,bash]
 ----
