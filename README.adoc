@@ -1,6 +1,7 @@
 = Seeker
 
-image::https://travis-ci.com/gfreezy/seeker.svg?branch=master[Build Status,link=https://travis-ci.com/gfreezy/seeker]
+image::https://github.com/gfreezy/seeker/actions/workflows/release.yml/badge.svg[]
+image::https://github.com/gfreezy/seeker/actions/workflows/ci.yml/badge.svg?branch=master[]
 
 
 使用 Tun 实现 ss 透明代理（支持 Mac & Linux 系统），支持 TCP、UDP。
