@@ -16,6 +16,7 @@ use std::time::Duration;
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
     pub servers: Arc<Vec<ServerConfig>>,
+    #[serde(default)]
     pub remote_config_urls: Vec<String>,
     pub dns_start_ip: Ipv4Addr,
     pub dns_servers: Vec<DnsServerAddr>,
