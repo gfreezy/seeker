@@ -75,6 +75,10 @@ jobs:
             os: macos-latest
             rust: nightly
             target: x86_64-apple-darwin
+          - build: macos-m1
+            os: macos-latest
+            rust: nightly
+            target: aarch64-apple-darwin
           - build: linux-arm
             os: ubuntu-latest
             rust: nightly
@@ -123,13 +127,17 @@ jobs:
           override: true
           target: ${{ matrix.target }}
 
+      - name: Populate Target Env
+        if: matrix.target != ''
+        run: |
+          echo "TARGET_FLAGS=--target ${{ matrix.target }}" >> $GITHUB_ENV
+          echo "TARGET_DIR=./target/${{ matrix.target }}" >> $GITHUB_ENV
+
       - name: Use Cross
-        # if: matrix.os != 'windows-2019'
+        if: matrix.os == 'ubuntu-latest' && matrix.target != ''
         run: |
           cargo install cross
           echo "CARGO=cross" >> $GITHUB_ENV
-          echo "TARGET_FLAGS=--target ${{ matrix.target }}" >> $GITHUB_ENV
-          echo "TARGET_DIR=./target/${{ matrix.target }}" >> $GITHUB_ENV
 
       - name: Show command used for Cargo
         run: |
@@ -138,7 +146,7 @@ jobs:
           echo "target dir is: ${{ env.TARGET_DIR }}"
 
       - name: Build cross docker images
-        if: matrix.target != ''
+        if: matrix.os == 'ubuntu-latest' && matrix.target != ''
         run: |
           [ -d ci/docker/${{ matrix.target }} ] && cd ci/docker/${{ matrix.target }} && ./build || true
 
@@ -146,7 +154,7 @@ jobs:
         run: ${{ env.CARGO }} build --verbose --release ${{ env.TARGET_FLAGS }}
 
       - name: Strip release binary (linux and macos)
-        if: matrix.build == 'linux' || matrix.build == 'macos'
+        if: matrix.build == 'linux' || matrix.build == 'macos' || matrix.build == 'macos-m1'
         run: strip "target/${{ matrix.target }}/release/${{ env.BINARY_NAME }}"
 
       - name: Strip release binary (arm)

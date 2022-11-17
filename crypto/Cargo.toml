@@ -18,12 +18,12 @@ openssl = { version = "0.10.41", optional = true, features = ["vendored"] }
 libc = "0.2.133"
 hkdf = "0.12.3"
 sha-1 = "0.10.0"
-libsodium-sys = { version = "0.2.7", optional = true }
+libsodium-sys-stable = { version = "1.19.23", optional = true }
 ring = { version = "0.16.20", optional = true }
 
 [features]
 default = ["sodium", "rc4", "aes-cfb", "aes-ctr", "camellia-cfb", "use-ring"]
-sodium = ["libsodium-sys"]
+sodium = ["libsodium-sys-stable"]
 rc4 = ["openssl"]
 aes-cfb = ["openssl"]
 aes-ctr = ["openssl"]
