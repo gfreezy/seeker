@@ -281,16 +281,6 @@ docker run -v $PWD:/volume -e OPENSSL_STATIC=yes --rm -t clux/muslrust cargo bui
 会在 `target/x86_64-unknown-linux-musl/release` 目录下生成 `seeker` 文件。
 
 
-=== Mac M1 编译
-Github Action 没有提供 M1 的运行环境，所以无法在 Release 中包含 M1 的二进制文件。但是 seeker 是支持 M1 环境的。
-
-[source,shell]
-----
-cargo build --release
-----
-
-会在 `target/release` 目录下生成 `seeker` 文件。
-
 == 实现原理
 `seeker` 参考了 `Surge for Mac` 的实现原理，基本如下：
 
