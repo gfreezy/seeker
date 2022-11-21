@@ -94,7 +94,10 @@ tun_cidr: 10.0.0.0/16
 dns_listen: 0.0.0.0:53
 gateway_mode: true
 ping_timeout: 2s
-probe_timeout: 30ms  # probe_timeout 时间内如果 TCP 可以直接连接，则直连；否则走代理
+# probe_timeout 时间内如果可以建立 TCP 连接则直连（443端口会额外建立 SSL 连接），否则走代理。不要调的太低，国内有些网站会有很长的 SSL 握手时间。
+# 如果目标端口为 443，TCP 连接的超时时间为 probe_timeout， SSL 连接超时时间也为 probe_timeout，总的超时时间为 probe_timeout * 2;
+# 如果目标端口不为 443，TCP 连接的超时时间为 probe_timeout。
+probe_timeout: 200ms
 connect_timeout: 1s
 read_timeout: 30s
 write_timeout: 5s
