@@ -153,7 +153,13 @@ fn load_config(
     let remote_config = config.remote_config_urls.clone();
     let servers = Arc::make_mut(&mut config.servers);
     for url in remote_config {
-        let extra_servers = read_servers_from_remote_config(&url)?;
+        let extra_servers = match read_servers_from_remote_config(&url) {
+            Ok(servers) => servers,
+            Err(e) => {
+                println!("Load servers from remote config `{}` error: {}", url, e);
+                continue;
+            }
+        };
         servers.extend(extra_servers);
     }
     Ok(config)
