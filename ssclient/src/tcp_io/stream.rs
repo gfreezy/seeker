@@ -193,11 +193,11 @@ impl<T: Read + Write + Unpin> Write for EncryptedWriter<T> {
     }
 
     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<()>> {
-        Pin::new(&mut (*self).conn).poll_flush(cx)
+        Pin::new(&mut self.conn).poll_flush(cx)
     }
 
     fn poll_close(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<()>> {
-        Pin::new(&mut (*self).conn).poll_close(cx)
+        Pin::new(&mut self.conn).poll_close(cx)
     }
 }
 

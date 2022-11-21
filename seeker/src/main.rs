@@ -163,9 +163,9 @@ fn encrypt_config(path: Option<&str>, encrypt_key: Option<&str>) -> anyhow::Resu
     let (Some(path), Some(key)) = (path, encrypt_key) else {
         return Err(anyhow::anyhow!("path and encrypt_key must be provided"));
     };
-    let file = File::open(&path).context("Open config error")?;
-    return config_encryptor::encrypt_config(file, CipherType::ChaCha20Ietf, key)
-        .context("Encrypt config error");
+    let file = File::open(path).context("Open config error")?;
+    config_encryptor::encrypt_config(file, CipherType::ChaCha20Ietf, key)
+        .context("Encrypt config error")
 }
 
 fn read_servers_from_remote_config(url: &str) -> anyhow::Result<Vec<ServerConfig>> {
