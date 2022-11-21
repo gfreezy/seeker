@@ -153,7 +153,13 @@ fn load_config(
     let remote_config = config.remote_config_urls.clone();
     let servers = Arc::make_mut(&mut config.servers);
     for url in remote_config {
-        let extra_servers = read_servers_from_remote_config(&url)?;
+        let extra_servers = match read_servers_from_remote_config(&url) {
+            Ok(servers) => servers,
+            Err(e) => {
+                println!("Load servers from remote config `{}` error: {}", url, e);
+                continue;
+            }
+        };
         servers.extend(extra_servers);
     }
     Ok(config)
@@ -163,9 +169,9 @@ fn encrypt_config(path: Option<&str>, encrypt_key: Option<&str>) -> anyhow::Resu
     let (Some(path), Some(key)) = (path, encrypt_key) else {
         return Err(anyhow::anyhow!("path and encrypt_key must be provided"));
     };
-    let file = File::open(&path).context("Open config error")?;
-    return config_encryptor::encrypt_config(file, CipherType::ChaCha20Ietf, key)
-        .context("Encrypt config error");
+    let file = File::open(path).context("Open config error")?;
+    config_encryptor::encrypt_config(file, CipherType::ChaCha20Ietf, key)
+        .context("Encrypt config error")
 }
 
 fn read_servers_from_remote_config(url: &str) -> anyhow::Result<Vec<ServerConfig>> {
