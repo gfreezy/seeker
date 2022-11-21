@@ -325,6 +325,13 @@ impl Address {
             Address::DomainNameAddress(host, _) => Some(host),
         }
     }
+
+    pub fn port(&self) -> u16 {
+        match self {
+            Address::SocketAddress(s) => s.port(),
+            Address::DomainNameAddress(_, port) => *port,
+        }
+    }
 }
 
 impl Debug for Address {

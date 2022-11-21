@@ -113,7 +113,7 @@ impl OpenSSLCrypto {
         unsafe {
             buf.set_len(least_reserved);
         }
-        let length = self.inner.update(data, &mut *buf)?;
+        let length = self.inner.update(data, &mut buf)?;
         buf.truncate(length);
         out.put_slice(&buf);
         Ok(())
@@ -127,7 +127,7 @@ impl OpenSSLCrypto {
             buf.set_len(least_reserved);
         }
 
-        let length = self.inner.finalize(&mut *buf)?;
+        let length = self.inner.finalize(&mut buf)?;
         buf.truncate(length);
         out.put_slice(&buf);
         Ok(())
