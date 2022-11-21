@@ -157,7 +157,7 @@ fn parse_cidr(s: String) -> Ipv4Cidr {
 
 impl Config {
     pub fn from_config_file(path: &str) -> io::Result<Self> {
-        let file = File::open(&path).unwrap();
+        let file = File::open(path).unwrap();
         Config::from_reader(file)
     }
 
