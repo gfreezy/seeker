@@ -21,6 +21,7 @@ sysconfig = { path = "../sysconfig" }
 tun_nat = { path = "../tun_nat" }
 file-rotate = "0.7.0"
 async-std = "1.12.0"
+async-tls = "0.11"
 parking_lot = { version = "0.12.1", features = ["deadlock_detection"] }
 async-signals = "0.4.0"
 libc = "0.2.133"

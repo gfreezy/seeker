@@ -12,6 +12,7 @@ use config::rule::Action;
 use config::{Address, Config};
 use dnsserver::create_dns_server;
 use dnsserver::resolver::RuleBasedDnsResolver;
+use parking_lot::Mutex;
 use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::io::Result;
@@ -22,9 +23,68 @@ use tracing::{error, trace, trace_span};
 use tracing_futures::Instrument;
 use tun_nat::{run_nat, SessionManager};
 
+#[derive(Clone)]
+struct ProbeConnectivity {
+    map: Arc<Mutex<HashMap<Address, bool>>>,
+    timeout: Duration,
+}
+
+impl ProbeConnectivity {
+    fn new(timeout: Duration) -> Self {
+        ProbeConnectivity {
+            map: Arc::new(Mutex::new(HashMap::new())),
+            timeout,
+        }
+    }
+
+    async fn force_probe_connectivity(
+        sock_addr: SocketAddr,
+        addr: &Address,
+        timeout: Duration,
+    ) -> bool {
+        let Ok(Ok(tcp_stream)) = TcpStream::connect(sock_addr)
+        .timeout(timeout)
+        .await else {
+            return false;
+        };
+
+        if addr.port() == 443 {
+            let Some(hostname) = addr.hostname() else {
+            return false;
+        };
+            let connector = async_tls::TlsConnector::default();
+            let encrypted_stream = connector
+                .connect(hostname, tcp_stream)
+                .timeout(timeout)
+                .await;
+            return encrypted_stream.is_ok();
+        }
+        true
+    }
+
+    async fn probe_connectivity(&self, sock_addr: SocketAddr, addr: &Address) -> bool {
+        let prev_connectivity = self.map.lock().get(addr).copied();
+        if let Some(result) = prev_connectivity {
+            let map = self.map.clone();
+            let timeout = self.timeout;
+            let addr = addr.clone();
+            let _ = spawn(async move {
+                let is_direct = Self::force_probe_connectivity(sock_addr, &addr, timeout).await;
+                map.lock().insert(addr, is_direct);
+            });
+            result
+        } else {
+            let is_direct = Self::force_probe_connectivity(sock_addr, addr, self.timeout).await;
+            self.map.lock().insert(addr.clone(), is_direct);
+            is_direct
+        }
+    }
+}
+
 pub struct ProxyClient {
     config: Config,
     uid: Option<u32>,
+    connectivity: ProbeConnectivity,
     session_manager: SessionManager,
     udp_manager: Arc<RwLock<HashMap<u16, (ProxyUdpSocket, SocketAddr)>>>,
     resolver: RuleBasedDnsResolver,
@@ -80,6 +140,7 @@ impl ProxyClient {
         Self {
             resolver,
             extra_directly_servers,
+            connectivity: ProbeConnectivity::new(config.probe_timeout),
             udp_manager: Arc::new(RwLock::new(HashMap::new())),
             dns_client,
             config,
@@ -124,7 +185,7 @@ impl ProxyClient {
         };
 
         if action == Action::Probe {
-            if self.probe_connectivity(socket_addr).await {
+            if self.probe_connectivity(socket_addr, addr).await {
                 action = Action::Direct;
             } else {
                 action = Action::Proxy;
@@ -171,10 +232,8 @@ impl ProxyClient {
         .await
     }
 
-    async fn probe_connectivity(&self, addr: SocketAddr) -> bool {
-        timeout(self.config.probe_timeout, TcpStream::connect(addr))
-            .await
-            .is_ok()
+    async fn probe_connectivity(&self, sock_addr: SocketAddr, addr: &Address) -> bool {
+        self.connectivity.probe_connectivity(sock_addr, addr).await
     }
 
     async fn run_tcp_relay_server(&self) -> Result<()> {

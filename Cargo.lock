@@ -691,9 +691,9 @@ checksum = "4e5aa3de05362c3fb88de6531e6296e85cde7739cccad4b9dfeeb7f6ebce56bf"
 
 [[package]]
 name = "futures-io"
-version = "0.3.23"
+version = "0.3.25"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "93a66fc6d035a26a3ae255a6d2bca35eda63ae4c5512bef54449113f7a1228e5"
+checksum = "00f5fb52a06bdcadeb54e8d3671f8888a39697dcb0b81b23b55174030427f4eb"
 
 [[package]]
 name = "futures-lite"
@@ -1614,6 +1614,7 @@ dependencies = [
  "async-signals",
  "async-std",
  "async-std-resolver",
+ "async-tls",
  "base64",
  "bytes",
  "clap",
