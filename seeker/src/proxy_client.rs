@@ -251,16 +251,16 @@ impl ProxyClient {
                 }
             };
 
+            let ip = real_dest.ip().to_string();
+            let host = self
+                .resolver
+                .lookup_host(&ip)
+                .map(|s| Address::DomainNameAddress(s, real_dest.port()))
+                .unwrap_or_else(|| Address::SocketAddress(real_dest));
+
+            trace!(dest_host = ?host, "new relay connection");
+
             async {
-                let ip = real_dest.ip().to_string();
-                let host = self
-                    .resolver
-                    .lookup_host(&ip)
-                    .map(|s| Address::DomainNameAddress(s, real_dest.port()))
-                    .unwrap_or_else(|| Address::SocketAddress(real_dest));
-
-                trace!(dest_host = ?host, "new relay connection");
-
                 let sock_addr = match self.dns_client.lookup_address(&host).await {
                     Ok(a) => a,
                     Err(e) => {
@@ -294,7 +294,7 @@ impl ProxyClient {
                         });
                     }
                     Err(e) => {
-                        error!(?e, "connect error");
+                        error!(?host, ?e, "connect remote error");
                     }
                 };
             }
@@ -302,7 +302,8 @@ impl ProxyClient {
                 "tcp connection",
                 ?peer_addr,
                 ?real_src,
-                ?real_dest
+                ?real_dest,
+                ?host
             ))
             .await
         }
