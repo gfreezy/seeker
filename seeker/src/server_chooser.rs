@@ -66,16 +66,31 @@ impl ServerChooser {
         let stream = match action {
             Action::Proxy => {
                 let config = self.candidates.lock().first().cloned().unwrap();
-                let stream =
-                    ProxyTcpStream::connect(remote_addr, Some(&config), self.dns_client.clone())
-                        .await;
+                let stream = ProxyTcpStream::connect(
+                    remote_addr.clone(),
+                    Some(&config),
+                    self.dns_client.clone(),
+                )
+                .await;
                 if stream.is_err() {
-                    self.take_down_current_and_move_next();
+                    tracing::error!(
+                        ?remote_addr,
+                        ?action,
+                        "Failed to connect to server: {}",
+                        config.addr()
+                    );
+                    self.take_down_server_and_move_next(&config);
                 }
                 stream?
             }
             Action::Direct => {
-                ProxyTcpStream::connect(remote_addr, None, self.dns_client.clone()).await?
+                let ret =
+                    ProxyTcpStream::connect(remote_addr.clone(), None, self.dns_client.clone())
+                        .await;
+                if ret.is_err() {
+                    tracing::error!(?remote_addr, ?action, "Failed to connect to server");
+                }
+                ret?
             }
             _ => unreachable!(),
         };
@@ -94,7 +109,7 @@ impl ServerChooser {
                 let config = self.candidates.lock().first().cloned().unwrap();
                 let socket = ProxyUdpSocket::new(Some(&config), self.dns_client.clone()).await;
                 if socket.is_err() {
-                    self.take_down_current_and_move_next();
+                    self.take_down_server_and_move_next(&config);
                 }
                 socket?
             }
@@ -105,18 +120,19 @@ impl ServerChooser {
         Ok(socket)
     }
 
-    pub fn take_down_current_and_move_next(&self) {
+    pub fn take_down_server_and_move_next(&self, server: &ServerConfig) {
         // make sure `candidates` drop after block ends to avoid deadlock.
         let mut candidates = self.candidates.lock();
         if candidates.len() <= 1 {
+            tracing::error!("Only 1 shadowsocks server available, all servers are down");
             return;
         }
-        let removed = candidates.remove(0);
-        self.set_server_down(&removed);
+        candidates.retain_mut(|c| c != server);
+        self.set_server_down(&server);
         let new = &candidates[0];
         info!(
-            old_name = removed.name(),
-            old_server = ?removed.addr(),
+            old_name = server.name(),
+            old_server = ?server.addr(),
             new_name = new.name(),
             new_server = ?new.addr(),
             "Change shadowsocks server"
@@ -200,7 +216,7 @@ impl ServerChooser {
                         latency = %duration.as_millis(),
                         "Ping shadowsocks server"
                     );
-                    candidates.push(config);
+                    candidates.push((config, duration));
                 }
                 Err(config) => {
                     info!(
@@ -212,7 +228,9 @@ impl ServerChooser {
             }
         }
         if !candidates.is_empty() {
-            *self.candidates.lock() = candidates;
+            // sort by duration, shorter first.
+            candidates.sort_by_key(|(_, duration)| *duration);
+            *self.candidates.lock() = candidates.into_iter().map(|(config, _)| config).collect();
         }
     }
 
