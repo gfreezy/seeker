@@ -71,7 +71,7 @@ impl ProxyUdpSocket {
         if !self.alive.load(Ordering::SeqCst) {
             return Err(Error::new(
                 ErrorKind::BrokenPipe,
-                "ProxyTcpStream not alive",
+                "ProxyUdpSocket not alive",
             ));
         }
         match &self.inner {
@@ -85,7 +85,7 @@ impl ProxyUdpSocket {
         if !self.alive.load(Ordering::SeqCst) {
             return Err(Error::new(
                 ErrorKind::BrokenPipe,
-                "ProxyTcpStream not alive",
+                "ProxyUdpSocket not alive",
             ));
         }
         match &self.inner {

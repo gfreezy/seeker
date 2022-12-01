@@ -74,7 +74,7 @@ impl DnsNetworkClient {
         };
 
         let c = client.clone();
-        let _ = task::spawn(
+        let _ = task::spawn(async {
             async move {
                 loop {
                     match c.run().await {
@@ -85,8 +85,9 @@ impl DnsNetworkClient {
                     }
                 }
             }
-            .instrument(trace_span!("background dns runner")),
-        );
+            .instrument(trace_span!("background dns runner"))
+            .await
+        });
         client
     }
 
