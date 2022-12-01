@@ -2,7 +2,9 @@ use file_rotate::{suffix::AppendTimestamp, FileRotate};
 use std::io;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use tracing_subscriber::{EnvFilter, FmtSubscriber};
+use tracing_chrome::{ChromeLayerBuilder, FlushGuard};
+use tracing_subscriber::prelude::*;
+use tracing_subscriber::{EnvFilter, Layer, Registry};
 
 #[derive(Clone)]
 struct TracingWriter {
@@ -27,14 +29,18 @@ impl io::Write for TracingWriter {
     }
 }
 
-pub fn setup_logger(log_path: Option<&str>) -> anyhow::Result<()> {
+pub(crate) struct LoggerGuard {
+    _chrome_layer_guard: Option<FlushGuard>,
+}
+
+pub(crate) fn setup_logger(log_path: Option<&str>) -> anyhow::Result<LoggerGuard> {
     let env_filter = EnvFilter::new("seeker=trace")
         .add_directive("dnsserver=debug".parse()?)
         .add_directive("seeker=trace".parse()?)
         .add_directive("sysconfig=info".parse()?)
         .add_directive("tun_nat=info".parse()?);
 
-    if let Some(log_path) = log_path {
+    let chrome_layer_guard = if let Some(log_path) = log_path {
         if let Some(path) = PathBuf::from(log_path).parent() {
             std::fs::create_dir_all(path)?;
         }
@@ -46,21 +52,27 @@ pub fn setup_logger(log_path: Option<&str>) -> anyhow::Result<()> {
             #[cfg(unix)]
             None,
         )));
-        let my_subscriber = FmtSubscriber::builder()
-            .with_env_filter(env_filter)
+
+        let fmt_layer = tracing_subscriber::fmt::layer()
             .with_ansi(false)
             .with_writer(move || TracingWriter::new(logger.clone()))
-            .finish();
-        tracing::subscriber::set_global_default(my_subscriber)
-            .expect("setting tracing default failed");
-    } else {
-        let subscriber = FmtSubscriber::builder()
-            .with_env_filter(env_filter)
-            .compact()
-            .finish();
+            .and_then(env_filter);
 
-        tracing::subscriber::set_global_default(subscriber)
-            .expect("setting tracing default failed");
+        let (chrome_layer, guard) = ChromeLayerBuilder::new()
+            .include_args(true)
+            .trace_style(tracing_chrome::TraceStyle::Async)
+            .build();
+
+        let registry = Registry::default().with(fmt_layer).with(chrome_layer);
+
+        tracing::subscriber::set_global_default(registry).expect("setting tracing default failed");
+        Some(guard)
+    } else {
+        None
+    };
+
+    let guard = LoggerGuard {
+        _chrome_layer_guard: chrome_layer_guard,
     };
 
     // #[cfg(debug_assertions)]
@@ -88,5 +100,5 @@ pub fn setup_logger(log_path: Option<&str>) -> anyhow::Result<()> {
             }
         });
     } // only for #[cfg]
-    Ok(())
+    Ok(guard)
 }

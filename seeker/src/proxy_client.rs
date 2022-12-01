@@ -134,8 +134,13 @@ impl ProxyClient {
             .await,
         );
         let chooser_clone = chooser.clone();
-        let chooser_join_handle =
-            spawn(async move { chooser_clone.run_background_tasks().await.unwrap() });
+        let chooser_join_handle = spawn(async move {
+            chooser_clone
+                .run_background_tasks()
+                .instrument(tracing::trace_span!("ServerChooser.run_background_tasks"))
+                .await
+                .unwrap()
+        });
 
         Self {
             resolver,
@@ -240,7 +245,10 @@ impl ProxyClient {
         let listener = TcpListener::bind((self.config.tun_ip, 1300)).await?;
         let mut incoming = listener.incoming();
         while let Some(Ok(conn)) = incoming.next().await {
-            let peer_addr = conn.peer_addr()?;
+            let peer_addr = conn.peer_addr().map_err(|e| {
+                tracing::error!(?e, "tunnel tcp stream");
+                e
+            })?;
             trace!(peer_addr = ?peer_addr, "new connection");
             let session_port = peer_addr.port();
             let (real_src, real_dest) = match self.session_manager.get_by_port(session_port) {
@@ -260,52 +268,49 @@ impl ProxyClient {
 
             trace!(dest_host = ?host, "new relay connection");
 
-            async {
-                let sock_addr = match self.dns_client.lookup_address(&host).await {
-                    Ok(a) => a,
-                    Err(e) => {
-                        error!(?e, ?host, "error resolve dns");
-                        return;
-                    }
-                };
+            let sock_addr = match self
+                .dns_client
+                .lookup_address(&host)
+                .instrument(tracing::trace_span!("lookup_address", ?host))
+                .await
+            {
+                Ok(a) => a,
+                Err(e) => {
+                    error!(?e, ?host, "error resolve dns");
+                    continue;
+                }
+            };
 
-                trace!(ip = ?ip, host = ?host, "lookup host");
+            trace!(ip = ?ip, host = ?host, "lookup host");
 
-                match self
-                    .choose_proxy_tcp_stream(real_src, sock_addr, &host)
-                    .await
-                {
-                    Ok(remote_conn) => {
-                        trace!("connect successfully");
-                        let session_manager = self.session_manager.clone();
-                        let read_timeout = self.config.read_timeout;
-                        let write_timeout = self.config.write_timeout;
-                        spawn(async move {
-                            let _ = tunnel_tcp_stream(
-                                conn,
-                                remote_conn.clone(),
-                                session_manager,
-                                session_port,
-                                read_timeout,
-                                write_timeout,
-                            )
-                            .await;
-                            remote_conn.shutdown();
-                        });
-                    }
-                    Err(e) => {
-                        error!(?host, ?e, "connect remote error");
-                    }
-                };
-            }
-            .instrument(trace_span!(
-                "tcp connection",
-                ?peer_addr,
-                ?real_src,
-                ?real_dest,
-                ?host
-            ))
-            .await
+            match self
+                .choose_proxy_tcp_stream(real_src, sock_addr, &host)
+                .instrument(tracing::trace_span!("choose_proxy_tcp_stream", ?host))
+                .await
+            {
+                Ok(remote_conn) => {
+                    trace!("connect successfully");
+                    let session_manager = self.session_manager.clone();
+                    let read_timeout = self.config.read_timeout;
+                    let write_timeout = self.config.write_timeout;
+                    spawn(async move {
+                        let _ = tunnel_tcp_stream(
+                            conn,
+                            remote_conn.clone(),
+                            session_manager,
+                            session_port,
+                            read_timeout,
+                            write_timeout,
+                        )
+                        .instrument(tracing::trace_span!("tunnel_tcp_stream", ?host))
+                        .await;
+                        remote_conn.shutdown();
+                    });
+                }
+                Err(e) => {
+                    error!(?host, ?e, "connect remote error");
+                }
+            };
         }
         Ok::<(), io::Error>(())
     }
@@ -316,7 +321,17 @@ impl ProxyClient {
         let nat_join_handle = self.nat_join_handle.take();
         let ret = self
             .run_tcp_relay_server()
-            .race(self.run_udp_relay_server())
+            .instrument(tracing::trace_span!("ProxyClient.run_tcp_relay_server"))
+            .race(async {
+                let ret = self
+                    .run_udp_relay_server()
+                    .instrument(tracing::trace_span!("ProxyClient.run_udp_relay_server"))
+                    .await;
+                if let Err(e) = &ret {
+                    tracing::error!(?e, "run udp relay server error");
+                }
+                ret
+            })
             .race(async move {
                 if let Some(chooser_join_handle) = chooser_join_handle {
                     chooser_join_handle.await
@@ -381,7 +396,10 @@ impl ProxyClient {
         let write_timeout = self.config.write_timeout;
         let mut buf = vec![0; 2000];
         loop {
-            let (size, peer_addr) = udp_listener.recv_from(&mut buf).await?;
+            let (size, peer_addr) = udp_listener.recv_from(&mut buf).await.map_err(|e| {
+                error!(?e, "udp recv error");
+                e
+            })?;
             assert!(size < 2000);
             let session_port = peer_addr.port();
             let (socket, dest_addr) = match self.get_udp_socket_and_dest_addr(session_port) {
@@ -470,6 +488,9 @@ async fn tunnel_tcp_stream<T1: Read + Write + Unpin + Clone, T2: Read + Write + 
         }
     };
     let ret = f1.race(f2).await;
+    if let Err(e) = &ret {
+        tracing::error!(?e, "tunnel tcp stream");
+    }
     session_manager.recycle_port(session_port);
     ret
 }
@@ -488,11 +509,12 @@ async fn run_dns_resolver(
     )
     .await;
     println!("Spawn DNS server");
-    let handle = spawn(
+    let handle = spawn(async {
         dns_server
             .run_server()
-            .instrument(trace_span!("dns_server.run_server")),
-    );
+            .instrument(trace_span!("Dns_server.run_server"))
+            .await
+    });
     (resolver, handle)
 }
 

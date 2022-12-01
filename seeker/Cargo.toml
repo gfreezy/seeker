@@ -12,6 +12,7 @@ tracing-subscriber = { version = "0.3.15", features = ["env-filter"] }
 tracing-futures = { version = "0.2.5", features = [
     "std-future",
 ], default-features = false }
+tracing-chrome = "0.7"
 config = { path = "../config" }
 dnsserver = { path = "../dnsserver" }
 ssclient = { path = "../ssclient" }

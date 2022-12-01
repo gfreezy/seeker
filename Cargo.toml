@@ -21,3 +21,6 @@ incremental = false
 [workspace.metadata.workspaces]
 no_individual_tags = true
 independent = false
+
+[patch.crates-io]
+tracing-chrome = { path = "../../tracing-chrome" }
