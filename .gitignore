@@ -10,3 +10,4 @@ config.yml
 /ci/docker/*/stage/
 *.log
 *.log.*
+trace-*.json
