@@ -19,7 +19,7 @@ use std::io::Result;
 use std::io::{self, ErrorKind};
 use std::sync::Arc;
 use std::time::Duration;
-use tracing::{error, trace, trace_span};
+use tracing::{error, instrument, trace, trace_span};
 use tracing_futures::Instrument;
 use tun_nat::{run_nat, SessionManager};
 
@@ -158,6 +158,7 @@ impl ProxyClient {
         }
     }
 
+    #[instrument(skip(self, original_addr, socket_addr), ret)]
     async fn get_action_for_addr(
         &self,
         original_addr: SocketAddr,
@@ -200,6 +201,7 @@ impl ProxyClient {
         Ok(action)
     }
 
+    #[instrument(skip(self, original_addr, sock_addr))]
     async fn choose_proxy_tcp_stream(
         &self,
         original_addr: SocketAddr,

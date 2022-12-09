@@ -80,6 +80,7 @@ impl DnsClient {
             .ok_or_else(|| Error::new(ErrorKind::NotFound, format!("{} not resolved", domain)))
     }
 
+    #[tracing::instrument(skip(self))]
     pub async fn lookup_address(&self, addr: &Address) -> Result<SocketAddr> {
         match addr {
             Address::SocketAddress(a) => Ok(*a),

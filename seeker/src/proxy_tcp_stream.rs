@@ -38,6 +38,7 @@ pub struct ProxyTcpStream {
 }
 
 impl ProxyTcpStream {
+    #[tracing::instrument(skip(config, dns_client))]
     pub async fn connect(
         remote_addr: Address,
         config: Option<&ServerConfig>,
