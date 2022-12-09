@@ -128,7 +128,7 @@ impl ServerChooser {
             return;
         }
         candidates.retain_mut(|c| c != server);
-        self.set_server_down(&server);
+        self.set_server_down(server);
         let new = &candidates[0];
         info!(
             old_name = server.name(),
