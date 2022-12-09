@@ -1992,6 +1992,7 @@ dependencies = [
 [[package]]
 name = "tracing-chrome"
 version = "0.7.0"
+source = "git+https://github.com/gfreezy/tracing-chrome?rev=2a3dbfe#2a3dbfef47ab240edeac995da929f5d7bd9339f3"
 dependencies = [
  "json",
  "tracing-core",
