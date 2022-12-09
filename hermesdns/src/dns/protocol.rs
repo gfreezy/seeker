@@ -481,19 +481,20 @@ impl DnsRecord {
                 ref data,
                 ttl: TransientTtl(ttl),
             } => {
+                assert!(data.len() < u8::MAX as usize);
                 buffer.write_qname(domain)?;
                 buffer.write_u16(QueryType::TXT.to_num())?;
                 buffer.write_u16(1)?;
                 buffer.write_u32(ttl)?;
-                buffer.write_u16(data.len() as u16)?;
-
+                buffer.write_u16((data.len() + 1) as u16)?;
+                buffer.write_u8(data.len() as u8)?;
                 for b in data.as_bytes() {
                     buffer.write_u8(*b)?;
                 }
             }
             DnsRecord::OPT { .. } => {}
             DnsRecord::UNKNOWN { .. } => {
-                println!("Skipping record: {:?}", self);
+                tracing::warn!("Skipping record: {:?}", self);
             }
         }
 
@@ -885,6 +886,22 @@ impl DnsPacket {
         }
 
         None
+    }
+
+    pub fn get_txt(&self) -> Option<String> {
+        let mut s = String::new();
+        let mut has_txt = false;
+        self.answers.iter().for_each(|answer| {
+            if let DnsRecord::TXT { data, .. } = answer {
+                s.push_str(data);
+                has_txt = true;
+            }
+        });
+        if has_txt {
+            Some(s)
+        } else {
+            None
+        }
     }
 
     pub fn get_first_a(&self) -> Option<String> {
