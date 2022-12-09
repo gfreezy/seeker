@@ -79,11 +79,20 @@ fn main() -> anyhow::Result<()> {
                 .help("Log file")
                 .required(false),
         )
+        .arg(
+            Arg::new("trace")
+                .short('t')
+                .long("trace")
+                .action(ArgAction::SetTrue)
+                .help("Write a trace log")
+                .required(false),
+        )
         .get_matches();
 
     let path = matches.get_one::<String>("config").map(String::as_ref);
     let key = matches.get_one::<String>("key").map(String::as_ref);
     let to_encrypt = matches.get_flag("encrypt");
+    let to_trace = matches.get_flag("trace");
     if to_encrypt {
         println!(
             "Encrypted content is as below:\n\n\n{}\n\n",
@@ -97,7 +106,7 @@ fn main() -> anyhow::Result<()> {
     let uid = matches.get_one::<u32>("user_id").copied();
     let log_path = matches.get_one::<String>("log").map(String::as_ref);
 
-    let _guard = setup_logger(log_path)?;
+    let _guard = setup_logger(log_path, to_trace)?;
 
     let mut signals = Signals::new(vec![libc::SIGINT, libc::SIGTERM]).unwrap();
 

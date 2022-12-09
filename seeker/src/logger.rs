@@ -33,7 +33,7 @@ pub(crate) struct LoggerGuard {
     _chrome_layer_guard: Option<FlushGuard>,
 }
 
-pub(crate) fn setup_logger(log_path: Option<&str>) -> anyhow::Result<LoggerGuard> {
+pub(crate) fn setup_logger(log_path: Option<&str>, trace: bool) -> anyhow::Result<LoggerGuard> {
     let env_filter = EnvFilter::new("seeker=trace")
         .add_directive("dnsserver=debug".parse()?)
         .add_directive("seeker=trace".parse()?)
@@ -53,20 +53,33 @@ pub(crate) fn setup_logger(log_path: Option<&str>) -> anyhow::Result<LoggerGuard
             None,
         )));
 
-        let fmt_layer = tracing_subscriber::fmt::layer()
-            .with_ansi(false)
-            .with_writer(move || TracingWriter::new(logger.clone()))
-            .and_then(env_filter);
+        if trace {
+            let fmt_layer = tracing_subscriber::fmt::layer()
+                .with_ansi(false)
+                .with_writer(move || TracingWriter::new(logger.clone()))
+                .and_then(env_filter);
 
-        let (chrome_layer, guard) = ChromeLayerBuilder::new()
-            .include_args(true)
-            .trace_style(tracing_chrome::TraceStyle::Async)
-            .build();
+            let (chrome_layer, guard) = ChromeLayerBuilder::new()
+                .include_args(true)
+                .trace_style(tracing_chrome::TraceStyle::Async)
+                .build();
 
-        let registry = Registry::default().with(fmt_layer).with(chrome_layer);
+            let registry = Registry::default().with(fmt_layer).with(chrome_layer);
 
-        tracing::subscriber::set_global_default(registry).expect("setting tracing default failed");
-        Some(guard)
+            tracing::subscriber::set_global_default(registry)
+                .expect("setting tracing default failed");
+            Some(guard)
+        } else {
+            let fmt_layer = tracing_subscriber::fmt::layer()
+                .with_ansi(false)
+                .with_writer(move || TracingWriter::new(logger.clone()))
+                .and_then(env_filter);
+            let registry = Registry::default().with(fmt_layer);
+
+            tracing::subscriber::set_global_default(registry)
+                .expect("setting tracing default failed");
+            None
+        }
     } else {
         None
     };

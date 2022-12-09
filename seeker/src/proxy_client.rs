@@ -37,6 +37,7 @@ impl ProbeConnectivity {
         }
     }
 
+    #[instrument(skip(sock_addr, timeout))]
     async fn force_probe_connectivity(
         sock_addr: SocketAddr,
         addr: &Address,
@@ -239,6 +240,7 @@ impl ProxyClient {
         .await
     }
 
+    #[instrument(skip(self, sock_addr))]
     async fn probe_connectivity(&self, sock_addr: SocketAddr, addr: &Address) -> bool {
         self.connectivity.probe_connectivity(sock_addr, addr).await
     }
