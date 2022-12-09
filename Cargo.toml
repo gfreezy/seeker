@@ -23,4 +23,4 @@ no_individual_tags = true
 independent = false
 
 [patch.crates-io]
-tracing-chrome = { path = "../../tracing-chrome" }
+tracing-chrome = { git = "https://github.com/gfreezy/tracing-chrome", rev = "2a3dbfe" }
