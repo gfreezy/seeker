@@ -1,4 +1,4 @@
 #!/bin/sh
 apt-get update
 apt-get install -y --no-install-recommends \
-    libssl-dev xz-utils liblz4-tool musl-tools
+    libssl-dev xz-utils liblz4-tool
