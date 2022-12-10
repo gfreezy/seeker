@@ -7,11 +7,12 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-tracing = "0.1.36"
+tracing = { version = "0.1.36", features = ["attributes"] }
 tracing-subscriber = { version = "0.3.15", features = ["env-filter"] }
 tracing-futures = { version = "0.2.5", features = [
     "std-future",
 ], default-features = false }
+tracing-chrome = "0.7"
 config = { path = "../config" }
 dnsserver = { path = "../dnsserver" }
 ssclient = { path = "../ssclient" }
