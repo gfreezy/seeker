@@ -36,29 +36,21 @@ impl ProxyRules {
     }
 
     pub fn action_for_domain(&self, domain: &str) -> Option<Action> {
-        self.rules
-            .iter()
-            .filter_map(|rule| match rule {
-                Rule::Domain(d, action) if d == domain => Some(*action),
-                Rule::DomainSuffix(d, action) if domain.ends_with(d) => Some(*action),
-                Rule::DomainKeyword(d, action) if domain.contains(d) => Some(*action),
-                Rule::Match(action) => Some(*action),
-                _ => None,
-            })
-            .take(1)
-            .next()
+        self.rules.iter().find_map(|rule| match rule {
+            Rule::Domain(d, action) if d == domain => Some(*action),
+            Rule::DomainSuffix(d, action) if domain.ends_with(d) => Some(*action),
+            Rule::DomainKeyword(d, action) if domain.contains(d) => Some(*action),
+            Rule::Match(action) => Some(*action),
+            _ => None,
+        })
     }
 
     #[allow(dead_code)]
     pub fn action_for_ip(&self, ip: Ipv4Addr) -> Option<Action> {
-        self.rules
-            .iter()
-            .filter_map(|rule| match rule {
-                Rule::IpCidr(cidr, action) if cidr.contains_addr(&ip.into()) => Some(*action),
-                _ => None,
-            })
-            .take(1)
-            .next()
+        self.rules.iter().find_map(|rule| match rule {
+            Rule::IpCidr(cidr, action) if cidr.contains_addr(&ip.into()) => Some(*action),
+            _ => None,
+        })
     }
 
     pub fn default_action(&self) -> Action {

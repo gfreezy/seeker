@@ -58,6 +58,7 @@ impl ServerChooser {
             .retain(|stream| stream.strong_count() > 1);
     }
 
+    #[tracing::instrument(skip(self))]
     pub async fn candidate_tcp_stream(
         &self,
         remote_addr: Address,

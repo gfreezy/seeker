@@ -7,6 +7,7 @@ use crate::dns::resolve::DnsResolver;
 use async_std::net::UdpSocket;
 use async_std::task::spawn;
 use std::sync::Arc;
+use tracing::Instrument;
 
 macro_rules! return_or_report {
     ( $x:expr, $message:expr ) => {
@@ -180,38 +181,43 @@ impl DnsUdpServer {
 
             let context = self.context.clone();
             let socket_clone = socket.clone();
-
             spawn(async move {
-                // Parse it
-                let request = return_or_report!(
-                    DnsPacket::from_buffer(&mut req_buffer),
-                    "failed to parse packet"
-                );
+                async move {
+                    // Parse it
+                    let request = return_or_report!(
+                        DnsPacket::from_buffer(&mut req_buffer),
+                        "failed to parse packet"
+                    );
 
-                let mut size_limit = 512;
+                    let mut size_limit = 512;
 
-                // Check for EDNS
-                if request.resources.len() == 1 {
-                    if let DnsRecord::OPT { packet_len, .. } = request.resources[0] {
-                        size_limit = packet_len as usize;
+                    // Check for EDNS
+                    if request.resources.len() == 1 {
+                        if let DnsRecord::OPT { packet_len, .. } = request.resources[0] {
+                            size_limit = packet_len as usize;
+                        }
                     }
+
+                    // Create a response buffer, and ask the context for an appropriate
+                    // resolver
+                    let mut res_buffer = VectorPacketBuffer::new();
+
+                    let mut packet = execute_query(context, &request).await;
+                    let _ = packet.write(&mut res_buffer, size_limit);
+
+                    // Fire off the response
+                    let len = res_buffer.pos();
+                    let data = return_or_report!(
+                        res_buffer.get_range(0, len),
+                        "Failed to get buffer data"
+                    );
+                    ignore_or_report!(
+                        socket_clone.send_to(data, src).await,
+                        "Failed to send response packet"
+                    );
                 }
-
-                // Create a response buffer, and ask the context for an appropriate
-                // resolver
-                let mut res_buffer = VectorPacketBuffer::new();
-
-                let mut packet = execute_query(context, &request).await;
-                let _ = packet.write(&mut res_buffer, size_limit);
-
-                // Fire off the response
-                let len = res_buffer.pos();
-                let data =
-                    return_or_report!(res_buffer.get_range(0, len), "Failed to get buffer data");
-                ignore_or_report!(
-                    socket_clone.send_to(data, src).await,
-                    "Failed to send response packet"
-                );
+                .instrument(tracing::trace_span!("udp_server"))
+                .await
             });
         }
     }

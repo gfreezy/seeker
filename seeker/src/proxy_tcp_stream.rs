@@ -38,6 +38,7 @@ pub struct ProxyTcpStream {
 }
 
 impl ProxyTcpStream {
+    #[tracing::instrument(skip(config, dns_client))]
     pub async fn connect(
         remote_addr: Address,
         config: Option<&ServerConfig>,
@@ -45,9 +46,9 @@ impl ProxyTcpStream {
     ) -> Result<ProxyTcpStream> {
         let remote_addr_clone = remote_addr.clone();
         let stream = if let Some(config) = config {
+            let proxy_socket_addr = dns_client.lookup_address(config.addr()).await?;
             match config.protocol() {
                 ServerProtocol::Https => {
-                    let proxy_socket_addr = dns_client.lookup_address(config.addr()).await?;
                     let proxy_hostname = match config.addr().hostname() {
                         None => {
                             return Err(Error::new(
@@ -68,27 +69,19 @@ impl ProxyTcpStream {
                         .await?,
                     )
                 }
-                ServerProtocol::Http => {
-                    let proxy_socket_addr = dns_client.lookup_address(config.addr()).await?;
-                    ProxyTcpStreamInner::HttpProxy(
-                        HttpProxyTcpStream::connect(
-                            proxy_socket_addr,
-                            remote_addr,
-                            config.username(),
-                            config.password(),
-                        )
-                        .await?,
+                ServerProtocol::Http => ProxyTcpStreamInner::HttpProxy(
+                    HttpProxyTcpStream::connect(
+                        proxy_socket_addr,
+                        remote_addr,
+                        config.username(),
+                        config.password(),
                     )
-                }
-                ServerProtocol::Socks5 => {
-                    let proxy_socket_addr = dns_client.lookup_address(config.addr()).await?;
-
-                    ProxyTcpStreamInner::Socks5(
-                        Socks5TcpStream::connect(proxy_socket_addr, remote_addr).await?,
-                    )
-                }
+                    .await?,
+                ),
+                ServerProtocol::Socks5 => ProxyTcpStreamInner::Socks5(
+                    Socks5TcpStream::connect(proxy_socket_addr, remote_addr).await?,
+                ),
                 ServerProtocol::Shadowsocks => {
-                    let proxy_socket_addr = dns_client.lookup_address(config.addr()).await?;
                     let (method, key) = match (config.method(), config.key()) {
                         (Some(m), Some(k)) => (m, k),
                         _ => {
