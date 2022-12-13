@@ -3,13 +3,13 @@ macro_rules! retry_timeout {
         async {
             let mut retries: usize = $retries;
             loop {
-                let ret = timeout($timeout, $fut).await;
+                let ret = async_std::io::timeout($timeout, $fut).await;
                 match ret {
                     v @ Ok(_) => break v,
                     Err(e) if e.kind() == std::io::ErrorKind::TimedOut => {
                         tracing::warn!("retry_timeout: {}", $retries - retries);
                         if retries <= 0 {
-                            break Err(e);
+                            return Err(e);
                         }
                     }
                     e => {

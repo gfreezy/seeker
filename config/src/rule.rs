@@ -1,5 +1,5 @@
 use crate::parse_cidr;
-use smoltcp::wire::Ipv4Cidr;
+use smoltcp::wire::{Ipv4Address, Ipv4Cidr};
 use std::fmt::{self, Formatter};
 use std::net::Ipv4Addr;
 use std::str::FromStr;
@@ -35,11 +35,18 @@ impl ProxyRules {
         }
     }
 
-    pub fn action_for_domain(&self, domain: &str) -> Option<Action> {
+    pub fn action_for_domain(&self, domain_or_ip: &str) -> Option<Action> {
         self.rules.iter().find_map(|rule| match rule {
-            Rule::Domain(d, action) if d == domain => Some(*action),
-            Rule::DomainSuffix(d, action) if domain.ends_with(d) => Some(*action),
-            Rule::DomainKeyword(d, action) if domain.contains(d) => Some(*action),
+            Rule::Domain(d, action) if d == domain_or_ip => Some(*action),
+            Rule::DomainSuffix(d, action) if domain_or_ip.ends_with(d) => Some(*action),
+            Rule::DomainKeyword(d, action) if domain_or_ip.contains(d) => Some(*action),
+            Rule::IpCidr(cidr, action) => {
+                let ip = domain_or_ip.parse::<Ipv4Address>().ok()?;
+                if cidr.contains_addr(&ip) {
+                    return Some(*action);
+                }
+                None
+            }
             Rule::Match(action) => Some(*action),
             _ => None,
         })
@@ -51,6 +58,13 @@ impl ProxyRules {
             Rule::IpCidr(cidr, action) if cidr.contains_addr(&ip.into()) => Some(*action),
             _ => None,
         })
+    }
+
+    pub fn prepend_rules(&mut self, rules: Vec<Rule>) {
+        let rules_mut = Arc::make_mut(&mut self.rules);
+        for rule in rules {
+            rules_mut.insert(0, rule);
+        }
     }
 
     pub fn default_action(&self) -> Action {
@@ -96,7 +110,7 @@ impl FromStr for Rule {
         let (rule, criteria, action) = match segments.len() {
             2 => (segments[0], "", segments[1]),
             3 => (segments[0], segments[1], segments[2]),
-            _ => unreachable!(),
+            _ => unreachable!("{}", s),
         };
 
         Ok(match rule {
