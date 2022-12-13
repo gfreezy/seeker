@@ -41,6 +41,7 @@ impl SSUdpSocket {
             key,
         })
     }
+
     pub fn bind(socket: UdpSocket, method: CipherType, key: Bytes) -> SSUdpSocket {
         SSUdpSocket {
             socket,
