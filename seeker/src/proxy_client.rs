@@ -2,6 +2,7 @@ use crate::dns_client::DnsClient;
 use crate::probe_connectivity::ProbeConnectivity;
 use crate::proxy_udp_socket::ProxyUdpSocket;
 use crate::relay_tcp_stream::relay_tcp_stream;
+use crate::relay_udp_socket::relay_udp_socket;
 use crate::server_chooser::ServerChooser;
 use async_std::io::timeout;
 use async_std::net::{SocketAddr, TcpListener, UdpSocket};
@@ -26,7 +27,7 @@ pub struct ProxyClient {
     uid: Option<u32>,
     connectivity: ProbeConnectivity,
     session_manager: SessionManager,
-    udp_manager: Arc<RwLock<HashMap<u16, (ProxyUdpSocket, SocketAddr)>>>,
+    udp_manager: Arc<RwLock<HashMap<u16, (ProxyUdpSocket, SocketAddr, Address)>>>,
     resolver: RuleBasedDnsResolver,
     dns_client: DnsClient,
     server_chooser: Arc<ServerChooser>,
@@ -88,30 +89,6 @@ impl ProxyClient {
             dns_server_join_handle: Some(dns_server_join_handle),
             chooser_join_handle: Some(chooser_join_handle),
         }
-    }
-
-    async fn choose_proxy_udp_socket(
-        &self,
-        original_addr: SocketAddr,
-        sock_addr: SocketAddr,
-        remote_addr: &Address,
-    ) -> Result<ProxyUdpSocket> {
-        let action = get_action_for_addr(
-            original_addr,
-            sock_addr,
-            remote_addr,
-            &self.config,
-            &self.connectivity,
-            self.uid,
-        )
-        .await?;
-
-        retry_timeout!(
-            self.config.connect_timeout,
-            self.config.max_connect_errors,
-            self.server_chooser.candidate_udp_socket(action)
-        )
-        .await
     }
 
     async fn run_tcp_relay_server(&self) -> Result<()> {
@@ -183,50 +160,45 @@ impl ProxyClient {
         ret.expect("run");
     }
 
-    fn get_udp_socket_and_dest_addr(&self, port: u16) -> Option<(ProxyUdpSocket, SocketAddr)> {
-        let (real_src, real_dest) = self.session_manager.get_by_port(port)?;
-        trace!(?real_src, ?real_dest, "new udp relay packet");
-
-        self.udp_manager.read().get(&port).cloned()
-    }
-
-    async fn new_udp_socket(&self, port: u16) -> Result<(ProxyUdpSocket, SocketAddr)> {
-        let (real_src, real_dest) = match self.session_manager.get_by_port(port) {
-            Some(s) => s,
-            None => {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    "session manager not found port",
-                ))
-            }
-        };
-
-        trace!(?real_src, ?real_dest, "new udp relay packet");
+    async fn get_proxy_udp_socket(
+        &self,
+        tun_socket: Arc<UdpSocket>,
+        tun_addr: SocketAddr,
+    ) -> Result<(ProxyUdpSocket, SocketAddr, Address)> {
+        let port = tun_addr.port();
+        if !self.session_manager.update_activity_for_port(port) {
+            self.udp_manager.write().remove(&port);
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::ConnectionAborted,
+                "port recycled",
+            ));
+        }
 
         if let Some(r) = self.udp_manager.read().get(&port) {
             return Ok(r.clone());
         }
 
-        let ip = real_dest.ip().to_string();
-        let host = self
-            .resolver
-            .lookup_host(&ip)
-            .map(|s| Address::DomainNameAddress(s, real_dest.port()))
-            .unwrap_or_else(|| Address::SocketAddress(real_dest));
-        let sock_addr = self.dns_client.lookup_address(&host).await?;
-        let socket = self
-            .choose_proxy_udp_socket(real_src, sock_addr, &host)
-            .await?;
+        let (proxy_udp_socket, real_dest, host) = relay_udp_socket(
+            tun_socket,
+            tun_addr,
+            self.session_manager.clone(),
+            self.resolver.clone(),
+            self.dns_client.clone(),
+            self.config.clone(),
+            self.server_chooser.clone(),
+            self.connectivity.clone(),
+            self.uid,
+        )
+        .await?;
+
         self.udp_manager
             .write()
-            .insert(port, (socket.clone(), sock_addr));
-        Ok((socket, sock_addr))
+            .insert(port, (proxy_udp_socket.clone(), real_dest, host.clone()));
+        Ok((proxy_udp_socket, real_dest, host))
     }
 
     async fn run_udp_relay_server(&self) -> Result<()> {
         let udp_listener = Arc::new(UdpSocket::bind("0.0.0.0:1300").await?);
-        let recv_timeout = self.config.read_timeout;
-        let write_timeout = self.config.write_timeout;
         let mut buf = vec![0; 2000];
         loop {
             let (size, peer_addr) = udp_listener.recv_from(&mut buf).await.map_err(|e| {
@@ -235,51 +207,25 @@ impl ProxyClient {
             })?;
             assert!(size < 2000);
             let session_port = peer_addr.port();
-            let (socket, dest_addr) = match self.get_udp_socket_and_dest_addr(session_port) {
-                None => {
-                    let (socket, dest_addr) = match self.new_udp_socket(session_port).await {
-                        Ok(r) => r,
-                        Err(e) => {
-                            error!(?e, "new udp socket");
-                            continue;
-                        }
-                    };
-                    let socket_clone = socket.clone();
-                    let udp_listener_clone = udp_listener.clone();
 
-                    let udp_manager = self.udp_manager.clone();
-                    let session_manager = self.session_manager.clone();
-                    spawn(async move {
-                        let _: Result<()> = async {
-                            let mut buf = vec![0; 2000];
-                            loop {
-                                session_manager.update_activity_for_port(session_port);
-                                let (recv_size, _peer) =
-                                    timeout(recv_timeout, socket_clone.recv_from(&mut buf)).await?;
-                                assert!(recv_size < 2000);
-                                let send_size = timeout(
-                                    write_timeout,
-                                    udp_listener_clone.send_to(&buf[..size], peer_addr),
-                                )
-                                .await?;
-                                assert_eq!(send_size, size);
-                            }
-                        }
-                        .await;
-                        let _ = udp_manager.write().remove(&peer_addr.port());
-                        session_manager.recycle_port(session_port);
-                    });
-                    (socket, dest_addr)
-                }
-                Some(r) => r,
-            };
-            match timeout(write_timeout, socket.send_to(&buf[..size], dest_addr)).await {
-                Ok(send_size) => {
-                    assert_eq!(size, send_size);
-                }
-                Err(e) => error!(?e, "send to {}", dest_addr),
-            };
-            self.session_manager.update_activity_for_port(session_port);
+            let tun_socket = udp_listener.clone();
+            let (proxy_udp_socket, real_dest, host) =
+                match self.get_proxy_udp_socket(tun_socket, peer_addr).await {
+                    Ok(r) => r,
+                    Err(e) => {
+                        error!(?e, "get proxy udp socket error: {:?}", e);
+                        continue;
+                    }
+                };
+            let ret = timeout(
+                self.config.write_timeout,
+                proxy_udp_socket.send_to(&buf[..size], real_dest),
+            )
+            .await;
+            if let Err(e) = ret {
+                error!("send udp packet error {}: {:?}", host, e);
+                self.session_manager.recycle_port(session_port);
+            }
         }
     }
 }

@@ -108,8 +108,10 @@ impl ServerChooser {
             Action::Direct => ProxyUdpSocket::new(None, self.dns_client.clone()).await?,
             Action::Proxy => {
                 let config = self.candidates.lock().first().cloned().unwrap();
+                tracing::info!("Using server: {}", config.addr());
                 let socket = ProxyUdpSocket::new(Some(&config), self.dns_client.clone()).await;
                 if socket.is_err() {
+                    tracing::info!("Failed to connect to server: {}", config.addr());
                     self.take_down_server_and_move_next(&config);
                 }
                 socket?
