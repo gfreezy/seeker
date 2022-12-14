@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::Result;
 use async_std::io::{timeout, Read, Write};
 use async_std::net::TcpStream;
 use async_std::prelude::*;
@@ -7,7 +7,7 @@ use dnsserver::resolver::RuleBasedDnsResolver;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
-use tracing::{error, info, instrument, trace, Instrument};
+use tracing::{error, info, instrument, trace};
 use tun_nat::SessionManager;
 
 use crate::dns_client::DnsClient;
@@ -17,6 +17,8 @@ use crate::proxy_connection::ProxyConnection;
 use crate::proxy_tcp_stream::ProxyTcpStream;
 use crate::server_chooser::ServerChooser;
 
+#[allow(clippy::too_many_arguments)]
+#[instrument(skip_all)]
 pub(crate) async fn relay_tcp_stream(
     conn: TcpStream,
     session_manager: SessionManager,

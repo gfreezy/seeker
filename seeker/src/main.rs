@@ -14,8 +14,6 @@ mod relay_udp_socket;
 mod server_chooser;
 mod traffic;
 
-
-
 use std::time::Duration;
 
 use crate::logger::setup_logger;
@@ -25,7 +23,7 @@ use async_signals::Signals;
 use async_std::prelude::{FutureExt, StreamExt};
 use async_std::task::block_on;
 use clap::{Arg, ArgAction, Command};
-use config::{Config};
+use config::Config;
 use crypto::CipherType;
 use std::fs::File;
 use sysconfig::{set_rlimit_no_file, DNSSetup, IpForward};
