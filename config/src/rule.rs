@@ -35,11 +35,11 @@ pub struct ProxyRules {
 }
 
 impl ProxyRules {
-    pub fn new(rules: Vec<Rule>, geo_ip_path: Option<PathBuf>) -> Self {
+    pub fn new(rules: Vec<Rule>) -> Self {
         Self {
             rules: Arc::new(rules),
             geo_ip_db: Arc::new(Mutex::new(None)),
-            geo_ip_path,
+            geo_ip_path: None,
         }
     }
 

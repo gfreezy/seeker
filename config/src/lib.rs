@@ -147,7 +147,7 @@ mod rules {
             .into_iter()
             .map(|s| Rule::from_str(&s).unwrap())
             .collect();
-        Ok(ProxyRules::new(rs, None))
+        Ok(ProxyRules::new(rs))
     }
 }
 
