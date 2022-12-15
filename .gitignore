@@ -11,3 +11,4 @@ config.yml
 *.log
 *.log.*
 trace-*.json
+geoip.mmdb
