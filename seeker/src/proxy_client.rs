@@ -22,12 +22,14 @@ use tracing::{error, instrument, trace, trace_span};
 use tracing_futures::Instrument;
 use tun_nat::{run_nat, SessionManager};
 
+type UdpManager = Arc<RwLock<HashMap<u16, (ProxyUdpSocket, SocketAddr, Address)>>>;
+
 pub struct ProxyClient {
     config: Config,
     uid: Option<u32>,
     connectivity: ProbeConnectivity,
     session_manager: SessionManager,
-    udp_manager: Arc<RwLock<HashMap<u16, (ProxyUdpSocket, SocketAddr, Address)>>>,
+    udp_manager: UdpManager,
     resolver: RuleBasedDnsResolver,
     dns_client: DnsClient,
     server_chooser: Arc<ServerChooser>,
@@ -240,10 +242,12 @@ pub(crate) async fn get_action_for_addr(
     user_id: Option<u32>,
 ) -> Result<Action> {
     let mut pass_proxy = false;
-    let domain_or_ip = match &addr {
+    let (domain, ip) = match &addr {
         // 如果是 IP 说明是用户手动改了路由表，必须要走代理。
-        Address::SocketAddress(sock_addr) => sock_addr.ip().to_string(),
-        Address::DomainNameAddress(domain, _port) => domain.to_string(),
+        Address::SocketAddress(sock_addr) => (None, Some(sock_addr.ip())),
+        Address::DomainNameAddress(domain, _port) => {
+            (Some(domain.to_string()), Some(real_dest.ip()))
+        }
     };
     if let Some(uid) = user_id {
         if !socket_addr_belong_to_user(real_src, uid)? {
@@ -255,7 +259,7 @@ pub(crate) async fn get_action_for_addr(
     } else {
         config
             .rules
-            .action_for_domain(&domain_or_ip)
+            .action_for_domain(domain.as_deref(), ip)
             .unwrap_or_else(|| config.rules.default_action())
     };
 

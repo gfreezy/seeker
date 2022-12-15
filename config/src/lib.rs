@@ -10,6 +10,7 @@ use std::fs::File;
 use std::io;
 use std::io::{ErrorKind, Read};
 use std::net::Ipv4Addr;
+use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -21,6 +22,7 @@ pub struct Config {
     pub servers: Arc<Vec<ServerConfig>>,
     #[serde(default)]
     pub remote_config_urls: Vec<String>,
+    geo_ip: Option<PathBuf>,
     pub dns_start_ip: Ipv4Addr,
     pub dns_servers: Vec<DnsServerAddr>,
     pub tun_bypass_direct: bool,
@@ -145,7 +147,7 @@ mod rules {
             .into_iter()
             .map(|s| Rule::from_str(&s).unwrap())
             .collect();
-        Ok(ProxyRules::new(rs))
+        Ok(ProxyRules::new(rs, None))
     }
 }
 
@@ -175,6 +177,7 @@ impl Config {
         };
         conf.load_remote_servers();
         conf.add_proxy_servers_to_direct_rules();
+        conf.rules.set_geo_ip_path(conf.geo_ip.clone());
         Ok(conf)
     }
 

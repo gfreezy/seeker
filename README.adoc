@@ -101,6 +101,9 @@ probe_timeout: 200ms
 connect_timeout: 1s
 read_timeout: 30s
 write_timeout: 5s
+# geoip 数据库路径，如果使用相对路径，相对于可执行文件的路径。默认会搜索可执行文件同级目录下的 geoip.mmdb 文件
+# 可以从 https://github.com/Hackl0us/GeoIP2-CN 下载 mmdb 格式的文件
+geo_ip: path/to/geoip.mmdb
 
 max_connect_errors: 2  # ss 服务器重试次数，到达重试次数后会自动选择下一个最快的服务器
 ping_urls:
@@ -160,6 +163,7 @@ rules:
   - 'DOMAIN-SUFFIX,toutiao.com,PROBE'
   - 'IP-CIDR,19.23.212.0/16,PROXY'
   - 'IP-CIDR,19.23.21.0/16,PROBE'
+  - 'GEOIP,CN,DIRECT'
   - 'MATCH,PROBE'
 ----
 
