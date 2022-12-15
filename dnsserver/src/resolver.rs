@@ -187,7 +187,7 @@ impl RuleBasedDnsResolver {
 
         // direct traffic bypass tun.
         let bypass_direct = self.inner.bypass_direct;
-        match self.inner.rules.action_for_domain(domain) {
+        match self.inner.rules.action_for_domain(Some(domain), None) {
             // Return real ip when `bypass_direct` is true.
             Some(Action::Direct) if bypass_direct => {
                 return self.resolve_real(domain, qtype).await;
