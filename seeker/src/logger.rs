@@ -38,6 +38,7 @@ pub(crate) fn setup_logger(log_path: Option<&str>, trace: bool) -> anyhow::Resul
         .add_directive("dnsserver=debug".parse()?)
         .add_directive("seeker=trace".parse()?)
         .add_directive("sysconfig=info".parse()?)
+        .add_directive("config=info".parse()?)
         .add_directive("tun_nat=info".parse()?);
 
     let chrome_layer_guard = if let Some(log_path) = log_path {

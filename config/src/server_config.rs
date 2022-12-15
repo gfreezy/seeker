@@ -50,6 +50,7 @@ pub struct Obfs {
     pub mode: ObfsMode,
     pub host: String,
 }
+
 impl Obfs {
     fn new(mode: ObfsMode, to_string: String) -> Self {
         Obfs {
