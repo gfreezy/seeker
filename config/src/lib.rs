@@ -10,14 +10,19 @@ use std::fs::File;
 use std::io;
 use std::io::{ErrorKind, Read};
 use std::net::Ipv4Addr;
+use std::path::PathBuf;
+use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
+
+use crate::rule::Rule;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
     pub servers: Arc<Vec<ServerConfig>>,
     #[serde(default)]
     pub remote_config_urls: Vec<String>,
+    geo_ip: Option<PathBuf>,
     pub dns_start_ip: Ipv4Addr,
     pub dns_servers: Vec<DnsServerAddr>,
     pub tun_bypass_direct: bool,
@@ -162,25 +167,98 @@ impl Config {
     }
 
     pub fn from_reader<R: Read>(reader: R) -> io::Result<Self> {
-        let conf: Config = serde_yaml::from_reader(reader).expect("serde yaml deserialize error");
+        let mut conf: Config =
+            serde_yaml::from_reader(reader).expect("serde yaml deserialize error");
         if conf.servers.is_empty() {
             return Err(io::Error::new(
                 ErrorKind::InvalidData,
                 "servers can not be empty.",
             ));
         };
+        conf.load_remote_servers();
+        conf.add_proxy_servers_to_direct_rules();
+        conf.rules.set_geo_ip_path(conf.geo_ip.clone());
         Ok(conf)
     }
+
+    fn add_proxy_servers_to_direct_rules(&mut self) {
+        let mut rules = vec![];
+        for server in self.servers.iter() {
+            let rule = match server.addr() {
+                Address::SocketAddress(addr) => {
+                    let Ok(cidr) = Ipv4Cidr::from_str(&format!("{}/32", addr.ip())) else {
+                        tracing::error!("invalid cidr: {}", addr);
+                        continue;
+                    };
+                    Rule::IpCidr(cidr, rule::Action::Direct)
+                }
+                Address::DomainNameAddress(domain, _) => {
+                    Rule::Domain(domain.to_string(), rule::Action::Direct)
+                }
+            };
+            rules.push(rule);
+        }
+        self.rules.prepend_rules(rules);
+    }
+
+    fn load_remote_servers(&mut self) {
+        let remote_config = self.remote_config_urls.clone();
+        let servers = Arc::make_mut(&mut self.servers);
+        for url in remote_config {
+            let extra_servers = match read_servers_from_remote_config(&url) {
+                Ok(servers) => servers,
+                Err(e) => {
+                    println!("Load servers from remote config `{}` error: {}", url, e);
+                    continue;
+                }
+            };
+            servers.extend(extra_servers);
+        }
+    }
+}
+
+fn read_servers_from_remote_config(url: &str) -> io::Result<Vec<ServerConfig>> {
+    let mut data = Vec::new();
+    let _size = ureq::get(url)
+        .timeout(Duration::from_secs(5))
+        .call()
+        .map_err(|_| io::Error::new(io::ErrorKind::Other, "read remote config"))?
+        .into_reader()
+        .read_to_end(&mut data)?;
+    parse_remote_config_data(&data)
+}
+
+fn parse_remote_config_data(data: &[u8]) -> io::Result<Vec<ServerConfig>> {
+    let b64decoded =
+        base64::decode(data).map_err(|_e| io::Error::new(io::ErrorKind::Other, "b64decode"))?;
+    tracing::info!("b64decoded: {:?}", b64decoded);
+    let server_urls = b64decoded.split(|&c| c == b'\n');
+    let ret: Result<_, _> = server_urls
+        .filter_map(|url| std::str::from_utf8(url).ok())
+        .map(|s| s.trim())
+        .filter(|url| !url.is_empty())
+        .map(ServerConfig::from_str)
+        .collect();
+    ret.map_err(|_e| io::Error::new(io::ErrorKind::Other, "build server from url"))
 }
 
 #[cfg(test)]
 mod tests {
     use super::duration::parse_duration;
+    use super::*;
     use std::time::Duration;
 
     #[test]
     fn test_parse_duration() {
         assert_eq!(parse_duration("10s"), Ok(Duration::from_secs(10)));
         assert_eq!(parse_duration("8ms"), Ok(Duration::from_millis(8)));
+    }
+
+    #[test]
+    fn test_parse_remote_server() -> std::io::Result<()> {
+        let data = b"c3M6Ly9ZV1Z6TFRJMU5pMW5ZMjA2TVRFeEB0ZXN0LnNzLmNvbTozMDAwMi8/cGx1Z2luPW9iZnMtbG9jYWwlM0JvYmZzJTNEaHR0cCUzQm9iZnMtaG9zdCUzRHd3dy5taWNyb3NvZnQuY29tIyVFOSVBNiU5OSVFNiVCOCVBRi1CeVdhdmUrMDEKc3M6Ly9ZV1Z6TFRJMU5pMW5ZMjA2TVRFeEB0ZXN0LnNzLmNvbTozMDAwMy8/cGx1Z2luPW9iZnMtbG9jYWwlM0JvYmZzJTNEaHR0cCUzQm9iZnMtaG9zdCUzRHd3dy5taWNyb3NvZnQuY29tIyVFOSVBNiU5OSVFNiVCOCVBRi1CeVdhdmUrMDIKc3M6Ly9ZV1Z6TFRJMU5pMW5ZMjA2TVRFeEB0ZXN0LnNzLmNvbTozMDAxMi8/cGx1Z2luPW9iZnMtbG9jYWwlM0JvYmZzJTNEaHR0cCUzQm9iZnMtaG9zdCUzRHd3dy5taWNyb3NvZnQuY29tIyVFOSVBNiU5OSVFNiVCOCVBRi1CeVdhdmUrMDMKc3M6Ly9ZV1Z6TFRJMU5pMW5ZMjA2TVRFeEB0ZXN0LnNzLmNvbTozMDAxMy8/cGx1Z2luPW9iZnMtbG9jYWwlM0JvYmZzJTNEaHR0cCUzQm9iZnMtaG9zdCUzRHd3dy5taWNyb3NvZnQuY29tIyVFOSVBNiU5OSVFNiVCOCVBRi1CeVdhdmUrMDQKc3M6Ly9ZV1Z6TFRJMU5pMW5ZMjA2TVRFeEB0ZXN0LnNzLmNvbTozMDAzMi8/cGx1Z2luPW9iZnMtbG9jYWwlM0JvYmZzJTNEaHR0cCUzQm9iZnMtaG9zdCUzRHd3dy5taWNyb3NvZnQuY29tIyVFNSU4RiVCMCVFNiVCOSVCRS1ISU5FVCswMQpzczovL1lXVnpMVEkxTmkxblkyMDZNVEV4QHRlc3Quc3MuY29tOjMwMDMzLz9wbHVnaW49b2Jmcy1sb2NhbCUzQm9iZnMlM0RodHRwJTNCb2Jmcy1ob3N0JTNEd3d3Lm1pY3Jvc29mdC5jb20jJUU1JThGJUIwJUU2JUI5JUJFLUhJTkVUKzAyCnNzOi8vWVdWekxUSTFOaTFuWTIwNk1URXhAdGVzdC5zcy5jb206MzAwNDIvP3BsdWdpbj1vYmZzLWxvY2FsJTNCb2JmcyUzRGh0dHAlM0JvYmZzLWhvc3QlM0R3d3cubWljcm9zb2Z0LmNvbSMlRTYlOTYlQjAlRTUlOEElQTAlRTUlOUQlQTEtRFArMDEKc3M6Ly9ZV1Z6TFRJMU5pMW5ZMjA2TVRFeEB0ZXN0LnNzLmNvbTozMDA0My8/cGx1Z2luPW9iZnMtbG9jYWwlM0JvYmZzJTNEaHR0cCUzQm9iZnMtaG9zdCUzRHd3dy5taWNyb3NvZnQuY29tIyVFNiU5NiVCMCVFNSU4QSVBMCVFNSU5RCVBMS1EUCswMgpzczovL1lXVnpMVEkxTmkxblkyMDZNVEV4QHRlc3Quc3MuY29tOjMwMDUyLz9wbHVnaW49b2Jmcy1sb2NhbCUzQm9iZnMlM0RodHRwJTNCb2Jmcy1ob3N0JTNEd3d3Lm1pY3Jvc29mdC5jb20jJUU2JTk3JUE1JUU2JTlDJUFDLUhBTE8rMDEKc3M6Ly9ZV1Z6TFRJMU5pMW5ZMjA2TVRFeEB0ZXN0LnNzLmNvbTozMDA1My8/cGx1Z2luPW9iZnMtbG9jYWwlM0JvYmZzJTNEaHR0cCUzQm9iZnMtaG9zdCUzRHd3dy5taWNyb3NvZnQuY29tIyVFNiU5NyVBNSVFNiU5QyVBQy1EUCswMgpzczovL1lXVnpMVEkxTmkxblkyMDZNVEV4QHRlc3Quc3MuY29tOjMwMDY1Lz9wbHVnaW49b2Jmcy1sb2NhbCUzQm9iZnMlM0RodHRwJTNCb2Jmcy1ob3N0JTNEd3d3Lm1pY3Jvc29mdC5jb20jJUU3JUJFJThFJUU1JTlCJUJELUhBTE8rMDIKc3M6Ly9ZV1Z6TFRJMU5pMW5ZMjA2TVRFeEB0ZXN0LnNzLmNvbTozMDA2Ni8/cGx1Z2luPW9iZnMtbG9jYWwlM0JvYmZzJTNEaHR0cCUzQm9iZnMtaG9zdCUzRHd3dy5taWNyb3NvZnQuY29tIyVFNyVCRSU4RSVFNSU5QiVCRC1IQUxPKzAzCnNzOi8vWVdWekxUSTFOaTFuWTIwNk1URXhAdGVzdC5zcy5jb206MzAwNjcvP3BsdWdpbj1vYmZzLWxvY2FsJTNCb2JmcyUzRGh0dHAlM0JvYmZzLWhvc3QlM0R3d3cubWljcm9zb2Z0LmNvbSMlRTclQkUlOEUlRTUlOUIlQkQtSEFMTyswNAo=";
+        let servers = parse_remote_config_data(data)?;
+        assert_eq!(servers.len(), 13);
+        Ok(())
     }
 }

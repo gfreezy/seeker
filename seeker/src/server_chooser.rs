@@ -2,6 +2,7 @@ use crate::dns_client::DnsClient;
 use crate::proxy_connection::ProxyConnection;
 use crate::proxy_tcp_stream::ProxyTcpStream;
 use crate::proxy_udp_socket::ProxyUdpSocket;
+use anyhow::Result;
 use async_std::io::timeout;
 use async_std::prelude::*;
 use async_std::task::{sleep, spawn};
@@ -10,7 +11,6 @@ use config::{Address, PingURL, ServerConfig};
 use futures_util::stream::FuturesUnordered;
 use parking_lot::{Mutex, RwLock};
 use std::collections::HashMap;
-use std::io::Result;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tracing::info;
@@ -63,7 +63,7 @@ impl ServerChooser {
         &self,
         remote_addr: Address,
         action: Action,
-    ) -> Result<ProxyTcpStream> {
+    ) -> std::io::Result<ProxyTcpStream> {
         let stream = match action {
             Action::Proxy => {
                 let config = self.candidates.lock().first().cloned().unwrap();
@@ -103,13 +103,15 @@ impl ServerChooser {
         Ok(stream)
     }
 
-    pub async fn candidate_udp_socket(&self, action: Action) -> Result<ProxyUdpSocket> {
+    pub async fn candidate_udp_socket(&self, action: Action) -> std::io::Result<ProxyUdpSocket> {
         let socket = match action {
             Action::Direct => ProxyUdpSocket::new(None, self.dns_client.clone()).await?,
             Action::Proxy => {
                 let config = self.candidates.lock().first().cloned().unwrap();
+                tracing::info!("Using server: {}", config.addr());
                 let socket = ProxyUdpSocket::new(Some(&config), self.dns_client.clone()).await;
                 if socket.is_err() {
+                    tracing::info!("Failed to connect to server: {}", config.addr());
                     self.take_down_server_and_move_next(&config);
                 }
                 socket?
@@ -235,12 +237,12 @@ impl ServerChooser {
         }
     }
 
-    async fn ping_server(&self, config: ServerConfig) -> Result<Duration> {
+    async fn ping_server(&self, config: ServerConfig) -> std::io::Result<Duration> {
         let instant = Instant::now();
         for ping_url in &self.ping_urls {
             let addr = ping_url.address();
             let path = ping_url.path();
-            let ret: Result<_> = timeout(self.ping_timeout, async {
+            let ret: std::io::Result<_> = timeout(self.ping_timeout, async {
                 let mut conn =
                     ProxyTcpStream::connect(addr, Some(&config), self.dns_client.clone()).await?;
                 conn.write_all(format!("GET {} HTTP/1.1\r\n\r\n", path).as_bytes())

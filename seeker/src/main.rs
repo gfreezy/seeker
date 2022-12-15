@@ -4,15 +4,16 @@ mod macros;
 mod config_encryptor;
 mod dns_client;
 mod logger;
+mod probe_connectivity;
 mod proxy_client;
 mod proxy_connection;
 mod proxy_tcp_stream;
 mod proxy_udp_socket;
+mod relay_tcp_stream;
+mod relay_udp_socket;
 mod server_chooser;
 mod traffic;
 
-use std::str::FromStr;
-use std::sync::Arc;
 use std::time::Duration;
 
 use crate::logger::setup_logger;
@@ -22,7 +23,7 @@ use async_signals::Signals;
 use async_std::prelude::{FutureExt, StreamExt};
 use async_std::task::block_on;
 use clap::{Arg, ArgAction, Command};
-use config::{Config, ServerConfig};
+use config::Config;
 use crypto::CipherType;
 use std::fs::File;
 use sysconfig::{set_rlimit_no_file, DNSSetup, IpForward};
@@ -146,7 +147,7 @@ fn load_config(
     url: Option<&str>,
     decrypt_key: Option<&str>,
 ) -> anyhow::Result<Config> {
-    let mut config = match (path, url, decrypt_key) {
+    let config = match (path, url, decrypt_key) {
         (Some(p), ..) => Config::from_config_file(p).context("Load config from path error")?,
         (_, Some(url), Some(key)) => {
             let ret = ureq::get(url).timeout(Duration::from_secs(5)).call();
@@ -166,18 +167,6 @@ fn load_config(
         }
         _ => return Err(anyhow::anyhow!("Parameters error")),
     };
-    let remote_config = config.remote_config_urls.clone();
-    let servers = Arc::make_mut(&mut config.servers);
-    for url in remote_config {
-        let extra_servers = match read_servers_from_remote_config(&url) {
-            Ok(servers) => servers,
-            Err(e) => {
-                println!("Load servers from remote config `{}` error: {}", url, e);
-                continue;
-            }
-        };
-        servers.extend(extra_servers);
-    }
     Ok(config)
 }
 
@@ -188,40 +177,4 @@ fn encrypt_config(path: Option<&str>, encrypt_key: Option<&str>) -> anyhow::Resu
     let file = File::open(path).context("Open config error")?;
     config_encryptor::encrypt_config(file, CipherType::ChaCha20Ietf, key)
         .context("Encrypt config error")
-}
-
-fn read_servers_from_remote_config(url: &str) -> anyhow::Result<Vec<ServerConfig>> {
-    let mut data = Vec::new();
-    let _size = ureq::get(url)
-        .timeout(Duration::from_secs(5))
-        .call()?
-        .into_reader()
-        .read_to_end(&mut data)?;
-    parse_remote_config_data(&data)
-}
-
-fn parse_remote_config_data(data: &[u8]) -> anyhow::Result<Vec<ServerConfig>> {
-    let b64decoded = base64::decode(data).context("base64 decode error")?;
-    tracing::info!("b64decoded: {:?}", b64decoded);
-    let server_urls = b64decoded.split(|&c| c == b'\n');
-    let ret: Result<_, _> = server_urls
-        .filter_map(|url| std::str::from_utf8(url).ok())
-        .map(|s| s.trim())
-        .filter(|url| !url.is_empty())
-        .map(ServerConfig::from_str)
-        .collect();
-    Ok(ret?)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_parse_remote_server() -> anyhow::Result<()> {
-        let data = b"c3M6Ly9ZV1Z6TFRJMU5pMW5ZMjA2TVRFeEB0ZXN0LnNzLmNvbTozMDAwMi8/cGx1Z2luPW9iZnMtbG9jYWwlM0JvYmZzJTNEaHR0cCUzQm9iZnMtaG9zdCUzRHd3dy5taWNyb3NvZnQuY29tIyVFOSVBNiU5OSVFNiVCOCVBRi1CeVdhdmUrMDEKc3M6Ly9ZV1Z6TFRJMU5pMW5ZMjA2TVRFeEB0ZXN0LnNzLmNvbTozMDAwMy8/cGx1Z2luPW9iZnMtbG9jYWwlM0JvYmZzJTNEaHR0cCUzQm9iZnMtaG9zdCUzRHd3dy5taWNyb3NvZnQuY29tIyVFOSVBNiU5OSVFNiVCOCVBRi1CeVdhdmUrMDIKc3M6Ly9ZV1Z6TFRJMU5pMW5ZMjA2TVRFeEB0ZXN0LnNzLmNvbTozMDAxMi8/cGx1Z2luPW9iZnMtbG9jYWwlM0JvYmZzJTNEaHR0cCUzQm9iZnMtaG9zdCUzRHd3dy5taWNyb3NvZnQuY29tIyVFOSVBNiU5OSVFNiVCOCVBRi1CeVdhdmUrMDMKc3M6Ly9ZV1Z6TFRJMU5pMW5ZMjA2TVRFeEB0ZXN0LnNzLmNvbTozMDAxMy8/cGx1Z2luPW9iZnMtbG9jYWwlM0JvYmZzJTNEaHR0cCUzQm9iZnMtaG9zdCUzRHd3dy5taWNyb3NvZnQuY29tIyVFOSVBNiU5OSVFNiVCOCVBRi1CeVdhdmUrMDQKc3M6Ly9ZV1Z6TFRJMU5pMW5ZMjA2TVRFeEB0ZXN0LnNzLmNvbTozMDAzMi8/cGx1Z2luPW9iZnMtbG9jYWwlM0JvYmZzJTNEaHR0cCUzQm9iZnMtaG9zdCUzRHd3dy5taWNyb3NvZnQuY29tIyVFNSU4RiVCMCVFNiVCOSVCRS1ISU5FVCswMQpzczovL1lXVnpMVEkxTmkxblkyMDZNVEV4QHRlc3Quc3MuY29tOjMwMDMzLz9wbHVnaW49b2Jmcy1sb2NhbCUzQm9iZnMlM0RodHRwJTNCb2Jmcy1ob3N0JTNEd3d3Lm1pY3Jvc29mdC5jb20jJUU1JThGJUIwJUU2JUI5JUJFLUhJTkVUKzAyCnNzOi8vWVdWekxUSTFOaTFuWTIwNk1URXhAdGVzdC5zcy5jb206MzAwNDIvP3BsdWdpbj1vYmZzLWxvY2FsJTNCb2JmcyUzRGh0dHAlM0JvYmZzLWhvc3QlM0R3d3cubWljcm9zb2Z0LmNvbSMlRTYlOTYlQjAlRTUlOEElQTAlRTUlOUQlQTEtRFArMDEKc3M6Ly9ZV1Z6TFRJMU5pMW5ZMjA2TVRFeEB0ZXN0LnNzLmNvbTozMDA0My8/cGx1Z2luPW9iZnMtbG9jYWwlM0JvYmZzJTNEaHR0cCUzQm9iZnMtaG9zdCUzRHd3dy5taWNyb3NvZnQuY29tIyVFNiU5NiVCMCVFNSU4QSVBMCVFNSU5RCVBMS1EUCswMgpzczovL1lXVnpMVEkxTmkxblkyMDZNVEV4QHRlc3Quc3MuY29tOjMwMDUyLz9wbHVnaW49b2Jmcy1sb2NhbCUzQm9iZnMlM0RodHRwJTNCb2Jmcy1ob3N0JTNEd3d3Lm1pY3Jvc29mdC5jb20jJUU2JTk3JUE1JUU2JTlDJUFDLUhBTE8rMDEKc3M6Ly9ZV1Z6TFRJMU5pMW5ZMjA2TVRFeEB0ZXN0LnNzLmNvbTozMDA1My8/cGx1Z2luPW9iZnMtbG9jYWwlM0JvYmZzJTNEaHR0cCUzQm9iZnMtaG9zdCUzRHd3dy5taWNyb3NvZnQuY29tIyVFNiU5NyVBNSVFNiU5QyVBQy1EUCswMgpzczovL1lXVnpMVEkxTmkxblkyMDZNVEV4QHRlc3Quc3MuY29tOjMwMDY1Lz9wbHVnaW49b2Jmcy1sb2NhbCUzQm9iZnMlM0RodHRwJTNCb2Jmcy1ob3N0JTNEd3d3Lm1pY3Jvc29mdC5jb20jJUU3JUJFJThFJUU1JTlCJUJELUhBTE8rMDIKc3M6Ly9ZV1Z6TFRJMU5pMW5ZMjA2TVRFeEB0ZXN0LnNzLmNvbTozMDA2Ni8/cGx1Z2luPW9iZnMtbG9jYWwlM0JvYmZzJTNEaHR0cCUzQm9iZnMtaG9zdCUzRHd3dy5taWNyb3NvZnQuY29tIyVFNyVCRSU4RSVFNSU5QiVCRC1IQUxPKzAzCnNzOi8vWVdWekxUSTFOaTFuWTIwNk1URXhAdGVzdC5zcy5jb206MzAwNjcvP3BsdWdpbj1vYmZzLWxvY2FsJTNCb2JmcyUzRGh0dHAlM0JvYmZzLWhvc3QlM0R3d3cubWljcm9zb2Z0LmNvbSMlRTclQkUlOEUlRTUlOUIlQkQtSEFMTyswNAo=";
-        let servers = parse_remote_config_data(data)?;
-        assert_eq!(servers.len(), 13);
-        Ok(())
-    }
 }
