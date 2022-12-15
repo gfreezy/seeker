@@ -62,32 +62,32 @@ jobs:
           - build: macos
             os: macos-latest
             rust: nightly
-          - build: nightly-arm
-            os: ubuntu-latest
-            rust: nightly
-            # For stripping release binaries:
-            # docker run --rm -v $PWD/target:/target:Z \
-            #   rustembedded/cross:arm-unknown-linux-gnueabihf \
-            #   arm-linux-gnueabihf-strip \
-            #   /target/arm-unknown-linux-gnueabihf/debug/rg
-            target: arm-unknown-linux-gnueabihf
-#          - build: beta
-#            os: ubuntu-latest
-#            rust: beta
-#          - build: nightly-32
-#            os: ubuntu-latest
-#            rust: nightly
-#            target: i686-unknown-linux-gnu
-#          - build: nightly-mips
-#            os: ubuntu-latest
-#            rust: nightly
-#            target: mips64-unknown-linux-gnuabi64
-#          - build: win-msvc
-#            os: windows-2019
-#            rust: nightly
-#          - build: win-gnu
-#            os: windows-2019
-#            rust: nightly-x86_64-gnu
+          # - build: nightly-arm
+          #   os: ubuntu-latest
+          #   rust: nightly
+          #   # For stripping release binaries:
+          #   # docker run --rm -v $PWD/target:/target:Z \
+          #   #   rustembedded/cross:arm-unknown-linux-gnueabihf \
+          #   #   arm-linux-gnueabihf-strip \
+          #   #   /target/arm-unknown-linux-gnueabihf/debug/rg
+          #   target: arm-unknown-linux-gnueabihf
+          # - build: beta
+          #   os: ubuntu-latest
+          #   rust: beta
+          # - build: nightly-32
+          #   os: ubuntu-latest
+          #   rust: nightly
+          #   target: i686-unknown-linux-gnu
+          # - build: nightly-mips
+          #   os: ubuntu-latest
+          #   rust: nightly
+          #   target: mips64-unknown-linux-gnuabi64
+          # - build: win-msvc
+          #   os: windows-2019
+          #   rust: nightly
+          # - build: win-gnu
+          #   os: windows-2019
+          #   rust: nightly-x86_64-gnu
     steps:
       - name: Checkout repository
         uses: actions/checkout@v2
