@@ -19,7 +19,7 @@ smoltcp = { version = "0.8.1", default-features = false, features = [
     "proto-ipv4",
     "std",
 ] }
-base64 = "0.13.1"
+base64 = "0.20.0"
 percent-encoding = "2.1.0"
 tracing = "0.1.29"
 ureq = "2.5"
