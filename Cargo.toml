@@ -11,6 +11,7 @@ members = [
     "tun_nat",
     "http_proxy_client",
     "tcp_connection",
+    "store",
 ]
 
 [profile.release]

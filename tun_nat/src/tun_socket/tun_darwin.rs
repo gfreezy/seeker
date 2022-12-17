@@ -184,7 +184,7 @@ impl TunSocket {
     }
 
     pub fn af_write(&self, src: &[u8], af: u8) -> Result<usize> {
-        let mut hdr = [0u8, 0u8, 0u8, af as u8];
+        let mut hdr = [0u8, 0u8, 0u8, af];
         let mut iov = [
             iovec {
                 iov_base: hdr.as_mut_ptr() as _,

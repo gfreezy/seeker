@@ -16,6 +16,12 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::rule::Rule;
+const URL_SAFE_ENGINE: base64::engine::fast_portable::FastPortable =
+    base64::engine::fast_portable::FastPortable::from(
+        &base64::alphabet::STANDARD,
+        base64::engine::fast_portable::FastPortableConfig::new()
+            .with_decode_padding_mode(base64::engine::DecodePaddingMode::Indifferent),
+    );
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
@@ -208,7 +214,7 @@ impl Config {
             let extra_servers = match read_servers_from_remote_config(&url) {
                 Ok(servers) => servers,
                 Err(e) => {
-                    println!("Load servers from remote config `{}` error: {}", url, e);
+                    eprintln!("Load servers from remote config `{}` error: {}", url, e);
                     continue;
                 }
             };
@@ -229,8 +235,8 @@ fn read_servers_from_remote_config(url: &str) -> io::Result<Vec<ServerConfig>> {
 }
 
 fn parse_remote_config_data(data: &[u8]) -> io::Result<Vec<ServerConfig>> {
-    let b64decoded =
-        base64::decode(data).map_err(|_e| io::Error::new(io::ErrorKind::Other, "b64decode"))?;
+    let b64decoded = base64::decode_engine(data, &URL_SAFE_ENGINE)
+        .map_err(|_e| io::Error::new(io::ErrorKind::Other, "b64decode"))?;
     tracing::info!("b64decoded: {:?}", b64decoded);
     let server_urls = b64decoded.split(|&c| c == b'\n');
     let ret: Result<_, _> = server_urls
