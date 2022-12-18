@@ -1,0 +1,11 @@
+[package]
+name = "store"
+version = "0.0.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+rusqlite = { version = "0.28", features = ["bundled"] }
+tracing = "0.1"
+anyhow = { version = "1.0", features = ["backtrace"] }
