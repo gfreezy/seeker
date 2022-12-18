@@ -172,7 +172,7 @@ impl PacketBuffer for VectorPacketBuffer {
     }
 
     fn get_range(&mut self, start: usize, len: usize) -> Result<&[u8]> {
-        Ok(&self.buffer[start..start + len as usize])
+        Ok(&self.buffer[start..start + len])
     }
 
     fn write(&mut self, val: u8) -> Result<()> {
@@ -269,7 +269,7 @@ where
             self.buffer.push(local_buffer[0]);
         }
 
-        Ok(&self.buffer[start..start + len as usize])
+        Ok(&self.buffer[start..start + len])
     }
 
     fn write(&mut self, _: u8) -> Result<()> {
@@ -345,7 +345,7 @@ impl PacketBuffer for BytePacketBuffer {
         if start + len >= 512 {
             return Err(Error::new(ErrorKind::InvalidInput, "End of buffer"));
         }
-        Ok(&self.buf[start..start + len as usize])
+        Ok(&self.buf[start..start + len])
     }
 
     fn write(&mut self, val: u8) -> Result<()> {

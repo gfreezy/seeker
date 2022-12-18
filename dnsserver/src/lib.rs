@@ -61,9 +61,9 @@ pub(crate) mod tests {
         task::block_on(async {
             let resolver = new_resolver(dns, 53).await;
             let (server, resolver) = create_dns_server(
-                dir.path(),
+                dir.path().join("db.sqlite"),
                 format!("0.0.0.0:{}", LOCAL_UDP_PORT),
-                "10.0.0.1".parse().unwrap(),
+                "10.0.0.0".parse().unwrap(),
                 true,
                 ProxyRules::new(vec![]),
                 resolver,

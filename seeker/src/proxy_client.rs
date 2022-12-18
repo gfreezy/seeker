@@ -287,7 +287,6 @@ async fn run_dns_resolver(
         resolver,
     )
     .await;
-    println!("Spawn DNS server");
     let handle = spawn(async {
         dns_server
             .run_server()

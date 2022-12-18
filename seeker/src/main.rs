@@ -107,24 +107,29 @@ fn main() -> anyhow::Result<()> {
     let uid = matches.get_one::<u32>("user_id").copied();
     let log_path = matches.get_one::<String>("log").map(String::as_ref);
 
+    eprint!("Starting.");
     let _guard = setup_logger(log_path, to_trace)?;
-
+    eprint!(".");
     let mut signals = Signals::new(vec![libc::SIGINT, libc::SIGTERM]).unwrap();
-
+    eprint!(".");
     set_rlimit_no_file(10240)?;
-
-    let _dns_setup = DNSSetup::new("".to_string());
+    eprint!(".");
     let _ip_forward = if config.gateway_mode {
         // In gateway mode, dns server need be accessible from the network.
         Some(IpForward::new())
     } else {
         None
     };
-
+    eprint!(".");
     block_on(async {
         let client = ProxyClient::new(config, uid)
             .instrument(tracing::trace_span!("ProxyClient.new"))
             .await;
+        eprint!(".");
+        let _dns_setup = DNSSetup::new("".to_string());
+
+        eprintln!("Started!");
+
         client
             .run()
             .instrument(tracing::trace_span!("ProxyClient.run"))

@@ -159,12 +159,6 @@ impl ServerConfig {
             return Err(UrlParseError::InvalidScheme);
         }
 
-        const URL_SAFE_ENGINE: base64::engine::fast_portable::FastPortable =
-            base64::engine::fast_portable::FastPortable::from(
-                &base64::alphabet::URL_SAFE,
-                base64::engine::fast_portable::NO_PAD,
-            );
-
         let user_info = parsed.username();
         if user_info.is_empty() {
             // This maybe a QRCode URL, which is ss://BASE64-URL-ENCODE(pass:encrypt@hostname:port)
@@ -174,7 +168,7 @@ impl ServerConfig {
                 None => return Err(UrlParseError::MissingHost),
             };
 
-            let mut decoded_body = match decode_engine(encoded, &URL_SAFE_ENGINE) {
+            let mut decoded_body = match decode_engine(encoded, &crate::URL_SAFE_ENGINE) {
                 Ok(b) => match String::from_utf8(b) {
                     Ok(b) => b,
                     Err(..) => return Err(UrlParseError::InvalidServerAddr),
@@ -222,7 +216,7 @@ impl ServerConfig {
                 (m, p)
             }
             None => {
-                let account = match decode_engine(user_info, &URL_SAFE_ENGINE) {
+                let account = match decode_engine(user_info, &crate::URL_SAFE_ENGINE) {
                     Ok(account) => match String::from_utf8(account) {
                         Ok(ac) => ac,
                         Err(..) => return Err(UrlParseError::InvalidAuthInfo),
