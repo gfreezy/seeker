@@ -661,7 +661,7 @@ impl DnsHeader {
                 | ((self.truncated_message as u8) << 1)
                 | ((self.authoritative_answer as u8) << 2)
                 | (self.opcode << 3)
-                | ((self.response as u8) << 7) as u8,
+                | ((self.response as u8) << 7),
         )?;
 
         buffer.write_u8(

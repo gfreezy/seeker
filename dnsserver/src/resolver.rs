@@ -2,18 +2,16 @@ use async_std_resolver::AsyncStdResolver;
 use async_trait::async_trait;
 use config::rule::{Action, ProxyRules};
 use hermesdns::{DnsPacket, DnsRecord, DnsResolver, Hosts, QueryType, TransientTtl};
-use sled::Db;
+use parking_lot::Mutex;
 use std::any::Any;
 use std::io;
 use std::io::Result;
 use std::net::Ipv4Addr;
 use std::path::Path;
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
+use store::Store;
 use tracing::{debug, error};
 use trust_dns_proto::rr::{RData, RecordType};
-
-const NEXT_IP: &str = "next_ip";
 
 /// A Forwarding DNS Resolver
 ///
@@ -26,8 +24,7 @@ pub struct RuleBasedDnsResolver {
 struct Inner {
     hosts: Hosts,
     rules: ProxyRules,
-    db: Db,
-    next_ip: AtomicU32,
+    db: Mutex<Store>,
     bypass_direct: bool,
     resolver: AsyncStdResolver,
 }
@@ -40,26 +37,14 @@ impl RuleBasedDnsResolver {
         rules: ProxyRules,
         resolver: AsyncStdResolver,
     ) -> Self {
-        let db = sled::open(path).expect("open db error");
-        let next_ip = match db.get(NEXT_IP.as_bytes()) {
-            Ok(Some(v)) => {
-                let mut s = [0; 4];
-                s.copy_from_slice(&v);
-                u32::from_be_bytes(s)
-            }
-            _ => {
-                db.clear().unwrap();
-                next_ip
-            }
-        };
+        let db = Store::new(path, Ipv4Addr::from(next_ip)).expect("open db error");
 
         RuleBasedDnsResolver {
             inner: Arc::new(Inner {
                 hosts: Hosts::load().expect("load /etc/hosts"),
                 rules,
                 bypass_direct,
-                next_ip: AtomicU32::new(next_ip),
-                db,
+                db: Mutex::new(db),
                 resolver,
             }),
         }
@@ -69,20 +54,11 @@ impl RuleBasedDnsResolver {
         let host = self
             .inner
             .db
-            .get(addr.as_bytes())
-            .unwrap()
-            .map(|host| String::from_utf8(host.to_vec()).unwrap());
+            .lock()
+            .get_host_by_ipv4(addr.parse().expect("invalid addr"))
+            .expect("get host");
         debug!("lookup host: {}, addr: {:?}", addr, host);
         host
-    }
-
-    fn gen_ipaddr(&self) -> String {
-        let [a, b, c, d] = (self.inner.next_ip.load(Ordering::SeqCst) as u32).to_be_bytes();
-        self.inner.next_ip.fetch_add(1, Ordering::SeqCst);
-        // TODO: assert next_ip is not to large
-        let addr = Ipv4Addr::new(a, b, c, d);
-        debug!("Resolver.gen_ipaddr: {}", addr);
-        addr.to_string()
     }
 
     async fn resolve_real(&self, domain: &str, qtype: QueryType) -> Result<DnsPacket> {
@@ -197,37 +173,15 @@ impl RuleBasedDnsResolver {
             _ => {}
         };
 
-        let ip = if let Some(addr) = self.inner.db.get(domain).expect("get domain") {
-            // Use cached ip.
-            let ip = String::from_utf8(addr.to_vec()).unwrap();
-            debug!("lookup host from cache, domain: {}, ip: {}", domain, &ip);
-            ip
-        } else {
-            // Generate new ip.
-            let ip = self.gen_ipaddr();
-            debug!("lookup host gen ip, domain: {}, ip: {}", domain, &ip);
-
-            self.inner
-                .db
-                .insert(
-                    NEXT_IP.as_bytes(),
-                    &self.inner.next_ip.load(Ordering::SeqCst).to_be_bytes(),
-                )
-                .unwrap();
-            self.inner
-                .db
-                .insert(domain.as_bytes(), ip.as_bytes())
-                .unwrap();
-            self.inner
-                .db
-                .insert(ip.as_bytes(), domain.as_bytes())
-                .unwrap();
-            ip
-        };
-
+        let ip = self
+            .inner
+            .db
+            .lock()
+            .get_ipv4_by_host(domain)
+            .expect("get domain");
         packet.answers.push(DnsRecord::A {
             domain: domain.to_string(),
-            addr: ip.parse().unwrap(),
+            addr: ip,
             ttl: TransientTtl(3),
         });
         Ok(packet)
@@ -254,12 +208,12 @@ mod tests {
     #[test]
     fn test_inner_resolve_ip_and_lookup_host() {
         let dir = tempfile::tempdir().unwrap();
-        let start_ip = "10.0.0.1".parse::<Ipv4Addr>().unwrap();
+        let start_ip = "10.0.0.0".parse::<Ipv4Addr>().unwrap();
         let n = u32::from_be_bytes(start_ip.octets());
         let dns = std::env::var("DNS").unwrap_or_else(|_| "223.5.5.5".to_string());
         task::block_on(async {
             let resolver = RuleBasedDnsResolver::new(
-                dir.path(),
+                dir.path().join("db.sqlite"),
                 n,
                 true,
                 ProxyRules::new(vec![]),
