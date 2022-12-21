@@ -6,6 +6,7 @@ pub use socks5_client::Address;
 use rule::ProxyRules;
 use serde::Deserialize;
 use smoltcp::wire::{Ipv4Address, Ipv4Cidr};
+use std::fmt::Debug;
 use std::fs::File;
 use std::io;
 use std::io::{ErrorKind, Read};
@@ -14,8 +15,10 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
+use store::Store;
 
 use crate::rule::Rule;
+
 const URL_SAFE_ENGINE: base64::engine::fast_portable::FastPortable =
     base64::engine::fast_portable::FastPortable::from(
         &base64::alphabet::STANDARD,
@@ -23,7 +26,7 @@ const URL_SAFE_ENGINE: base64::engine::fast_portable::FastPortable =
             .with_decode_padding_mode(base64::engine::DecodePaddingMode::Indifferent),
     );
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Clone, Deserialize)]
 pub struct Config {
     pub servers: Arc<Vec<ServerConfig>>,
     #[serde(default)]
@@ -59,6 +62,33 @@ pub struct Config {
     pub max_connect_errors: usize,
 }
 
+impl Debug for Config {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Config")
+            .field("servers", &self.servers)
+            .field("remote_config_urls", &self.remote_config_urls)
+            .field("geo_ip", &self.geo_ip)
+            .field("dns_start_ip", &self.dns_start_ip)
+            .field("dns_servers", &self.dns_servers)
+            .field("tun_bypass_direct", &self.tun_bypass_direct)
+            .field("tun_name", &self.tun_name)
+            .field("tun_ip", &self.tun_ip)
+            .field("verbose", &self.verbose)
+            .field("tun_cidr", &self.tun_cidr)
+            .field("rules", &self.rules)
+            .field("dns_listen", &self.dns_listen)
+            .field("gateway_mode", &self.gateway_mode)
+            .field("ping_timeout", &self.ping_timeout)
+            .field("ping_urls", &self.ping_urls)
+            .field("dns_timeout", &self.dns_timeout)
+            .field("probe_timeout", &self.probe_timeout)
+            .field("connect_timeout", &self.connect_timeout)
+            .field("read_timeout", &self.read_timeout)
+            .field("write_timeout", &self.write_timeout)
+            .field("max_connect_errors", &self.max_connect_errors)
+            .finish()
+    }
+}
 #[derive(Debug, Clone, Deserialize)]
 pub struct PingURL {
     host: String,
@@ -181,6 +211,7 @@ impl Config {
                 "servers can not be empty.",
             ));
         };
+        Store::setup_global("dns.db", conf.tun_ip);
         conf.load_remote_servers();
         conf.add_proxy_servers_to_direct_rules();
         conf.rules.set_geo_ip_path(conf.geo_ip.clone());
@@ -211,19 +242,35 @@ impl Config {
         let remote_config = self.remote_config_urls.clone();
         let servers = Arc::make_mut(&mut self.servers);
         for url in remote_config {
-            let extra_servers = match read_servers_from_remote_config(&url) {
-                Ok(servers) => servers,
+            let data = match read_data_from_remote_config(&url) {
+                Ok(servers) => {
+                    if let Err(e) = store::Store::global().cache_remote_config_data(&url, &servers)
+                    {
+                        eprintln!("Cache remote config `{}` error: {}", url, e);
+                    }
+                    servers
+                }
                 Err(e) => {
                     eprintln!("Load servers from remote config `{}` error: {}", url, e);
-                    continue;
+
+                    let Ok(Some(data)) = store::Store::global().get_cached_remote_config_data(&url) else {
+                        eprintln!("No cached config for `{}`.", url);
+                        continue;
+                    };
+                    eprintln!("Use config for `{}` from cache instead.", url);
+                    data
                 }
+            };
+            let Ok(extra_servers) = parse_remote_config_data(&data) else {
+                eprintln!("Parse config error for `{}`.", url);
+                continue;
             };
             servers.extend(extra_servers);
         }
     }
 }
 
-fn read_servers_from_remote_config(url: &str) -> io::Result<Vec<ServerConfig>> {
+fn read_data_from_remote_config(url: &str) -> io::Result<Vec<u8>> {
     let mut data = Vec::new();
     let _size = ureq::get(url)
         .timeout(Duration::from_secs(5))
@@ -231,7 +278,7 @@ fn read_servers_from_remote_config(url: &str) -> io::Result<Vec<ServerConfig>> {
         .map_err(|_| io::Error::new(io::ErrorKind::Other, "read remote config"))?
         .into_reader()
         .read_to_end(&mut data)?;
-    parse_remote_config_data(&data)
+    Ok(data)
 }
 
 fn parse_remote_config_data(data: &[u8]) -> io::Result<Vec<ServerConfig>> {

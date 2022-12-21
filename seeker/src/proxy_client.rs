@@ -279,9 +279,7 @@ async fn run_dns_resolver(
     resolver: AsyncStdResolver,
 ) -> (RuleBasedDnsResolver, JoinHandle<()>) {
     let (dns_server, resolver) = create_dns_server(
-        "dns.db",
         config.dns_listen.clone(),
-        config.dns_start_ip,
         config.tun_bypass_direct,
         config.rules.clone(),
         resolver,

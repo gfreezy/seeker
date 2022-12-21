@@ -36,3 +36,4 @@ base64 = "0.13.0"
 anyhow = "1.0.65"
 tcp_connection = { path = "../tcp_connection" }
 url = "2.3"
+store = { path = "../store" }

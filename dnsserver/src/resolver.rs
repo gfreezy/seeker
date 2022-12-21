@@ -2,12 +2,9 @@ use async_std_resolver::AsyncStdResolver;
 use async_trait::async_trait;
 use config::rule::{Action, ProxyRules};
 use hermesdns::{DnsPacket, DnsRecord, DnsResolver, Hosts, QueryType, TransientTtl};
-use parking_lot::Mutex;
 use std::any::Any;
 use std::io;
 use std::io::Result;
-use std::net::Ipv4Addr;
-use std::path::Path;
 use std::sync::Arc;
 use store::Store;
 use tracing::{debug, error};
@@ -24,37 +21,24 @@ pub struct RuleBasedDnsResolver {
 struct Inner {
     hosts: Hosts,
     rules: ProxyRules,
-    db: Mutex<Store>,
     bypass_direct: bool,
     resolver: AsyncStdResolver,
 }
 
 impl RuleBasedDnsResolver {
-    pub async fn new<P: AsRef<Path>>(
-        path: P,
-        next_ip: u32,
-        bypass_direct: bool,
-        rules: ProxyRules,
-        resolver: AsyncStdResolver,
-    ) -> Self {
-        let db = Store::new(path, Ipv4Addr::from(next_ip)).expect("open db error");
-
+    pub async fn new(bypass_direct: bool, rules: ProxyRules, resolver: AsyncStdResolver) -> Self {
         RuleBasedDnsResolver {
             inner: Arc::new(Inner {
                 hosts: Hosts::load().expect("load /etc/hosts"),
                 rules,
                 bypass_direct,
-                db: Mutex::new(db),
                 resolver,
             }),
         }
     }
 
     pub fn lookup_host(&self, addr: &str) -> Option<String> {
-        let host = self
-            .inner
-            .db
-            .lock()
+        let host = Store::global()
             .get_host_by_ipv4(addr.parse().expect("invalid addr"))
             .expect("get host");
         debug!("lookup host: {}, addr: {:?}", addr, host);
@@ -173,10 +157,7 @@ impl RuleBasedDnsResolver {
             _ => {}
         };
 
-        let ip = self
-            .inner
-            .db
-            .lock()
+        let ip = Store::global()
             .get_ipv4_by_host(domain)
             .expect("get domain");
         packet.answers.push(DnsRecord::A {
@@ -201,6 +182,8 @@ impl DnsResolver for RuleBasedDnsResolver {
 
 #[cfg(test)]
 mod tests {
+    use std::net::Ipv4Addr;
+
     use super::*;
     use crate::tests::new_resolver;
     use async_std::task;
@@ -208,36 +191,24 @@ mod tests {
     #[test]
     fn test_inner_resolve_ip_and_lookup_host() {
         let dir = tempfile::tempdir().unwrap();
-        let start_ip = "10.0.0.0".parse::<Ipv4Addr>().unwrap();
-        let n = u32::from_be_bytes(start_ip.octets());
+        let start_ip = "10.0.0.1".parse::<Ipv4Addr>().unwrap();
         let dns = std::env::var("DNS").unwrap_or_else(|_| "223.5.5.5".to_string());
+        let _ = Store::try_setup_global(dir.path().join("db.sqlite"), start_ip);
         task::block_on(async {
             let resolver = RuleBasedDnsResolver::new(
-                dir.path().join("db.sqlite"),
-                n,
                 true,
                 ProxyRules::new(vec![]),
                 new_resolver(dns, 53).await,
             )
             .await;
+            let baidu_ip = resolver
+                .resolve("baidu.com", QueryType::A)
+                .await
+                .unwrap()
+                .get_random_a();
+            assert!(baidu_ip.is_some());
             assert_eq!(
-                resolver
-                    .resolve("baidu.com", QueryType::A)
-                    .await
-                    .unwrap()
-                    .get_random_a(),
-                Some("10.0.0.1".to_string())
-            );
-            assert_eq!(
-                resolver
-                    .resolve("www.ali.com", QueryType::A)
-                    .await
-                    .unwrap()
-                    .get_random_a(),
-                Some("10.0.0.2".to_string())
-            );
-            assert_eq!(
-                resolver.lookup_host("10.0.0.1"),
+                resolver.lookup_host(&baidu_ip.unwrap()),
                 Some("baidu.com".to_string())
             );
             assert!(resolver
