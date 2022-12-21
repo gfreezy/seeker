@@ -211,7 +211,9 @@ impl Config {
                 "servers can not be empty.",
             ));
         };
-        Store::setup_global("dns.db", conf.tun_ip);
+
+        Store::setup_global("seeker.sqlite", conf.tun_ip);
+
         conf.load_remote_servers();
         conf.add_proxy_servers_to_direct_rules();
         conf.rules.set_geo_ip_path(conf.geo_ip.clone());
