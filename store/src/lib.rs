@@ -29,7 +29,7 @@ static INSTANCE: OnceCell<Store> = OnceCell::new();
 
 impl Store {
     const TABLE_HOST_IP: &str = "host_ip";
-    const TABLE_REMOTE_CONFIG_CACHE: &str = "config";
+    const TABLE_REMOTE_CONFIG_CACHE: &str = "remote_config_cache";
 
     pub fn setup_global(path: impl AsRef<Path>, initial_ip: Ipv4Addr) {
         Self::try_setup_global(path, initial_ip).expect("init global store")
