@@ -12,3 +12,4 @@ config.yml
 *.log.*
 trace-*.json
 geoip.mmdb
+seeker.sqlite
