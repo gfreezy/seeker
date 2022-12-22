@@ -4,19 +4,14 @@ use async_std_resolver::AsyncStdResolver;
 use config::rule::ProxyRules;
 use hermesdns::DnsUdpServer;
 use resolver::RuleBasedDnsResolver;
-use std::net::Ipv4Addr;
-use std::path::Path;
 
-pub async fn create_dns_server<P: AsRef<Path>>(
-    path: P,
+pub async fn create_dns_server(
     listen: String,
-    start_ip: Ipv4Addr,
     bypass_direct: bool,
     rules: ProxyRules,
     async_resolver: AsyncStdResolver,
 ) -> (DnsUdpServer, RuleBasedDnsResolver) {
-    let n = u32::from_be_bytes(start_ip.octets());
-    let resolver = RuleBasedDnsResolver::new(path, n, bypass_direct, rules, async_resolver).await;
+    let resolver = RuleBasedDnsResolver::new(bypass_direct, rules, async_resolver).await;
     let server = DnsUdpServer::new(listen, Box::new(resolver.clone())).await;
     (server, resolver)
 }
@@ -29,8 +24,9 @@ pub(crate) mod tests {
     use async_std_resolver::config::{NameServerConfigGroup, ResolverConfig, ResolverOpts};
     use hermesdns::{DnsClient, DnsNetworkClient, QueryType};
     use std::time::Duration;
+    use store::Store;
 
-    const LOCAL_UDP_PORT: u16 = 1153;
+    const LOCAL_UDP_PORT: u16 = 6153;
     async fn get_ip(client: &DnsNetworkClient, host: &str) -> Option<String> {
         let resp = io::timeout(
             Duration::from_secs(5),
@@ -58,13 +54,12 @@ pub(crate) mod tests {
     fn test_resolve_ip() {
         let dir = tempfile::tempdir().unwrap();
         let dns = std::env::var("DNS").unwrap_or_else(|_| "223.5.5.5".to_string());
+        let _ = Store::try_setup_global(dir.path().join("db.sqlite"), "10.0.0.1".parse().unwrap());
         task::block_on(async {
             let resolver = new_resolver(dns, 53).await;
             let (server, resolver) = create_dns_server(
-                dir.path().join("db.sqlite"),
                 format!("0.0.0.0:{}", LOCAL_UDP_PORT),
-                "10.0.0.0".parse().unwrap(),
-                true,
+                false,
                 ProxyRules::new(vec![]),
                 resolver,
             )
@@ -72,17 +67,17 @@ pub(crate) mod tests {
             task::spawn(server.run_server());
             task::sleep(Duration::from_secs(1)).await;
             let client = DnsNetworkClient::new(0, Duration::from_secs(3)).await;
+            let baidu_ip = get_ip(&client, "baidu.com").await;
+            assert!(baidu_ip.is_some());
+            let ali_ip = get_ip(&client, "aliyun.com").await;
+            assert!(ali_ip.is_some());
             assert_eq!(
-                get_ip(&client, "baidu.com").await,
-                Some("10.0.0.1".to_string())
+                resolver.lookup_host(&baidu_ip.unwrap()),
+                Some("baidu.com".to_string())
             );
             assert_eq!(
-                get_ip(&client, "to.aliyun.com").await,
-                Some("10.0.0.2".to_string())
-            );
-            assert_eq!(
-                resolver.lookup_host("10.0.0.2"),
-                Some("to.aliyun.com".to_string())
+                resolver.lookup_host(&ali_ip.unwrap()),
+                Some("aliyun.com".to_string())
             )
         });
     }

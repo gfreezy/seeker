@@ -256,7 +256,7 @@ ifconfig
 
 [source,bash]
 ----
-rm -rf dns.db
+rm -rf seeker.sqlite
 ----
 
 

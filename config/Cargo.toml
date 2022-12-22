@@ -25,3 +25,4 @@ tracing = "0.1.29"
 ureq = "2.5"
 maxminddb = "0.23"
 parking_lot = "0.12"
+store = { path = "../store" }

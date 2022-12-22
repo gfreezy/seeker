@@ -18,7 +18,7 @@ use std::time::Duration;
 
 use crate::logger::setup_logger;
 use crate::proxy_client::ProxyClient;
-use anyhow::Context;
+use anyhow::{bail, Context};
 use async_signals::Signals;
 use async_std::prelude::{FutureExt, StreamExt};
 use async_std::task::block_on;
@@ -102,6 +102,7 @@ fn main() -> anyhow::Result<()> {
         return Ok(());
     }
     let config_url = matches.get_one::<String>("config-url").map(String::as_ref);
+
     let config = load_config(path, config_url, key)?;
 
     let uid = matches.get_one::<u32>("user_id").copied();
@@ -152,8 +153,8 @@ fn load_config(
     url: Option<&str>,
     decrypt_key: Option<&str>,
 ) -> anyhow::Result<Config> {
-    let config = match (path, url, decrypt_key) {
-        (Some(p), ..) => Config::from_config_file(p).context("Load config from path error")?,
+    match (path, url, decrypt_key) {
+        (Some(p), ..) => Config::from_config_file(p).context("Load config from path error"),
         (_, Some(url), Some(key)) => {
             let ret = ureq::get(url).timeout(Duration::from_secs(5)).call();
             let resp = match ret {
@@ -168,11 +169,10 @@ fn load_config(
             let config =
                 config_encryptor::decrypt_config(resp.into_reader(), CipherType::ChaCha20Ietf, key)
                     .context("Decrypt remote config error")?;
-            Config::from_reader(config.as_slice()).context("Load Config error")?
+            Config::from_reader(config.as_slice()).context("Load Config error")
         }
-        _ => return Err(anyhow::anyhow!("Parameters error")),
-    };
-    Ok(config)
+        _ => bail!("Parameters error"),
+    }
 }
 
 fn encrypt_config(path: Option<&str>, encrypt_key: Option<&str>) -> anyhow::Result<String> {
