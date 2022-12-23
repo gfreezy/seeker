@@ -22,7 +22,7 @@ use tracing::{error, instrument, trace, trace_span};
 use tracing_futures::Instrument;
 use tun_nat::{run_nat, SessionManager};
 
-type UdpManager = Arc<RwLock<HashMap<u16, (ProxyUdpSocket, SocketAddr, Address)>>>;
+pub(crate) type UdpManager = Arc<RwLock<HashMap<u16, (ProxyUdpSocket, SocketAddr, Address)>>>;
 
 pub struct ProxyClient {
     config: Config,
@@ -168,19 +168,11 @@ impl ProxyClient {
         tun_addr: SocketAddr,
     ) -> Result<(ProxyUdpSocket, SocketAddr, Address)> {
         let port = tun_addr.port();
-        if !self.session_manager.update_activity_for_port(port) {
-            self.udp_manager.write().remove(&port);
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::ConnectionAborted,
-                "port recycled",
-            ));
-        }
-
         if let Some(r) = self.udp_manager.read().get(&port) {
             return Ok(r.clone());
         }
 
-        let (proxy_udp_socket, real_dest, host) = relay_udp_socket(
+        relay_udp_socket(
             tun_socket,
             tun_addr,
             self.session_manager.clone(),
@@ -190,13 +182,9 @@ impl ProxyClient {
             self.server_chooser.clone(),
             self.connectivity.clone(),
             self.uid,
+            self.udp_manager.clone(),
         )
-        .await?;
-
-        self.udp_manager
-            .write()
-            .insert(port, (proxy_udp_socket.clone(), real_dest, host.clone()));
-        Ok((proxy_udp_socket, real_dest, host))
+        .await
     }
 
     async fn run_udp_relay_server(&self) -> Result<()> {
