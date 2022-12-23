@@ -17,12 +17,13 @@ use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::io::{Error, Result};
 
+use std::net::IpAddr;
 use std::sync::Arc;
 use tracing::{error, instrument, trace, trace_span};
 use tracing_futures::Instrument;
 use tun_nat::{run_nat, SessionManager};
 
-type UdpManager = Arc<RwLock<HashMap<u16, (ProxyUdpSocket, SocketAddr, Address)>>>;
+pub(crate) type UdpManager = Arc<RwLock<HashMap<u16, (ProxyUdpSocket, SocketAddr, Address)>>>;
 
 pub struct ProxyClient {
     config: Config,
@@ -168,19 +169,11 @@ impl ProxyClient {
         tun_addr: SocketAddr,
     ) -> Result<(ProxyUdpSocket, SocketAddr, Address)> {
         let port = tun_addr.port();
-        if !self.session_manager.update_activity_for_port(port) {
-            self.udp_manager.write().remove(&port);
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::ConnectionAborted,
-                "port recycled",
-            ));
-        }
-
         if let Some(r) = self.udp_manager.read().get(&port) {
             return Ok(r.clone());
         }
 
-        let (proxy_udp_socket, real_dest, host) = relay_udp_socket(
+        relay_udp_socket(
             tun_socket,
             tun_addr,
             self.session_manager.clone(),
@@ -190,13 +183,9 @@ impl ProxyClient {
             self.server_chooser.clone(),
             self.connectivity.clone(),
             self.uid,
+            self.udp_manager.clone(),
         )
-        .await?;
-
-        self.udp_manager
-            .write()
-            .insert(port, (proxy_udp_socket.clone(), real_dest, host.clone()));
-        Ok((proxy_udp_socket, real_dest, host))
+        .await
     }
 
     async fn run_udp_relay_server(&self) -> Result<()> {
@@ -313,6 +302,7 @@ pub(crate) async fn get_real_src_real_dest_and_host(
     session_manager: &SessionManager,
     resolver: &RuleBasedDnsResolver,
     dns_client: &DnsClient,
+    config: &Config,
 ) -> Result<(SocketAddr, SocketAddr, Address)> {
     let (real_src, real_dest) = match session_manager.get_by_port(session_port) {
         Some(s) => s,
@@ -325,11 +315,31 @@ pub(crate) async fn get_real_src_real_dest_and_host(
         }
     };
 
+    let IpAddr::V4(ipv4) = real_src.ip() else {
+        return Err(Error::new(
+            std::io::ErrorKind::Other,
+            "only support ipv4",
+        ));
+    };
+    let is_tun_ip = config.tun_cidr.contains_addr(&ipv4.into());
     let ip = real_dest.ip().to_string();
-    let host = resolver
+    let host_optional = resolver
         .lookup_host(&ip)
-        .map(|s| Address::DomainNameAddress(s, real_dest.port()))
-        .unwrap_or_else(|| Address::SocketAddress(real_dest));
+        .map(|s| Address::DomainNameAddress(s, real_dest.port()));
+
+    let host = match (host_optional, is_tun_ip) {
+        (Some(h), _) => h,
+
+        // 如果是 tun 的 ip，但是没有找到对应的域名，说明是非法的访问，需要忽略。
+        (None, true) => {
+            return Err(Error::new(
+                std::io::ErrorKind::Other,
+                format!("no host found for tun ip: {}", ip),
+            ))
+        }
+        // 如果不是 tun 的 ip，说明是制定了 ip 的访问。
+        (None, false) => Address::SocketAddress(real_dest),
+    };
 
     trace!(dest_host = ?host, "new relay connection");
 

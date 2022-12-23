@@ -10,7 +10,8 @@ use tun_nat::SessionManager;
 
 use crate::dns_client::DnsClient;
 use crate::probe_connectivity::ProbeConnectivity;
-use crate::proxy_client::{get_action_for_addr, get_real_src_real_dest_and_host};
+use crate::proxy_client::{get_action_for_addr, get_real_src_real_dest_and_host, UdpManager};
+use crate::proxy_connection::ProxyConnection;
 use crate::proxy_udp_socket::ProxyUdpSocket;
 use crate::server_chooser::ServerChooser;
 
@@ -25,11 +26,17 @@ pub(crate) async fn relay_udp_socket(
     server_chooser: Arc<ServerChooser>,
     connectivity: ProbeConnectivity,
     user_id: Option<u32>,
+    udp_manager: UdpManager,
 ) -> std::io::Result<(ProxyUdpSocket, SocketAddr, Address)> {
     let session_port = tun_addr.port();
-    let (real_src, real_dest, host) =
-        get_real_src_real_dest_and_host(session_port, &session_manager, &resolver, &dns_client)
-            .await?;
+    let (real_src, real_dest, host) = get_real_src_real_dest_and_host(
+        session_port,
+        &session_manager,
+        &resolver,
+        &dns_client,
+        &config,
+    )
+    .await?;
     tracing::debug!(?real_src, ?real_dest, ?host, "new udp connection");
     let proxy_socket = choose_proxy_udp_socket(
         real_src,
@@ -46,6 +53,7 @@ pub(crate) async fn relay_udp_socket(
 
     let proxy_client_clone = proxy_socket.clone();
     let host_clone = host.clone();
+    let udp_manager_clone = udp_manager.clone();
     let _ = spawn(async move {
         let _: std::io::Result<()> = async {
             let mut buf = vec![0; 2000];
@@ -69,7 +77,14 @@ pub(crate) async fn relay_udp_socket(
         }
         .await;
         session_manager.recycle_port(session_port);
+        udp_manager_clone.write().remove(&session_port);
+        proxy_client_clone.shutdown();
     });
+
+    udp_manager.write().insert(
+        session_port,
+        (proxy_socket.clone(), real_dest, host.clone()),
+    );
 
     Ok((proxy_socket, real_dest, host))
 }

@@ -41,7 +41,7 @@ impl RuleBasedDnsResolver {
         let host = Store::global()
             .get_host_by_ipv4(addr.parse().expect("invalid addr"))
             .expect("get host");
-        debug!("lookup host: {}, addr: {:?}", addr, host);
+        debug!("lookup host: {:?}, addr: {:?}", host, addr);
         host
     }
 
