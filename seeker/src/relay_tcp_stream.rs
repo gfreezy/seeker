@@ -35,9 +35,14 @@ pub(crate) async fn relay_tcp_stream(
     })?;
     trace!(peer_addr = ?peer_addr, "new connection");
     let session_port = peer_addr.port();
-    let (real_src, real_dest, host) =
-        get_real_src_real_dest_and_host(session_port, &session_manager, &resolver, &dns_client)
-            .await?;
+    let (real_src, real_dest, host) = get_real_src_real_dest_and_host(
+        session_port,
+        &session_manager,
+        &resolver,
+        &dns_client,
+        &config,
+    )
+    .await?;
 
     let remote_conn = match choose_proxy_tcp_stream(
         real_src,

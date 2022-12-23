@@ -212,7 +212,7 @@ impl Config {
             ));
         };
 
-        Store::setup_global("seeker.sqlite", conf.tun_ip);
+        Store::setup_global("seeker.sqlite", conf.dns_start_ip);
 
         conf.load_remote_servers();
         conf.add_proxy_servers_to_direct_rules();
