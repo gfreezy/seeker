@@ -55,7 +55,7 @@ impl ServerChooser {
     fn recycle_live_connections(&self) {
         self.live_connections
             .write()
-            .retain(|stream| stream.strong_count() > 1);
+            .retain(|stream| stream.is_alive());
     }
 
     #[tracing::instrument(skip(self))]
@@ -143,11 +143,15 @@ impl ServerChooser {
     }
 
     pub async fn run_background_tasks(&self) -> Result<()> {
+        let mut last_updated = Instant::now();
         loop {
-            self.ping_servers().await;
-            self.print_connection_stats();
+            if last_updated.elapsed() > Duration::from_secs(10) {
+                self.ping_servers().await;
+                self.print_connection_stats();
+                last_updated = Instant::now();
+            }
             self.recycle_live_connections();
-            sleep(Duration::from_secs(30)).await;
+            sleep(Duration::from_secs(1)).await;
         }
     }
 

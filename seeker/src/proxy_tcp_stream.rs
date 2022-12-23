@@ -134,8 +134,8 @@ impl ProxyConnection for ProxyTcpStream {
         self.alive.store(false, Ordering::SeqCst);
     }
 
-    fn strong_count(&self) -> usize {
-        Arc::strong_count(&self.alive)
+    fn is_alive(&self) -> bool {
+        self.alive.load(Ordering::SeqCst)
     }
 
     fn remote_addr(&self) -> Option<&Address> {

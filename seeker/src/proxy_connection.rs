@@ -7,7 +7,7 @@ pub trait ProxyConnection {
     fn config(&self) -> Option<&ServerConfig>;
     fn has_config(&self, config: Option<&ServerConfig>) -> bool;
     fn shutdown(&self);
-    fn strong_count(&self) -> usize;
+    fn is_alive(&self) -> bool;
     fn remote_addr(&self) -> Option<&Address> {
         None
     }
