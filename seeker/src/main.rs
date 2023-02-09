@@ -103,7 +103,7 @@ fn main() -> anyhow::Result<()> {
     }
     let config_url = matches.get_one::<String>("config-url").map(String::as_ref);
 
-    let dns_setup = DNSSetup::new("".to_string());
+    let dns_setup = DNSSetup::new("127.0.0.1".to_string());
 
     let config = load_config(path, config_url, dns_setup.original_dns(), key)?;
 
@@ -180,8 +180,9 @@ fn load_config(
     // If dns_servers is empty, use original dns servers.
     if c.dns_servers.is_empty() {
         for dns in original_dns {
-            c.dns_servers
-                .push(config::DnsServerAddr::UdpSocketAddr(dns.parse()?));
+            c.dns_servers.push(config::DnsServerAddr::UdpSocketAddr(
+                format!("{}:53", dns).parse()?,
+            ));
         }
     }
     Ok(c)
