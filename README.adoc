@@ -82,10 +82,10 @@ sudo seeker --config path/to/config.yml --encrypt --key encrypt-key
 ----
 verbose: false
 dns_start_ip: 10.0.0.10
-dns_servers:
-  - 223.5.5.5:53
-  - 114.114.114.114:53
-  - tcp://114.114.114.114:53
+// dns_servers:  # 可以指定多个 DNS 服务器，如果不指定则使用系统默认的 DNS 服务器
+//   - 223.5.5.5:53
+//   - 114.114.114.114:53
+//   - tcp://114.114.114.114:53
 dns_timeout: 1s
 tun_bypass_direct: true  # 直连的域名直接返回真实IP，不走tun
 tun_name: utun4

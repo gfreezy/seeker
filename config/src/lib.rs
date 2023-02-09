@@ -33,6 +33,7 @@ pub struct Config {
     pub remote_config_urls: Vec<String>,
     geo_ip: Option<PathBuf>,
     pub dns_start_ip: Ipv4Addr,
+    #[serde(default)]
     pub dns_servers: Vec<DnsServerAddr>,
     pub tun_bypass_direct: bool,
     pub tun_name: String,
