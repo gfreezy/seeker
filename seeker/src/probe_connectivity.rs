@@ -56,7 +56,7 @@ impl ProbeConnectivity {
             let map = self.map.clone();
             let timeout = self.timeout;
             let addr = addr.clone();
-            let _ = spawn(async move {
+            spawn(async move {
                 let is_direct = Self::force_probe_connectivity(sock_addr, &addr, timeout).await;
                 map.lock().insert(addr, is_direct);
             });

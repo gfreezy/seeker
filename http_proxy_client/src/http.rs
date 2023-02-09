@@ -19,16 +19,14 @@ impl HttpProxyTcpStream {
     ) -> Result<Self> {
         let mut conn = TcpStream::connect(proxy_server).await?;
         let authorization = match (username, password) {
-            (Some(username), Some(password)) => {
-                base64::encode(format!("{}:{}", username, password))
-            }
+            (Some(username), Some(password)) => base64::encode(format!("{username}:{password}")),
             _ => "".to_string(),
         };
-        let mut req_buf = vec![format!("CONNECT {} HTTP/1.1", addr)];
+        let mut req_buf = vec![format!("CONNECT {addr} HTTP/1.1")];
         if !authorization.is_empty() {
-            req_buf.push(format!("Proxy-Authorization: Basic {}", authorization));
+            req_buf.push(format!("Proxy-Authorization: Basic {authorization}"));
         }
-        req_buf.push(format!("Host: {}", addr));
+        req_buf.push(format!("Host: {addr}"));
         req_buf.push("\r\n".to_string());
         let req: String = req_buf.join("\r\n");
         conn.write_all(req.as_bytes()).await?;

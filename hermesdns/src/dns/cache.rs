@@ -112,7 +112,7 @@ impl DomainEntry {
 
     pub fn get_cache_state(&self, qtype: QueryType) -> CacheState {
         match self.record_types.get(&qtype) {
-            Some(&RecordSet::Records { ref records, .. }) => {
+            Some(RecordSet::Records { records, .. }) => {
                 let now = Local::now();
 
                 let mut valid_count = 0;
@@ -349,22 +349,23 @@ mod tests {
         }
 
         // Now add some actual records
-        let mut records = Vec::new();
-        records.push(DnsRecord::A {
-            domain: "www.google.com".to_string(),
-            addr: "127.0.0.1".parse().unwrap(),
-            ttl: TransientTtl(3600),
-        });
-        records.push(DnsRecord::A {
-            domain: "www.yahoo.com".to_string(),
-            addr: "127.0.0.2".parse().unwrap(),
-            ttl: TransientTtl(0),
-        });
-        records.push(DnsRecord::CNAME {
-            domain: "www.microsoft.com".to_string(),
-            host: "www.somecdn.com".to_string(),
-            ttl: TransientTtl(3600),
-        });
+        let records = vec![
+            DnsRecord::A {
+                domain: "www.google.com".to_string(),
+                addr: "127.0.0.1".parse().unwrap(),
+                ttl: TransientTtl(3600),
+            },
+            DnsRecord::A {
+                domain: "www.yahoo.com".to_string(),
+                addr: "127.0.0.2".parse().unwrap(),
+                ttl: TransientTtl(0),
+            },
+            DnsRecord::CNAME {
+                domain: "www.microsoft.com".to_string(),
+                host: "www.somecdn.com".to_string(),
+                ttl: TransientTtl(3600),
+            },
+        ];
 
         cache.store(&records);
 
@@ -392,12 +393,11 @@ mod tests {
             panic!();
         }
 
-        let mut records2 = Vec::new();
-        records2.push(DnsRecord::A {
+        let records2 = vec![DnsRecord::A {
             domain: "www.yahoo.com".to_string(),
             addr: "127.0.0.2".parse().unwrap(),
             ttl: TransientTtl(3600),
-        });
+        }];
 
         cache.store(&records2);
 
