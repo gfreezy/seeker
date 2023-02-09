@@ -25,12 +25,16 @@ impl DNSSetup {
         info!("original dns: {:?}", &original_dns);
 
         resolv.set_len(0).unwrap();
-        resolv.seek(SeekFrom::Start(0)).unwrap();
+        resolv.rewind().unwrap();
         resolv
             .write_all(generate_resolve_file(&["127.0.0.1", &dns]).as_slice())
             .unwrap();
 
         DNSSetup { original_dns }
+    }
+
+    pub fn original_dns(&self) -> Vec<String> {
+        self.original_dns.clone()
     }
 }
 
