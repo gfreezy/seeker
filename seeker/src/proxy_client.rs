@@ -334,7 +334,7 @@ pub(crate) async fn get_real_src_real_dest_and_host(
         (None, true) => {
             return Err(Error::new(
                 std::io::ErrorKind::Other,
-                format!("no host found for tun ip: {}", ip),
+                format!("no host found for tun ip: {ip}"),
             ))
         }
         // 如果不是 tun 的 ip，说明是制定了 ip 的访问。

@@ -443,11 +443,11 @@ mod tests {
     fn test_write_qname() {
         let mut buffer = VectorPacketBuffer::new();
 
-        match buffer.write_qname(&"ns1.google.com".to_string()) {
+        match buffer.write_qname("ns1.google.com") {
             Ok(_) => {}
             Err(_) => panic!(),
         }
-        match buffer.write_qname(&"ns2.google.com".to_string()) {
+        match buffer.write_qname("ns2.google.com") {
             Ok(_) => {}
             Err(_) => panic!(),
         }

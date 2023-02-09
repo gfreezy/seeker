@@ -174,7 +174,7 @@ impl DnsUdpServer {
             let (_, src) = match socket.recv_from(&mut req_buffer.buf).await {
                 Ok(x) => x,
                 Err(e) => {
-                    println!("Failed to read from UDP socket: {:?}", e);
+                    println!("Failed to read from UDP socket: {e:?}");
                     continue;
                 }
             };

@@ -74,7 +74,7 @@ impl RingAeadCipher {
             CipherType::ChaCha20IetfPoly1305 => {
                 RingAeadCipher::new_crypt(&CHACHA20_POLY1305, key, is_seal)
             }
-            _ => panic!("unsupported cipher in ring {:?}", t),
+            _ => panic!("unsupported cipher in ring {t:?}"),
         }
     }
 

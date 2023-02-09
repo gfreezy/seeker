@@ -46,11 +46,11 @@ impl DNSSetup {
             }
             let _ = run_cmd("networksetup", &args);
         } else if self.dns.is_empty() {
-            let _ = run_cmd("networksetup", &["-setdnsservers", &network, "127.0.0.1"]);
+            let _ = run_cmd("networksetup", &["-setdnsservers", network, "127.0.0.1"]);
         } else {
             let _ = run_cmd(
                 "networksetup",
-                &["-setdnsservers", &network, "127.0.0.1", &self.dns],
+                &["-setdnsservers", network, "127.0.0.1", &self.dns],
             );
         }
 

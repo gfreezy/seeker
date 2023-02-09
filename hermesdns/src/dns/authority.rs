@@ -110,7 +110,7 @@ impl<'a> Zones {
             let mut zone_file = match File::create(&filename) {
                 Ok(x) => x,
                 Err(_) => {
-                    println!("Failed to save file {:?}", filename);
+                    println!("Failed to save file {filename:?}");
                     continue;
                 }
             };

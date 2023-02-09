@@ -106,7 +106,7 @@ pub(crate) fn setup_logger(log_path: Option<&str>, trace: bool) -> anyhow::Resul
 
             eprintln!("{} deadlocks detected", deadlocks.len());
             for (i, threads) in deadlocks.iter().enumerate() {
-                eprintln!("Deadlock #{}", i);
+                eprintln!("Deadlock #{i}");
                 for t in threads {
                     eprintln!("Thread Id {:#?}", t.thread_id());
                     eprintln!("{:#?}", t.backtrace());

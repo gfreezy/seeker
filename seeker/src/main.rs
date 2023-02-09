@@ -181,7 +181,7 @@ fn load_config(
     if c.dns_servers.is_empty() {
         for dns in original_dns {
             c.dns_servers.push(config::DnsServerAddr::UdpSocketAddr(
-                format!("{}:53", dns).parse()?,
+                format!("{dns}:53").parse()?,
             ));
         }
     }

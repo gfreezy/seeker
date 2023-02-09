@@ -37,7 +37,7 @@ impl SodiumStreamCipher {
             | CipherType::Salsa20
             | CipherType::XSalsa20
             | CipherType::ChaCha20Ietf => {}
-            _ => panic!("sodium cipher does not support {:?} cipher", t),
+            _ => panic!("sodium cipher does not support {t:?} cipher"),
         }
 
         SODIUM_INIT_FLAG.call_once(|| unsafe {

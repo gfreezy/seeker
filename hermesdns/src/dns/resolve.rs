@@ -342,7 +342,11 @@ mod tests {
             let resolver = &context.resolver;
 
             // Expect failure when no name servers are available
-            if let Ok(_) = resolver.resolve("google.com", QueryType::A, true).await {
+            if resolver
+                .resolve("google.com", QueryType::A, true)
+                .await
+                .is_ok()
+            {
                 panic!();
             }
         })
@@ -368,21 +372,28 @@ mod tests {
                 .expect("cast to RecursiveDnsResolver");
 
             // Expect failure when no name servers are available
-            if let Ok(_) = resolver.resolve("google.com", QueryType::A, true).await {
+            if resolver
+                .resolve("google.com", QueryType::A, true)
+                .await
+                .is_ok()
+            {
                 panic!();
             }
 
             // Insert name server, but no corresponding A record
-            let mut nameservers = Vec::new();
-            nameservers.push(DnsRecord::NS {
+            let nameservers = vec![DnsRecord::NS {
                 domain: "".to_string(),
                 host: "a.myroot.net".to_string(),
                 ttl: TransientTtl(3600),
-            });
+            }];
 
             let _ = resolver.cache.store(&nameservers);
 
-            if let Ok(_) = resolver.resolve("google.com", QueryType::A, true).await {
+            if resolver
+                .resolve("google.com", QueryType::A, true)
+                .await
+                .is_ok()
+            {
                 panic!();
             }
         })
@@ -442,23 +453,28 @@ mod tests {
                 .expect("cast to ForwardingDnsResolver");
 
             // Expect failure when no name servers are available
-            if let Ok(_) = resolver.resolve("google.com", QueryType::A, true).await {
+            if resolver
+                .resolve("google.com", QueryType::A, true)
+                .await
+                .is_ok()
+            {
                 panic!();
             }
 
             // Insert root servers
             {
-                let mut nameservers = Vec::new();
-                nameservers.push(DnsRecord::NS {
-                    domain: "".to_string(),
-                    host: "a.myroot.net".to_string(),
-                    ttl: TransientTtl(3600),
-                });
-                nameservers.push(DnsRecord::A {
-                    domain: "a.myroot.net".to_string(),
-                    addr: "127.0.0.1".parse().unwrap(),
-                    ttl: TransientTtl(3600),
-                });
+                let nameservers = vec![
+                    DnsRecord::NS {
+                        domain: "".to_string(),
+                        host: "a.myroot.net".to_string(),
+                        ttl: TransientTtl(3600),
+                    },
+                    DnsRecord::A {
+                        domain: "a.myroot.net".to_string(),
+                        addr: "127.0.0.1".parse().unwrap(),
+                        ttl: TransientTtl(3600),
+                    },
+                ];
 
                 let _ = resolver.cache.store(&nameservers);
             }
@@ -472,17 +488,18 @@ mod tests {
 
             // Insert TLD servers
             {
-                let mut nameservers = Vec::new();
-                nameservers.push(DnsRecord::NS {
-                    domain: "com".to_string(),
-                    host: "a.mytld.net".to_string(),
-                    ttl: TransientTtl(3600),
-                });
-                nameservers.push(DnsRecord::A {
-                    domain: "a.mytld.net".to_string(),
-                    addr: "127.0.0.2".parse().unwrap(),
-                    ttl: TransientTtl(3600),
-                });
+                let nameservers = vec![
+                    DnsRecord::NS {
+                        domain: "com".to_string(),
+                        host: "a.mytld.net".to_string(),
+                        ttl: TransientTtl(3600),
+                    },
+                    DnsRecord::A {
+                        domain: "a.mytld.net".to_string(),
+                        addr: "127.0.0.2".parse().unwrap(),
+                        ttl: TransientTtl(3600),
+                    },
+                ];
 
                 let _ = resolver.cache.store(&nameservers);
             }
@@ -496,17 +513,18 @@ mod tests {
 
             // Insert authoritative servers
             {
-                let mut nameservers = Vec::new();
-                nameservers.push(DnsRecord::NS {
-                    domain: "google.com".to_string(),
-                    host: "ns1.google.com".to_string(),
-                    ttl: TransientTtl(3600),
-                });
-                nameservers.push(DnsRecord::A {
-                    domain: "ns1.google.com".to_string(),
-                    addr: "127.0.0.3".parse().unwrap(),
-                    ttl: TransientTtl(3600),
-                });
+                let nameservers = vec![
+                    DnsRecord::NS {
+                        domain: "google.com".to_string(),
+                        host: "ns1.google.com".to_string(),
+                        ttl: TransientTtl(3600),
+                    },
+                    DnsRecord::A {
+                        domain: "ns1.google.com".to_string(),
+                        addr: "127.0.0.3".parse().unwrap(),
+                        ttl: TransientTtl(3600),
+                    },
+                ];
 
                 let _ = resolver.cache.store(&nameservers);
             }
@@ -562,17 +580,18 @@ mod tests {
                 .expect("cast to ForwardingDnsResolver");
 
             // Insert name servers
-            let mut nameservers = Vec::new();
-            nameservers.push(DnsRecord::NS {
-                domain: "google.com".to_string(),
-                host: "ns1.google.com".to_string(),
-                ttl: TransientTtl(3600),
-            });
-            nameservers.push(DnsRecord::A {
-                domain: "ns1.google.com".to_string(),
-                addr: "127.0.0.1".parse().unwrap(),
-                ttl: TransientTtl(3600),
-            });
+            let nameservers = vec![
+                DnsRecord::NS {
+                    domain: "google.com".to_string(),
+                    host: "ns1.google.com".to_string(),
+                    ttl: TransientTtl(3600),
+                },
+                DnsRecord::A {
+                    domain: "ns1.google.com".to_string(),
+                    addr: "127.0.0.1".parse().unwrap(),
+                    ttl: TransientTtl(3600),
+                },
+            ];
 
             let _ = resolver.cache.store(&nameservers);
 

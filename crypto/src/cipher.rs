@@ -35,8 +35,8 @@ impl Debug for Error {
         match *self {
             Error::UnknownCipherType => write!(f, "UnknownCipherType"),
             #[cfg(feature = "openssl")]
-            Error::OpenSSLError(ref err) => write!(f, "{:?}", err),
-            Error::IoError(ref err) => write!(f, "{:?}", err),
+            Error::OpenSSLError(ref err) => write!(f, "{err:?}"),
+            Error::IoError(ref err) => write!(f, "{err:?}"),
             Error::AeadDecryptFailed => write!(f, "AEAD decrypt failed"),
             Error::SodiumError => write!(f, "Sodium error"),
         }
@@ -48,8 +48,8 @@ impl Display for Error {
         match *self {
             Error::UnknownCipherType => write!(f, "UnknownCipherType"),
             #[cfg(feature = "openssl")]
-            Error::OpenSSLError(ref err) => write!(f, "{}", err),
-            Error::IoError(ref err) => write!(f, "{}", err),
+            Error::OpenSSLError(ref err) => write!(f, "{err}"),
+            Error::IoError(ref err) => write!(f, "{err}"),
             Error::AeadDecryptFailed => write!(f, "AeadDecryptFailed"),
             Error::SodiumError => write!(f, "sodium error"),
         }
@@ -618,7 +618,7 @@ impl CipherType {
             #[cfg(feature = "miscreant")]
             CipherType::Aes128PmacSiv | CipherType::Aes256PmacSiv => 16,
 
-            _ => panic!("only support AEAD ciphers, found {:?}", self),
+            _ => panic!("only support AEAD ciphers, found {self:?}"),
         }
     }
 
@@ -737,89 +737,89 @@ impl FromStr for CipherType {
 impl Display for CipherType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            CipherType::Table => write!(f, "{}", CIPHER_TABLE),
-            CipherType::Plain => write!(f, "{}", CIPHER_PLAIN),
+            CipherType::Table => write!(f, "{CIPHER_TABLE}"),
+            CipherType::Plain => write!(f, "{CIPHER_PLAIN}"),
             #[cfg(feature = "aes-cfb")]
-            CipherType::Aes128Cfb => write!(f, "{}", CIPHER_AES_128_CFB),
+            CipherType::Aes128Cfb => write!(f, "{CIPHER_AES_128_CFB}"),
             #[cfg(feature = "aes-cfb")]
-            CipherType::Aes128Cfb1 => write!(f, "{}", CIPHER_AES_128_CFB_1),
+            CipherType::Aes128Cfb1 => write!(f, "{CIPHER_AES_128_CFB_1}"),
             #[cfg(feature = "aes-cfb")]
-            CipherType::Aes128Cfb8 => write!(f, "{}", CIPHER_AES_128_CFB_8),
+            CipherType::Aes128Cfb8 => write!(f, "{CIPHER_AES_128_CFB_8}"),
             #[cfg(feature = "aes-cfb")]
-            CipherType::Aes128Cfb128 => write!(f, "{}", CIPHER_AES_128_CFB_128),
+            CipherType::Aes128Cfb128 => write!(f, "{CIPHER_AES_128_CFB_128}"),
 
             #[cfg(feature = "aes-cfb")]
-            CipherType::Aes192Cfb => write!(f, "{}", CIPHER_AES_192_CFB),
+            CipherType::Aes192Cfb => write!(f, "{CIPHER_AES_192_CFB}"),
             #[cfg(feature = "aes-cfb")]
-            CipherType::Aes192Cfb1 => write!(f, "{}", CIPHER_AES_192_CFB_1),
+            CipherType::Aes192Cfb1 => write!(f, "{CIPHER_AES_192_CFB_1}"),
             #[cfg(feature = "aes-cfb")]
-            CipherType::Aes192Cfb8 => write!(f, "{}", CIPHER_AES_192_CFB_8),
+            CipherType::Aes192Cfb8 => write!(f, "{CIPHER_AES_192_CFB_8}"),
             #[cfg(feature = "aes-cfb")]
-            CipherType::Aes192Cfb128 => write!(f, "{}", CIPHER_AES_192_CFB_128),
+            CipherType::Aes192Cfb128 => write!(f, "{CIPHER_AES_192_CFB_128}"),
 
             #[cfg(feature = "aes-cfb")]
-            CipherType::Aes256Cfb => write!(f, "{}", CIPHER_AES_256_CFB),
+            CipherType::Aes256Cfb => write!(f, "{CIPHER_AES_256_CFB}"),
             #[cfg(feature = "aes-cfb")]
-            CipherType::Aes256Cfb1 => write!(f, "{}", CIPHER_AES_256_CFB_1),
+            CipherType::Aes256Cfb1 => write!(f, "{CIPHER_AES_256_CFB_1}"),
             #[cfg(feature = "aes-cfb")]
-            CipherType::Aes256Cfb8 => write!(f, "{}", CIPHER_AES_256_CFB_8),
+            CipherType::Aes256Cfb8 => write!(f, "{CIPHER_AES_256_CFB_8}"),
             #[cfg(feature = "aes-cfb")]
-            CipherType::Aes256Cfb128 => write!(f, "{}", CIPHER_AES_256_CFB_128),
+            CipherType::Aes256Cfb128 => write!(f, "{CIPHER_AES_256_CFB_128}"),
 
             #[cfg(feature = "aes-ctr")]
-            CipherType::Aes128Ctr => write!(f, "{}", CIPHER_AES_128_CTR),
+            CipherType::Aes128Ctr => write!(f, "{CIPHER_AES_128_CTR}"),
             #[cfg(feature = "aes-ctr")]
-            CipherType::Aes192Ctr => write!(f, "{}", CIPHER_AES_192_CTR),
+            CipherType::Aes192Ctr => write!(f, "{CIPHER_AES_192_CTR}"),
             #[cfg(feature = "aes-ctr")]
-            CipherType::Aes256Ctr => write!(f, "{}", CIPHER_AES_256_CTR),
+            CipherType::Aes256Ctr => write!(f, "{CIPHER_AES_256_CTR}"),
 
             #[cfg(feature = "camellia-cfb")]
-            CipherType::Camellia128Cfb => write!(f, "{}", CIPHER_CAMELLIA_128_CFB),
+            CipherType::Camellia128Cfb => write!(f, "{CIPHER_CAMELLIA_128_CFB}"),
             #[cfg(feature = "camellia-cfb")]
-            CipherType::Camellia128Cfb1 => write!(f, "{}", CIPHER_CAMELLIA_128_CFB_1),
+            CipherType::Camellia128Cfb1 => write!(f, "{CIPHER_CAMELLIA_128_CFB_1}"),
             #[cfg(feature = "camellia-cfb")]
-            CipherType::Camellia128Cfb8 => write!(f, "{}", CIPHER_CAMELLIA_128_CFB_8),
+            CipherType::Camellia128Cfb8 => write!(f, "{CIPHER_CAMELLIA_128_CFB_8}"),
             #[cfg(feature = "camellia-cfb")]
-            CipherType::Camellia128Cfb128 => write!(f, "{}", CIPHER_CAMELLIA_128_CFB_128),
+            CipherType::Camellia128Cfb128 => write!(f, "{CIPHER_CAMELLIA_128_CFB_128}"),
             #[cfg(feature = "camellia-cfb")]
-            CipherType::Camellia192Cfb => write!(f, "{}", CIPHER_CAMELLIA_192_CFB),
+            CipherType::Camellia192Cfb => write!(f, "{CIPHER_CAMELLIA_192_CFB}"),
             #[cfg(feature = "camellia-cfb")]
-            CipherType::Camellia192Cfb1 => write!(f, "{}", CIPHER_CAMELLIA_192_CFB_1),
+            CipherType::Camellia192Cfb1 => write!(f, "{CIPHER_CAMELLIA_192_CFB_1}"),
             #[cfg(feature = "camellia-cfb")]
-            CipherType::Camellia192Cfb8 => write!(f, "{}", CIPHER_CAMELLIA_192_CFB_8),
+            CipherType::Camellia192Cfb8 => write!(f, "{CIPHER_CAMELLIA_192_CFB_8}"),
             #[cfg(feature = "camellia-cfb")]
-            CipherType::Camellia192Cfb128 => write!(f, "{}", CIPHER_CAMELLIA_192_CFB_128),
+            CipherType::Camellia192Cfb128 => write!(f, "{CIPHER_CAMELLIA_192_CFB_128}"),
             #[cfg(feature = "camellia-cfb")]
-            CipherType::Camellia256Cfb => write!(f, "{}", CIPHER_CAMELLIA_256_CFB),
+            CipherType::Camellia256Cfb => write!(f, "{CIPHER_CAMELLIA_256_CFB}"),
             #[cfg(feature = "camellia-cfb")]
-            CipherType::Camellia256Cfb1 => write!(f, "{}", CIPHER_CAMELLIA_256_CFB_1),
+            CipherType::Camellia256Cfb1 => write!(f, "{CIPHER_CAMELLIA_256_CFB_1}"),
             #[cfg(feature = "camellia-cfb")]
-            CipherType::Camellia256Cfb8 => write!(f, "{}", CIPHER_CAMELLIA_256_CFB_8),
+            CipherType::Camellia256Cfb8 => write!(f, "{CIPHER_CAMELLIA_256_CFB_8}"),
             #[cfg(feature = "camellia-cfb")]
-            CipherType::Camellia256Cfb128 => write!(f, "{}", CIPHER_CAMELLIA_256_CFB_128),
+            CipherType::Camellia256Cfb128 => write!(f, "{CIPHER_CAMELLIA_256_CFB_128}"),
 
             #[cfg(feature = "rc4")]
-            CipherType::Rc4 => write!(f, "{}", CIPHER_RC4),
+            CipherType::Rc4 => write!(f, "{CIPHER_RC4}"),
             #[cfg(feature = "rc4")]
-            CipherType::Rc4Md5 => write!(f, "{}", CIPHER_RC4_MD5),
+            CipherType::Rc4Md5 => write!(f, "{CIPHER_RC4_MD5}"),
 
             #[cfg(feature = "sodium")]
-            CipherType::ChaCha20 => write!(f, "{}", CIPHER_CHACHA20),
+            CipherType::ChaCha20 => write!(f, "{CIPHER_CHACHA20}"),
             #[cfg(feature = "sodium")]
-            CipherType::Salsa20 => write!(f, "{}", CIPHER_SALSA20),
+            CipherType::Salsa20 => write!(f, "{CIPHER_SALSA20}"),
             #[cfg(feature = "sodium")]
-            CipherType::XSalsa20 => write!(f, "{}", CIPHER_XSALSA20),
+            CipherType::XSalsa20 => write!(f, "{CIPHER_XSALSA20}"),
             #[cfg(feature = "sodium")]
-            CipherType::ChaCha20Ietf => write!(f, "{}", CIPHER_CHACHA20_IETF),
+            CipherType::ChaCha20Ietf => write!(f, "{CIPHER_CHACHA20_IETF}"),
 
             #[cfg(feature = "use-ring")]
-            CipherType::Aes128Gcm => write!(f, "{}", CIPHER_AES_128_GCM),
+            CipherType::Aes128Gcm => write!(f, "{CIPHER_AES_128_GCM}"),
             #[cfg(feature = "use-ring")]
-            CipherType::Aes256Gcm => write!(f, "{}", CIPHER_AES_256_GCM),
+            CipherType::Aes256Gcm => write!(f, "{CIPHER_AES_256_GCM}"),
             #[cfg(feature = "use-ring")]
-            CipherType::ChaCha20IetfPoly1305 => write!(f, "{}", CIPHER_CHACHA20_IETF_POLY1305),
+            CipherType::ChaCha20IetfPoly1305 => write!(f, "{CIPHER_CHACHA20_IETF_POLY1305}"),
             #[cfg(feature = "sodium")]
-            CipherType::XChaCha20IetfPoly1305 => write!(f, "{}", CIPHER_XCHACHA20_IETF_POLY1305),
+            CipherType::XChaCha20IetfPoly1305 => write!(f, "{CIPHER_XCHACHA20_IETF_POLY1305}"),
 
             #[cfg(feature = "miscreant")]
             CipherType::Aes128PmacSiv => write!(f, "{}", CIPHER_AES_128_PMAC_SIV),

@@ -249,7 +249,7 @@ impl ServerChooser {
             let ret: std::io::Result<_> = timeout(self.ping_timeout, async {
                 let mut conn =
                     ProxyTcpStream::connect(addr, Some(&config), self.dns_client.clone()).await?;
-                conn.write_all(format!("GET {} HTTP/1.1\r\n\r\n", path).as_bytes())
+                conn.write_all(format!("GET {path} HTTP/1.1\r\n\r\n").as_bytes())
                     .await?;
                 let mut buf = vec![0; 1024];
                 let _size = conn.read(&mut buf).await?;

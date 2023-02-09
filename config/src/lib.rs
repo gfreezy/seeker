@@ -249,23 +249,23 @@ impl Config {
                 Ok(servers) => {
                     if let Err(e) = store::Store::global().cache_remote_config_data(&url, &servers)
                     {
-                        eprintln!("Cache remote config `{}` error: {}", url, e);
+                        eprintln!("Cache remote config `{url}` error: {e}");
                     }
                     servers
                 }
                 Err(e) => {
-                    eprintln!("Load servers from remote config `{}` error: {}", url, e);
+                    eprintln!("Load servers from remote config `{url}` error: {e}");
 
                     let Ok(Some(data)) = store::Store::global().get_cached_remote_config_data(&url) else {
-                        eprintln!("No cached config for `{}`.", url);
+                        eprintln!("No cached config for `{url}`.");
                         continue;
                     };
-                    eprintln!("Use config for `{}` from cache instead.", url);
+                    eprintln!("Use config for `{url}` from cache instead.");
                     data
                 }
             };
             let Ok(extra_servers) = parse_remote_config_data(&data) else {
-                eprintln!("Parse config error for `{}`.", url);
+                eprintln!("Parse config error for `{url}`.");
                 continue;
             };
             servers.extend(extra_servers);
