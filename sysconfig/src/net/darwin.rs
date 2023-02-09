@@ -5,6 +5,7 @@ use tracing::info;
 pub struct DNSSetup {
     primary_network: String,
     original_dns: Vec<String>,
+    dns: String,
 }
 
 impl DNSSetup {
@@ -20,24 +21,35 @@ impl DNSSetup {
             .collect::<Vec<_>>();
 
         info!("Original DNS is {:?}", &original_dns);
+
+        DNSSetup {
+            primary_network: network,
+            original_dns,
+            dns,
+        }
+    }
+
+    pub fn start(&self) {
+        let original_dns = &self.original_dns;
+        let network = &self.primary_network;
         if !original_dns.is_empty() {
-            let mut args = vec!["-setdnsservers", &network, "127.0.0.1"];
-            for dns in &original_dns {
+            let mut args = vec!["-setdnsservers", network, "127.0.0.1"];
+            for dns in original_dns {
                 args.push(dns);
             }
             let _ = run_cmd("networksetup", &args);
-        } else if dns.is_empty() {
+        } else if self.dns.is_empty() {
             let _ = run_cmd("networksetup", &["-setdnsservers", &network, "127.0.0.1"]);
         } else {
             let _ = run_cmd(
                 "networksetup",
-                &["-setdnsservers", &network, "127.0.0.1", &dns],
+                &["-setdnsservers", &network, "127.0.0.1", &self.dns],
             );
         }
-        DNSSetup {
-            primary_network: network,
-            original_dns,
-        }
+    }
+
+    pub fn original_dns(&self) -> Vec<String> {
+        self.original_dns.clone()
     }
 }
 

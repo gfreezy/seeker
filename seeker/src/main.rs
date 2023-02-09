@@ -103,7 +103,9 @@ fn main() -> anyhow::Result<()> {
     }
     let config_url = matches.get_one::<String>("config-url").map(String::as_ref);
 
-    let config = load_config(path, config_url, key)?;
+    let dns_setup = DNSSetup::new("".to_string());
+
+    let config = load_config(path, config_url, dns_setup.original_dns(), key)?;
 
     let uid = matches.get_one::<u32>("user_id").copied();
     let log_path = matches.get_one::<String>("log").map(String::as_ref);
@@ -127,8 +129,8 @@ fn main() -> anyhow::Result<()> {
             .instrument(tracing::trace_span!("ProxyClient.new"))
             .await;
         eprint!(".");
-        let _dns_setup = DNSSetup::new("".to_string());
 
+        dns_setup.start();
         eprintln!("Started!");
 
         client
@@ -151,10 +153,11 @@ fn main() -> anyhow::Result<()> {
 fn load_config(
     path: Option<&str>,
     url: Option<&str>,
+    original_dns: Vec<String>,
     decrypt_key: Option<&str>,
 ) -> anyhow::Result<Config> {
-    match (path, url, decrypt_key) {
-        (Some(p), ..) => Config::from_config_file(p).context("Load config from path error"),
+    let mut c = match (path, url, decrypt_key) {
+        (Some(p), ..) => Config::from_config_file(p).context("Load config from path error")?,
         (_, Some(url), Some(key)) => {
             let ret = ureq::get(url).timeout(Duration::from_secs(5)).call();
             let resp = match ret {
@@ -169,10 +172,19 @@ fn load_config(
             let config =
                 config_encryptor::decrypt_config(resp.into_reader(), CipherType::ChaCha20Ietf, key)
                     .context("Decrypt remote config error")?;
-            Config::from_reader(config.as_slice()).context("Load Config error")
+            Config::from_reader(config.as_slice()).context("Load Config error")?
         }
         _ => bail!("Parameters error"),
+    };
+
+    // If dns_servers is empty, use original dns servers.
+    if c.dns_servers.is_empty() {
+        for dns in original_dns {
+            c.dns_servers
+                .push(config::DnsServerAddr::UdpSocketAddr(dns.parse()?));
+        }
     }
+    Ok(c)
 }
 
 fn encrypt_config(path: Option<&str>, encrypt_key: Option<&str>) -> anyhow::Result<String> {
