@@ -1,9 +1,9 @@
 verbose: false
 dns_start_ip: 11.0.0.10
-# dns_servers:  # dns 服务器列表，如果不设置，会自动从系统获取
-#   - 223.5.5.5:53
-#   - 114.114.114.114:53
-#   - tcp://114.114.114.114:53
+dns_servers:  # dns 服务器列表，如果不设置，会自动从系统获取。最好指定，否则 Wi-Fi 切换时可能会出现问题。
+  - 223.5.5.5:53
+  - 114.114.114.114:53
+  - tcp://114.114.114.114:53
 dns_timeout: 1s
 tun_bypass_direct: true  # 直连的域名直接返回真实IP，不走tun
 tun_name: utun4
