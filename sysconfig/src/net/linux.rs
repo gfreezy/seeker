@@ -1,6 +1,6 @@
 use crate::command::run_cmd;
 use std::fs::OpenOptions;
-use std::io::{Read, Seek, SeekFrom, Write};
+use std::io::{Read, Seek, Write};
 use std::net::IpAddr;
 use tracing::info;
 
@@ -36,6 +36,8 @@ impl DNSSetup {
     pub fn original_dns(&self) -> Vec<String> {
         self.original_dns.clone()
     }
+
+    pub fn start(&self) {}
 }
 
 impl Drop for DNSSetup {
