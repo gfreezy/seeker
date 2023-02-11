@@ -52,7 +52,7 @@ impl ProxyUdpSocket {
                 protocol => {
                     return Err(Error::new(
                         ErrorKind::ConnectionRefused,
-                        format!("udp not supported for {:?}.", protocol),
+                        format!("udp not supported for {protocol:?}."),
                     ))
                 }
             }

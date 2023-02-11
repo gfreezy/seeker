@@ -74,7 +74,7 @@ impl DnsNetworkClient {
         };
 
         let c = client.clone();
-        let _ = task::spawn(async {
+        task::spawn(async {
             async move {
                 loop {
                     match c.run().await {
@@ -202,14 +202,14 @@ impl DnsNetworkClient {
                 let _ = self.total_failed.fetch_add(1, Ordering::Release);
                 Err(Error::new(
                     ErrorKind::InvalidInput,
-                    format!("Domain {} not found", qname),
+                    format!("Domain {qname} not found"),
                 ))
             }
             Err(_) => {
                 let _ = self.total_failed.fetch_add(1, Ordering::Release);
                 Err(Error::new(
                     ErrorKind::TimedOut,
-                    format!("Domain \"{}\" resolve timed out", qname),
+                    format!("Domain \"{qname}\" resolve timed out"),
                 ))
             }
         }
@@ -238,7 +238,7 @@ impl DnsClient for DnsNetworkClient {
             return Ok(packet);
         }
 
-        eprint!("error resolve domain: {}", qname);
+        eprint!("error resolve domain: {qname}");
         Err(Error::new(ErrorKind::UnexpectedEof, "truncated message"))
     }
 }
@@ -261,7 +261,7 @@ pub mod tests {
         callback: Box<StubCallback>,
     }
 
-    impl<'a> DnsStubClient {
+    impl DnsStubClient {
         pub fn new(callback: Box<StubCallback>) -> DnsStubClient {
             DnsStubClient { callback }
         }

@@ -90,7 +90,7 @@ mod server_addr {
     {
         let s = String::deserialize(deserializer)?;
         Address::from_str(&s)
-            .map_err(|_| Error::custom(format!("invalid value: {}, ip:port or domain:port", s)))
+            .map_err(|_| Error::custom(format!("invalid value: {s}, ip:port or domain:port")))
     }
 }
 
@@ -286,7 +286,7 @@ impl ServerConfig {
 
         let svrconfig = ServerConfig::new(
             name,
-            Address::from_str(&format!("{}:{}", host, port)).unwrap(),
+            Address::from_str(&format!("{host}:{port}")).unwrap(),
             ServerProtocol::Shadowsocks,
             None,
             Some(pwd.to_string()),

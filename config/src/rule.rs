@@ -145,7 +145,7 @@ impl FromStr for Action {
 
 impl fmt::Display for Action {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?}", self)
+        write!(f, "{self:?}")
     }
 }
 

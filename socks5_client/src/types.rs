@@ -148,7 +148,7 @@ impl fmt::Display for Reply {
             Reply::GeneralFailure          => write!(f, "General failure"),
             Reply::HostUnreachable         => write!(f, "Host unreachable"),
             Reply::NetworkUnreachable      => write!(f, "Network unreachable"),
-            Reply::OtherReply(u)           => write!(f, "Other reply ({})", u),
+            Reply::OtherReply(u)           => write!(f, "Other reply ({u})"),
             Reply::TtlExpired              => write!(f, "TTL expired"),
         }
     }
@@ -291,7 +291,7 @@ impl Address {
                 // Wrong Address Type . Socks5 only supports ipv4, ipv6 and domain name
                 Err(Error::new(
                     Reply::AddressTypeNotSupported,
-                    format!("not supported address type {:#x}", addr_type),
+                    format!("not supported address type {addr_type:#x}"),
                 ))
             }
         }
@@ -338,8 +338,8 @@ impl Debug for Address {
     #[inline]
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         match *self {
-            Address::SocketAddress(ref addr) => write!(f, "{}", addr),
-            Address::DomainNameAddress(ref addr, ref port) => write!(f, "{}:{}", addr, port),
+            Address::SocketAddress(ref addr) => write!(f, "{addr}"),
+            Address::DomainNameAddress(ref addr, ref port) => write!(f, "{addr}:{port}"),
         }
     }
 }
@@ -348,8 +348,8 @@ impl fmt::Display for Address {
     #[inline]
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         match *self {
-            Address::SocketAddress(ref addr) => write!(f, "{}", addr),
-            Address::DomainNameAddress(ref addr, ref port) => write!(f, "{}:{}", addr, port),
+            Address::SocketAddress(ref addr) => write!(f, "{addr}"),
+            Address::DomainNameAddress(ref addr, ref port) => write!(f, "{addr}:{port}"),
         }
     }
 }
@@ -491,7 +491,7 @@ impl TcpRequestHeader {
         if ver != consts::SOCKS5_VERSION {
             return Err(Error::new(
                 Reply::ConnectionRefused,
-                format!("unsupported socks version {:#x}", ver),
+                format!("unsupported socks version {ver:#x}"),
             ));
         }
 
@@ -501,7 +501,7 @@ impl TcpRequestHeader {
             None => {
                 return Err(Error::new(
                     Reply::CommandNotSupported,
-                    format!("unsupported command {:#x}", cmd),
+                    format!("unsupported command {cmd:#x}"),
                 ));
             }
         };
@@ -575,7 +575,7 @@ impl TcpResponseHeader {
         if ver != consts::SOCKS5_VERSION {
             return Err(Error::new(
                 Reply::ConnectionRefused,
-                format!("unsupported socks version {:#x}", ver),
+                format!("unsupported socks version {ver:#x}"),
             ));
         }
 
@@ -649,7 +649,7 @@ impl HandshakeRequest {
             use std::io::{Error, ErrorKind};
             let err = Error::new(
                 ErrorKind::InvalidData,
-                format!("unsupported socks version {:#x}", ver),
+                format!("unsupported socks version {ver:#x}"),
             );
             return Err(err);
         }
@@ -718,7 +718,7 @@ impl HandshakeResponse {
             use std::io::{Error, ErrorKind};
             let err = Error::new(
                 ErrorKind::InvalidData,
-                format!("unsupported socks version {:#x}", ver),
+                format!("unsupported socks version {ver:#x}"),
             );
             Err(err)
         } else {
