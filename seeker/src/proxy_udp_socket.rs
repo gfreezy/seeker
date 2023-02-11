@@ -1,5 +1,5 @@
 use crate::dns_client::DnsClient;
-use crate::proxy_connection::ProxyConnection;
+use crate::proxy_connection::{next_connection_id, ProxyConnection};
 use crate::traffic::Traffic;
 use async_std::net::{SocketAddr, UdpSocket};
 use config::rule::Action;
@@ -10,6 +10,7 @@ use std::io;
 use std::io::{Error, ErrorKind};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::time::Instant;
 
 #[derive(Clone)]
 enum ProxyUdpSocketInner {
@@ -20,10 +21,12 @@ enum ProxyUdpSocketInner {
 
 #[derive(Clone)]
 pub struct ProxyUdpSocket {
+    id: u64,
     inner: ProxyUdpSocketInner,
     alive: Arc<AtomicBool>,
     config: Option<ServerConfig>,
     traffic: Traffic,
+    connect_time: Instant,
 }
 
 impl ProxyUdpSocket {
@@ -64,35 +67,45 @@ impl ProxyUdpSocket {
             alive: Arc::new(AtomicBool::new(true)),
             config: config.cloned(),
             traffic: Default::default(),
+            connect_time: Instant::now(),
+            id: next_connection_id(),
         })
     }
 
     pub async fn send_to(&self, buf: &[u8], addr: SocketAddr) -> io::Result<usize> {
-        if !self.alive.load(Ordering::SeqCst) {
+        if !self.is_alive() {
             return Err(Error::new(
                 ErrorKind::BrokenPipe,
                 "ProxyUdpSocket not alive",
             ));
         }
-        match &self.inner {
+        let ret = match &self.inner {
             ProxyUdpSocketInner::Direct(socket) => socket.send_to(buf, addr).await,
             ProxyUdpSocketInner::Socks5(socket) => socket.send_to(buf, addr).await,
             ProxyUdpSocketInner::Shadowsocks(socket) => socket.send_to(buf, addr).await,
+        };
+        if ret.is_err() {
+            self.shutdown();
         }
+        ret
     }
 
     pub async fn recv_from(&self, buf: &mut [u8]) -> io::Result<(usize, SocketAddr)> {
-        if !self.alive.load(Ordering::SeqCst) {
+        if !self.is_alive() {
             return Err(Error::new(
                 ErrorKind::BrokenPipe,
                 "ProxyUdpSocket not alive",
             ));
         }
-        match &self.inner {
+        let ret = match &self.inner {
             ProxyUdpSocketInner::Direct(socket) => socket.recv_from(buf).await,
             ProxyUdpSocketInner::Socks5(socket) => socket.recv_from(buf).await,
             ProxyUdpSocketInner::Shadowsocks(socket) => socket.recv_from(buf).await,
+        };
+        if ret.is_err() {
+            self.shutdown();
         }
+        ret
     }
 }
 
@@ -122,5 +135,13 @@ impl ProxyConnection for ProxyUdpSocket {
 
     fn is_alive(&self) -> bool {
         self.alive.load(Ordering::SeqCst)
+    }
+
+    fn id(&self) -> u64 {
+        self.id
+    }
+
+    fn connect_time(&self) -> std::time::Instant {
+        self.connect_time
     }
 }
