@@ -1,3 +1,5 @@
+use std::time::{Duration, Instant};
+
 use crate::traffic::Traffic;
 use config::{rule::Action, Address, ServerConfig};
 
@@ -11,4 +13,8 @@ pub trait ProxyConnection {
     fn remote_addr(&self) -> Option<&Address> {
         None
     }
+    fn duration(&self) -> Duration {
+        self.connect_time().elapsed()
+    }
+    fn connect_time(&self) -> Instant;
 }
