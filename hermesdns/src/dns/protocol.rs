@@ -847,22 +847,22 @@ impl DnsPacket {
 
         println!("questions:");
         for x in &self.questions {
-            println!("\t{:?}", x);
+            println!("\t{x:?}");
         }
 
         println!("answers:");
         for x in &self.answers {
-            println!("\t{:?}", x);
+            println!("\t{x:?}");
         }
 
         println!("authorities:");
         for x in &self.authorities {
-            println!("\t{:?}", x);
+            println!("\t{x:?}");
         }
 
         println!("resources:");
         for x in &self.resources {
-            println!("\t{:?}", x);
+            println!("\t{x:?}");
         }
     }
 

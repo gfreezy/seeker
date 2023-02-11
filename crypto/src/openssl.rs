@@ -91,10 +91,7 @@ impl OpenSSLCrypto {
 
             #[cfg(feature = "rc4")]
             CipherType::Rc4 => symm::Cipher::rc4(),
-            _ => panic!(
-                "cipher type {:?} is not supported by OpenSSLCrypt yet",
-                cipher_type
-            ),
+            _ => panic!("cipher type {cipher_type:?} is not supported by OpenSSLCrypt yet"),
         };
 
         // Panic if error occurs

@@ -54,7 +54,7 @@ pub(crate) async fn relay_udp_socket(
     let proxy_client_clone = proxy_socket.clone();
     let host_clone = host.clone();
     let udp_manager_clone = udp_manager.clone();
-    let _ = spawn(async move {
+    spawn(async move {
         let _: std::io::Result<()> = async {
             let mut buf = vec![0; 2000];
             loop {
