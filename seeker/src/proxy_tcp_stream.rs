@@ -13,7 +13,7 @@ use std::time::Instant;
 use tcp_connection::TcpConnection;
 
 use crate::dns_client::DnsClient;
-use crate::proxy_connection::ProxyConnection;
+use crate::proxy_connection::{next_connection_id, ProxyConnection};
 use crate::traffic::Traffic;
 use async_std::task::ready;
 use std::io::{Error, ErrorKind};
@@ -31,6 +31,7 @@ enum ProxyTcpStreamInner {
 
 #[derive(Clone)]
 pub struct ProxyTcpStream {
+    id: u64,
     inner: ProxyTcpStreamInner,
     alive: Arc<AtomicBool>,
     remote_addr: Address,
@@ -110,6 +111,7 @@ impl ProxyTcpStream {
         };
 
         Ok(ProxyTcpStream {
+            id: next_connection_id(),
             inner: stream,
             alive: Arc::new(AtomicBool::new(true)),
             remote_addr: remote_addr_clone,
@@ -157,6 +159,10 @@ impl ProxyConnection for ProxyTcpStream {
 
     fn connect_time(&self) -> Instant {
         self.connect_time
+    }
+
+    fn id(&self) -> u64 {
+        self.id
     }
 }
 
