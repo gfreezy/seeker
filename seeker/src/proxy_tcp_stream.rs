@@ -13,7 +13,9 @@ use std::time::Instant;
 use tcp_connection::TcpConnection;
 
 use crate::dns_client::DnsClient;
-use crate::proxy_connection::{next_connection_id, ProxyConnection};
+use crate::proxy_connection::{
+    next_connection_id, ProxyConnection, ProxyConnectionEventListener, StoreListener,
+};
 use crate::traffic::Traffic;
 use async_std::task::ready;
 use std::io::{Error, ErrorKind};
@@ -38,6 +40,7 @@ pub struct ProxyTcpStream {
     config: Option<ServerConfig>,
     traffic: Traffic,
     connect_time: Instant,
+    event_listener: Option<Arc<dyn ProxyConnectionEventListener + Send + Sync>>,
 }
 
 impl ProxyTcpStream {
@@ -110,7 +113,10 @@ impl ProxyTcpStream {
             ProxyTcpStreamInner::Direct(TcpStream::connect(socket_addr).await?)
         };
 
-        Ok(ProxyTcpStream {
+        let event_listener: Option<Arc<dyn ProxyConnectionEventListener + Send + Sync>> =
+            Some(Arc::new(StoreListener));
+        let l = event_listener.clone();
+        let conn = ProxyTcpStream {
             id: next_connection_id(),
             inner: stream,
             alive: Arc::new(AtomicBool::new(true)),
@@ -118,7 +124,12 @@ impl ProxyTcpStream {
             config: config.cloned(),
             traffic: Traffic::default(),
             connect_time: Instant::now(),
-        })
+            event_listener: Some(Arc::new(StoreListener)),
+        };
+        if let Some(l) = l {
+            l.on_connect(&conn);
+        }
+        Ok(conn)
     }
 }
 
@@ -137,6 +148,9 @@ impl ProxyConnection for ProxyTcpStream {
 
     fn shutdown(&self) {
         self.alive.store(false, Ordering::SeqCst);
+        if let Some(l) = &self.event_listener {
+            l.on_shutdown(self);
+        }
     }
 
     fn is_alive(&self) -> bool {
@@ -163,6 +177,28 @@ impl ProxyConnection for ProxyTcpStream {
 
     fn id(&self) -> u64 {
         self.id
+    }
+
+    fn network(&self) -> &'static str {
+        "tcp"
+    }
+
+    fn conn_type(&self) -> &'static str {
+        match self.inner {
+            ProxyTcpStreamInner::Direct(_) => "direct",
+            ProxyTcpStreamInner::Socks5(_) => "socks5",
+            ProxyTcpStreamInner::HttpProxy(_) => "http",
+            ProxyTcpStreamInner::HttpsProxy(_) => "https",
+            ProxyTcpStreamInner::Shadowsocks(_) => "ss",
+        }
+    }
+
+    fn recv_bytes(&self) -> usize {
+        self.traffic.received_bytes()
+    }
+
+    fn sent_bytes(&self) -> usize {
+        self.traffic.sent_bytes()
     }
 }
 
@@ -192,6 +228,9 @@ impl Read for ProxyTcpStream {
         match ret {
             Ok(size) => {
                 self.traffic.recv(size);
+                if let Some(l) = &self.event_listener {
+                    l.on_recv_bytes(&*self, size);
+                }
                 Poll::Ready(Ok(size))
             }
             e => {
@@ -225,6 +264,9 @@ impl Write for ProxyTcpStream {
         match ret {
             Ok(size) => {
                 self.traffic.send(size);
+                if let Some(l) = &self.event_listener {
+                    l.on_send_bytes(&*self, size);
+                }
                 Poll::Ready(Ok(size))
             }
             err => {

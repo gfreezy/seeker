@@ -9,7 +9,7 @@ pub struct Connection {
     pub network: String,
     pub conn_type: String,
     pub recv_bytes: u64,
-    pub send_bytes: u64,
+    pub sent_bytes: u64,
     pub proxy_server: String,
     pub connect_time: u64,
     pub last_update: u64,
@@ -18,7 +18,7 @@ pub struct Connection {
 
 impl Store {
     // create connection with the following data:
-    // | id | host | network | type | recv_bytes | send_bytes | proxy_server | connect_time | last_update | is_alive |
+    // | id | host | network | type | recv_bytes | sent_bytes | proxy_server | connect_time | last_update | is_alive |
     pub fn new_connection(
         &self,
         id: u64,
@@ -31,7 +31,7 @@ impl Store {
         let _ = conn.execute(
             &format!(
                 r#"
-            INSERT INTO {} (id, host, network, type, recv_bytes, send_bytes, proxy_server, connect_time, last_update, is_alive)
+            INSERT INTO {} (id, host, network, type, recv_bytes, sent_bytes, proxy_server, connect_time, last_update, is_alive)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
             "#,
                 Self::TABLE_CONNECTIONS,
@@ -55,24 +55,59 @@ impl Store {
         &self,
         id: u64,
         recv_bytes: u64,
-        send_bytes: u64,
+        sent_bytes: u64,
         last_update: Option<u64>,
     ) -> Result<()> {
         let conn = self.conn.lock();
         let _ = conn.execute(
             &format!(
                 r#"
-            UPDATE {} SET recv_bytes = ?, send_bytes = ?, last_update = ?
+            UPDATE {} SET recv_bytes = ?, sent_bytes = ?, last_update = ?
             WHERE id = ?
             "#,
                 Self::TABLE_CONNECTIONS,
             ),
-            params![
-                recv_bytes,
-                send_bytes,
-                last_update.unwrap_or_else(|| now()),
-                id
-            ],
+            params![recv_bytes, sent_bytes, last_update.unwrap_or_else(now), id],
+        )?;
+        Ok(())
+    }
+
+    pub fn incr_connection_recv_bytes(
+        &self,
+        id: u64,
+        bytes: u64,
+        last_update: Option<u64>,
+    ) -> Result<()> {
+        let conn = self.conn.lock();
+        let _ = conn.execute(
+            &format!(
+                r#"
+            UPDATE {} SET recv_bytes = recv_bytes + ?, last_update = ?
+            WHERE id = ?
+            "#,
+                Self::TABLE_CONNECTIONS,
+            ),
+            params![bytes, last_update.unwrap_or_else(now), id],
+        )?;
+        Ok(())
+    }
+
+    pub fn incr_connection_sent_bytes(
+        &self,
+        id: u64,
+        bytes: u64,
+        last_update: Option<u64>,
+    ) -> Result<()> {
+        let conn = self.conn.lock();
+        let _ = conn.execute(
+            &format!(
+                r#"
+            UPDATE {} SET sent_bytes = sent_bytes + ?, last_update = ?
+            WHERE id = ?
+            "#,
+                Self::TABLE_CONNECTIONS,
+            ),
+            params![bytes, last_update.unwrap_or_else(now), id],
         )?;
         Ok(())
     }
@@ -110,7 +145,7 @@ impl Store {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare_cached(&format!(
             r#"
-            SELECT id, host, network, type, recv_bytes, send_bytes, proxy_server, connect_time, last_update, is_alive
+            SELECT id, host, network, type, recv_bytes, sent_bytes, proxy_server, connect_time, last_update, is_alive
             FROM {}
             "#,
             Self::TABLE_CONNECTIONS,
@@ -124,7 +159,7 @@ impl Store {
                 network: row.get(2)?,
                 conn_type: row.get(3)?,
                 recv_bytes: row.get(4)?,
-                send_bytes: row.get(5)?,
+                sent_bytes: row.get(5)?,
                 proxy_server: row.get(6)?,
                 connect_time: row.get(7)?,
                 last_update: row.get(8)?,
@@ -172,16 +207,16 @@ mod tests {
             .new_connection(id, host, network, conn_type, proxy_server)
             .unwrap();
         let recv_bytes = 100;
-        let send_bytes = 200;
+        let sent_bytes = 200;
         store
-            .update_connection(id, recv_bytes, send_bytes, None)
+            .update_connection(id, recv_bytes, sent_bytes, None)
             .unwrap();
         let connections = store.list_connections().unwrap();
         assert_eq!(connections.len(), 1);
         let connection = &connections[0];
         assert_eq!(connection.id, id);
         assert_eq!(connection.recv_bytes, recv_bytes);
-        assert_eq!(connection.send_bytes, send_bytes);
+        assert_eq!(connection.sent_bytes, sent_bytes);
     }
 
     // shutdown a connection and check if it is shutdown correctly
@@ -201,7 +236,7 @@ mod tests {
         assert_eq!(connections.len(), 1);
         let connection = &connections[0];
         assert_eq!(connection.id, id);
-        assert_eq!(connection.is_alive, false);
+        assert!(!connection.is_alive);
     }
 
     // clear dead connections and check if it is cleared correctly

@@ -18,6 +18,7 @@ impl Default for Traffic {
         }
     }
 }
+
 impl Traffic {
     pub fn recv(&self, size: usize) {
         self.recv.fetch_add(size, Ordering::Relaxed);

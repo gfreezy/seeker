@@ -13,6 +13,7 @@ use parking_lot::{Mutex, RwLock};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+
 use tracing::info;
 
 #[derive(Clone)]
@@ -58,6 +59,10 @@ impl ServerChooser {
             .retain(|stream| stream.is_alive());
     }
 
+    fn insert_live_connections(&self, conn: Box<dyn ProxyConnection + Send + Sync>) {
+        self.live_connections.write().push(conn);
+    }
+
     #[tracing::instrument(skip(self))]
     pub async fn candidate_tcp_stream(
         &self,
@@ -98,7 +103,7 @@ impl ServerChooser {
 
         // store all on-fly connections
         let stream_clone = stream.clone();
-        self.live_connections.write().push(Box::new(stream_clone));
+        self.insert_live_connections(Box::new(stream_clone));
 
         Ok(stream)
     }
@@ -119,7 +124,7 @@ impl ServerChooser {
             _ => unreachable!(),
         };
         let socket_clone = socket.clone();
-        self.live_connections.write().push(Box::new(socket_clone));
+        self.insert_live_connections(Box::new(socket_clone));
         Ok(socket)
     }
 

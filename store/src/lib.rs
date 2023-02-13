@@ -129,7 +129,7 @@ impl Store {
         // endregion: remote_config_cache
 
         // region: connections
-        // | id | host | network | type | recv_bytes | send_bytes | proxy_server | connect_time | last_update | is_alive |
+        // | id | host | network | type | recv_bytes | sent_bytes | proxy_server | connect_time | last_update | is_alive |
         // connection data is cleared whenever the process starts.
         conn.execute_batch(&format!(
             r#"
@@ -140,7 +140,7 @@ impl Store {
                 network TEXT NOT NULL,
                 type TEXT NOT NULL,
                 recv_bytes INTEGER NOT NULL,
-                send_bytes INTEGER NOT NULL,
+                sent_bytes INTEGER NOT NULL,
                 proxy_server TEXT NOT NULL,
                 connect_time INTEGER NOT NULL,
                 last_update INTEGER NOT NULL,
