@@ -124,6 +124,7 @@ impl Store {
             ),
             params![now(), id],
         )?;
+        self.clear_dead_connections(60 * 30)?;
         Ok(())
     }
 
