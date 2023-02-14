@@ -22,6 +22,7 @@ pub struct ServerChooser {
     ping_timeout: Duration,
     servers: Arc<Vec<ServerConfig>>,
     candidates: Arc<Mutex<Vec<ServerConfig>>>,
+    selected_server: Arc<Mutex<ServerConfig>>,
     dns_client: DnsClient,
     live_connections: Arc<RwLock<Vec<Box<dyn ProxyConnection + Send + Sync>>>>,
 }
@@ -33,6 +34,7 @@ impl ServerChooser {
         ping_urls: Vec<PingURL>,
         ping_timeout: Duration,
     ) -> Self {
+        let selected = servers.first().cloned().expect("no server available");
         let chooser = ServerChooser {
             ping_urls,
             ping_timeout,
@@ -40,6 +42,7 @@ impl ServerChooser {
             servers,
             dns_client,
             live_connections: Arc::new(RwLock::new(vec![])),
+            selected_server: Arc::new(Mutex::new(selected)),
         };
         chooser.ping_servers().await;
         chooser
@@ -71,7 +74,7 @@ impl ServerChooser {
     ) -> std::io::Result<ProxyTcpStream> {
         let stream = match action {
             Action::Proxy => {
-                let config = self.candidates.lock().first().cloned().unwrap();
+                let config = self.selected_server.lock().clone();
                 let stream = ProxyTcpStream::connect(
                     remote_addr.clone(),
                     Some(&config),
@@ -85,7 +88,7 @@ impl ServerChooser {
                         "Failed to connect to server: {}",
                         config.addr()
                     );
-                    self.take_down_server_and_move_next(&config);
+                    self.move_to_next_server();
                 }
                 stream?
             }
@@ -112,12 +115,12 @@ impl ServerChooser {
         let socket = match action {
             Action::Direct => ProxyUdpSocket::new(None, self.dns_client.clone()).await?,
             Action::Proxy => {
-                let config = self.candidates.lock().first().cloned().unwrap();
+                let config = self.selected_server.lock().clone();
                 tracing::info!("Using server: {}", config.addr());
                 let socket = ProxyUdpSocket::new(Some(&config), self.dns_client.clone()).await;
                 if socket.is_err() {
                     tracing::info!("Failed to connect to server: {}", config.addr());
-                    self.take_down_server_and_move_next(&config);
+                    self.move_to_next_server();
                 }
                 socket?
             }
@@ -128,23 +131,25 @@ impl ServerChooser {
         Ok(socket)
     }
 
-    pub fn take_down_server_and_move_next(&self, server: &ServerConfig) {
+    pub fn move_to_next_server(&self) {
         // make sure `candidates` drop after block ends to avoid deadlock.
-        let mut candidates = self.candidates.lock();
-        if candidates.len() <= 1 {
-            tracing::error!("Only 1 shadowsocks server available, all servers are down");
+        let candidates = self.candidates.lock();
+        if candidates.is_empty() {
+            tracing::error!("No server available, all servers are down");
             return;
         }
-        candidates.retain_mut(|c| c != server);
-        self.set_server_down(server);
+        let old = self.selected_server.lock().clone();
+        self.set_server_down(&old);
         let new = &candidates[0];
         info!(
-            old_name = server.name(),
-            old_server = ?server.addr(),
+            old_name = old.name(),
+            old_server = ?old.addr(),
             new_name = new.name(),
             new_server = ?new.addr(),
             "Change shadowsocks server"
         );
+        // use the first server of candidates
+        *self.selected_server.lock() = new.clone();
     }
 
     pub async fn run_background_tasks(&self) -> Result<()> {
