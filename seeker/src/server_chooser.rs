@@ -249,6 +249,15 @@ impl ServerChooser {
             candidates.sort_by_key(|(_, duration)| *duration);
             *self.candidates.lock() = candidates.into_iter().map(|(config, _)| config).collect();
         }
+
+        if !self
+            .candidates
+            .lock()
+            .contains(&*self.selected_server.lock())
+        {
+            // current server is down, move to next server.
+            self.move_to_next_server();
+        }
     }
 
     async fn ping_server(&self, config: ServerConfig) -> std::io::Result<Duration> {
