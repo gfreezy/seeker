@@ -69,7 +69,7 @@ pub(crate) mod tests {
             let client = DnsNetworkClient::new(0, Duration::from_secs(3)).await;
             let baidu_ip = get_ip(&client, "baidu.com").await;
             assert!(baidu_ip.is_some());
-            let ali_ip = get_ip(&client, "aliyun.com").await;
+            let ali_ip = get_ip(&client, "bing.com").await;
             assert!(ali_ip.is_some());
             assert_eq!(
                 resolver.lookup_host(&baidu_ip.unwrap()),
@@ -77,7 +77,7 @@ pub(crate) mod tests {
             );
             assert_eq!(
                 resolver.lookup_host(&ali_ip.unwrap()),
-                Some("aliyun.com".to_string())
+                Some("bing.com".to_string())
             )
         });
     }
