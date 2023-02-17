@@ -100,7 +100,10 @@ pub fn run_nat(
                 break;
             }
             let mut ipv4_packet = match Ipv4Packet::new_checked(&mut buf[..size]) {
-                Err(_) => continue,
+                Err(e) => {
+                    eprint!("tun_nat: new packet error: {:?}", e);
+                    continue;
+                }
                 Ok(p) => p,
             };
 
@@ -139,6 +142,7 @@ pub struct Association {
     pub dest_addr: Ipv4Addr,
     pub dest_port: u16,
     last_activity_ts: u64,
+    recycling: bool,
 }
 
 #[derive(Clone)]
@@ -218,22 +222,24 @@ impl InnerSessionManager {
 
     pub fn update_activity_for_port(&mut self, port: u16) -> bool {
         if let Some(assoc) = self.map.get_mut(&port) {
-            // if last_activity_ts is 0, the port is marked recycle. We shouldn't update activity ts.
-            if assoc.last_activity_ts > 0 {
+            // if `recycling` is true, the port is marked recycle. We shouldn't update activity ts.
+            if !assoc.recycling {
                 assoc.last_activity_ts = now();
                 return true;
             }
         } else {
-            tracing::error!("no port exists");
+            eprintln!("update_activity_or_port: port {} not exists", port);
         }
         false
     }
 
     pub fn recycle_port(&mut self, port: u16) {
         if let Some(assoc) = self.map.get_mut(&port) {
-            assoc.last_activity_ts = 0;
+            // we have 30 seconds to clean the connection.
+            assoc.last_activity_ts = now() - EXPIRE_SECONDS + 30;
+            assoc.recycling = true;
         } else {
-            tracing::error!("no port exists");
+            eprintln!("recycle_port: port {} not exists", port);
         }
     }
 
@@ -262,6 +268,7 @@ impl InnerSessionManager {
                 dest_addr,
                 dest_port,
                 last_activity_ts: now,
+                recycling: false,
             },
         );
         self.reverse_map
