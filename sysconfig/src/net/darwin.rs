@@ -37,15 +37,9 @@ impl DNSSetup {
     }
 
     pub fn start(&self) {
-        let original_dns = &self.original_real_dns;
+        let original_dns = &self.original_manual_dns;
         let network = &self.primary_network;
-        if !original_dns.is_empty() {
-            let mut args = vec!["-setdnsservers", network, "127.0.0.1"];
-            for dns in original_dns {
-                args.push(dns);
-            }
-            let _ = run_cmd("networksetup", &args);
-        } else if self.dns.is_empty() {
+        if self.dns.is_empty() {
             let _ = run_cmd("networksetup", &["-setdnsservers", network, "127.0.0.1"]);
         } else {
             let _ = run_cmd(
