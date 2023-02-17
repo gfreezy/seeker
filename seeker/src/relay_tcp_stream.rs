@@ -63,6 +63,7 @@ pub(crate) async fn relay_tcp_stream(
     };
 
     let ret = tunnel_tcp_stream(
+        &host,
         conn,
         remote_conn.clone(),
         session_manager,
@@ -114,6 +115,7 @@ async fn choose_proxy_tcp_stream(
 }
 
 async fn tunnel_tcp_stream<T1: Read + Write + Unpin + Clone, T2: Read + Write + Unpin + Clone>(
+    host: &Address,
     mut conn1: T1,
     mut conn2: T2,
     session_manager: SessionManager,
@@ -151,7 +153,11 @@ async fn tunnel_tcp_stream<T1: Read + Write + Unpin + Clone, T2: Read + Write + 
     };
     let ret = f1.race(f2).await;
     if let Err(e) = &ret {
-        tracing::error!(?e, "tunnel tcp stream");
+        tracing::error!(?e, ?host, ?session_port, "tunnel tcp stream");
+    } else {
+        tracing::info!(
+            "relay tcp stream: recycle port, host: {host}, error: {ret:?}, port: {session_port}"
+        );
     }
     session_manager.recycle_port(session_port);
     ret
