@@ -10,10 +10,8 @@ use std::sync::Arc;
 use std::time::Duration;
 use tracing::{error, instrument, trace};
 
-
-
 use crate::probe_connectivity::ProbeConnectivity;
-use crate::proxy_client::{get_action_for_addr};
+use crate::proxy_client::get_action_for_addr;
 use crate::proxy_connection::ProxyConnection;
 use crate::proxy_tcp_stream::ProxyTcpStream;
 use crate::server_chooser::ServerChooser;
