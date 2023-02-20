@@ -35,6 +35,8 @@ pub struct Config {
     pub dns_start_ip: Ipv4Addr,
     #[serde(default)]
     pub dns_servers: Vec<DnsServerAddr>,
+    #[serde(default)]
+    pub redir_mode: bool,
     pub tun_bypass_direct: bool,
     pub tun_name: String,
     pub tun_ip: Ipv4Addr,
