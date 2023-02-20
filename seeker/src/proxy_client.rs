@@ -447,7 +447,7 @@ fn get_original_addr_from_socket(conn: &TcpStream) -> Option<SocketAddr> {
         IpAddr::V4(Ipv4Addr::from(u32::from_be(original_dst.sin_addr.s_addr))),
         u16::from_be(original_dst.sin_port),
     );
-    original_addr
+    Some(original_addr)
 }
 
 #[cfg(target_os = "macos")]
