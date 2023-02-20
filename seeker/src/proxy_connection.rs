@@ -1,11 +1,9 @@
 use std::sync::atomic::AtomicU64;
 use std::time::{Duration, Instant};
 
-
 use crate::traffic::Traffic;
 use config::{rule::Action, Address, ServerConfig};
 use store::Store;
-
 
 // id generator for connection
 pub static CONNECTION_ID: AtomicU64 = AtomicU64::new(0);
