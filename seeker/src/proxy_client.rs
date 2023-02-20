@@ -7,7 +7,7 @@ use crate::server_chooser::ServerChooser;
 use crate::REDIR_LISTEN_PORT;
 use async_std::future::pending;
 use async_std::io::timeout;
-use async_std::net::{SocketAddr, TcpListener, UdpSocket};
+use async_std::net::{SocketAddr, TcpListener, TcpStream, UdpSocket};
 use async_std::task::{spawn, JoinHandle};
 use async_std::{prelude::*, task};
 use async_std_resolver::AsyncStdResolver;
@@ -126,18 +126,9 @@ impl ProxyClient {
 
             let (real_src, real_dest, host) = match (config.redir_mode, &session_manager) {
                 (true, _) => {
-                    // When in redir mode, we get the original destination from the socket option.
-                    let original_dst = nix::sys::socket::getsockopt(
-                        conn.as_raw_fd(),
-                        nix::sys::socket::sockopt::OriginalDst,
-                    )
-                    .expect("get original dst");
-                    // convert sockaddr_in to SocketAddress
-                    // sin_addr, sin_port are stored in network edian
-                    let original_addr = SocketAddr::new(
-                        IpAddr::V4(Ipv4Addr::from(u32::from_be(original_dst.sin_addr.s_addr))),
-                        u16::from_be(original_dst.sin_port),
-                    );
+                    let Some(original_addr) = get_original_addr_from_socket(&conn) else {
+                        panic!("redir mode is not supported on this platform");
+                    };
                     let host = resolver
                         .lookup_host(&original_addr.ip().to_string())
                         .map(|s| Address::DomainNameAddress(s, original_addr.port()))
@@ -441,4 +432,25 @@ pub(crate) async fn get_real_src_real_dest_and_host(
 
     trace!(ip = ?ip, host = ?host, "lookup host");
     Ok((real_src, sock_addr, host))
+}
+
+// get original addr from socket use SO_ORIGINAL_DST
+#[cfg(target_os = "linux")]
+fn get_original_addr_from_socket(conn: &TcpStream) -> Option<SocketAddr> {
+    // When in redir mode, we get the original destination from the socket option.
+    let original_dst =
+        nix::sys::socket::getsockopt(conn.as_raw_fd(), nix::sys::socket::sockopt::OriginalDst)
+            .expect("get original dst");
+    // convert sockaddr_in to SocketAddress
+    // sin_addr, sin_port are stored in network edian
+    let original_addr = SocketAddr::new(
+        IpAddr::V4(Ipv4Addr::from(u32::from_be(original_dst.sin_addr.s_addr))),
+        u16::from_be(original_dst.sin_port),
+    );
+    original_addr
+}
+
+#[cfg(target_os = "macos")]
+fn get_original_addr_from_socket(_conn: &TcpStream) -> Option<SocketAddr> {
+    None
 }
