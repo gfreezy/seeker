@@ -26,8 +26,10 @@ use clap::{Arg, ArgAction, Command};
 use config::Config;
 use crypto::CipherType;
 use std::fs::File;
-use sysconfig::{set_rlimit_no_file, DNSSetup, IpForward};
+use sysconfig::{set_rlimit_no_file, DNSSetup, IpForward, IptablesSetup};
 use tracing::Instrument;
+
+const REDIR_LISTEN_PORT: u16 = 1300;
 
 fn main() -> anyhow::Result<()> {
     let version = env!("CARGO_PKG_VERSION");
@@ -125,6 +127,7 @@ fn main() -> anyhow::Result<()> {
     };
     eprint!(".");
     block_on(async {
+        let cidr = config.tun_cidr.to_string();
         let client = ProxyClient::new(config, uid)
             .instrument(tracing::trace_span!("ProxyClient.new"))
             .await;
@@ -132,6 +135,9 @@ fn main() -> anyhow::Result<()> {
 
         dns_setup.start();
         eprintln!("Started!");
+
+        let iptables_setup = IptablesSetup::new(REDIR_LISTEN_PORT, cidr);
+        iptables_setup.start();
 
         client
             .run()

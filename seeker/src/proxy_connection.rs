@@ -40,6 +40,7 @@ pub trait ProxyConnectionEventListener {
     fn on_send_bytes(&self, conn: &dyn ProxyConnection, bytes: usize);
 }
 
+#[derive(Clone)]
 pub struct StoreListener;
 
 impl ProxyConnectionEventListener for StoreListener {

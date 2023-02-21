@@ -3,16 +3,15 @@ use async_std::io::{timeout, Read, Write};
 use async_std::net::TcpStream;
 use async_std::prelude::*;
 use config::{Address, Config};
-use dnsserver::resolver::RuleBasedDnsResolver;
+
 use std::net::SocketAddr;
+
 use std::sync::Arc;
 use std::time::Duration;
-use tracing::{error, info, instrument, trace};
-use tun_nat::SessionManager;
+use tracing::{error, instrument, trace};
 
-use crate::dns_client::DnsClient;
 use crate::probe_connectivity::ProbeConnectivity;
-use crate::proxy_client::{get_action_for_addr, get_real_src_real_dest_and_host};
+use crate::proxy_client::get_action_for_addr;
 use crate::proxy_connection::ProxyConnection;
 use crate::proxy_tcp_stream::ProxyTcpStream;
 use crate::server_chooser::ServerChooser;
@@ -21,29 +20,15 @@ use crate::server_chooser::ServerChooser;
 #[instrument(skip_all)]
 pub(crate) async fn relay_tcp_stream(
     conn: TcpStream,
-    session_manager: SessionManager,
-    resolver: RuleBasedDnsResolver,
-    dns_client: DnsClient,
+    real_src: SocketAddr,
+    real_dest: SocketAddr,
+    host: Address,
     config: Config,
     server_chooser: Arc<ServerChooser>,
     connectivity: ProbeConnectivity,
     user_id: Option<u32>,
+    on_update_activity: impl Fn() -> bool,
 ) -> Result<()> {
-    let peer_addr = conn.peer_addr().map_err(|e| {
-        tracing::error!(?e, "tunnel tcp stream");
-        e
-    })?;
-    trace!(peer_addr = ?peer_addr, "new connection");
-    let session_port = peer_addr.port();
-    let (real_src, real_dest, host) = get_real_src_real_dest_and_host(
-        session_port,
-        &session_manager,
-        &resolver,
-        &dns_client,
-        &config,
-    )
-    .await?;
-
     let remote_conn = match choose_proxy_tcp_stream(
         real_src,
         real_dest,
@@ -66,14 +51,15 @@ pub(crate) async fn relay_tcp_stream(
         &host,
         conn,
         remote_conn.clone(),
-        session_manager,
-        session_port,
         config.read_timeout,
         config.write_timeout,
+        on_update_activity,
     )
     .await;
-    if let Err(e) = ret {
-        info!(?e, "tunnel tcp stream");
+    if let Err(e) = &ret {
+        tracing::error!(?e, ?host, "tunnel tcp stream");
+    } else {
+        tracing::info!("tunnel tcp stream: recycle port, host: {host}, error: {ret:?}");
     }
     remote_conn.shutdown();
     Ok(())
@@ -115,20 +101,19 @@ async fn choose_proxy_tcp_stream(
 }
 
 async fn tunnel_tcp_stream<T1: Read + Write + Unpin + Clone, T2: Read + Write + Unpin + Clone>(
-    host: &Address,
+    _host: &Address,
     mut conn1: T1,
     mut conn2: T2,
-    session_manager: SessionManager,
-    session_port: u16,
     read_timeout: Duration,
     write_timeout: Duration,
+    on_update_activity: impl Fn() -> bool,
 ) -> std::io::Result<()> {
     let mut conn1_clone = conn1.clone();
     let mut conn2_clone = conn2.clone();
     let f1 = async {
         let mut buf = vec![0; 1500];
         loop {
-            if !session_manager.update_activity_for_port(session_port) {
+            if !on_update_activity() {
                 break Err(std::io::ErrorKind::ConnectionAborted.into());
             }
             let size = timeout(read_timeout, conn1.read(&mut buf)).await?;
@@ -141,7 +126,7 @@ async fn tunnel_tcp_stream<T1: Read + Write + Unpin + Clone, T2: Read + Write + 
     let f2 = async {
         let mut buf = vec![0; 1500];
         loop {
-            if !session_manager.update_activity_for_port(session_port) {
+            if !on_update_activity() {
                 break Err(std::io::ErrorKind::ConnectionAborted.into());
             }
             let size = timeout(read_timeout, conn2_clone.read(&mut buf)).await?;
@@ -151,14 +136,5 @@ async fn tunnel_tcp_stream<T1: Read + Write + Unpin + Clone, T2: Read + Write + 
             timeout(write_timeout, conn1_clone.write_all(&buf[..size])).await?;
         }
     };
-    let ret = f1.race(f2).await;
-    if let Err(e) = &ret {
-        tracing::error!(?e, ?host, ?session_port, "tunnel tcp stream");
-    } else {
-        tracing::info!(
-            "relay tcp stream: recycle port, host: {host}, error: {ret:?}, port: {session_port}"
-        );
-    }
-    session_manager.recycle_port(session_port);
-    ret
+    f1.race(f2).await
 }
