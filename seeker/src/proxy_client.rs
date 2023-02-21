@@ -19,8 +19,8 @@ use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::io::{Error, ErrorKind, Result};
 
-use std::net::{IpAddr, Ipv4Addr};
-use std::os::fd::AsRawFd;
+use std::net::IpAddr;
+
 use std::sync::Arc;
 use tracing::{error, instrument, trace, trace_span};
 use tracing_futures::Instrument;
