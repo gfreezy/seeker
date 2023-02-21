@@ -13,3 +13,4 @@ config.yml
 trace-*.json
 geoip.mmdb
 seeker.sqlite
+seeker.sqlite-journal

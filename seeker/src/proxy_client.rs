@@ -4,8 +4,10 @@ use crate::proxy_udp_socket::ProxyUdpSocket;
 use crate::relay_tcp_stream::relay_tcp_stream;
 use crate::relay_udp_socket::relay_udp_socket;
 use crate::server_chooser::ServerChooser;
+use crate::REDIR_LISTEN_PORT;
+use async_std::future::pending;
 use async_std::io::timeout;
-use async_std::net::{SocketAddr, TcpListener, UdpSocket};
+use async_std::net::{SocketAddr, TcpListener, TcpStream, UdpSocket};
 use async_std::task::{spawn, JoinHandle};
 use async_std::{prelude::*, task};
 use async_std_resolver::AsyncStdResolver;
@@ -15,9 +17,10 @@ use dnsserver::create_dns_server;
 use dnsserver::resolver::RuleBasedDnsResolver;
 use parking_lot::RwLock;
 use std::collections::HashMap;
-use std::io::{Error, Result};
+use std::io::{Error, ErrorKind, Result};
 
-use std::net::IpAddr;
+use std::net::{IpAddr, Ipv4Addr};
+use std::os::fd::AsRawFd;
 use std::sync::Arc;
 use tracing::{error, instrument, trace, trace_span};
 use tracing_futures::Instrument;
@@ -29,7 +32,8 @@ pub struct ProxyClient {
     config: Config,
     uid: Option<u32>,
     connectivity: ProbeConnectivity,
-    session_manager: SessionManager,
+    // When in redir mode, session_manager is None
+    session_manager: Option<SessionManager>,
     udp_manager: UdpManager,
     resolver: RuleBasedDnsResolver,
     dns_client: DnsClient,
@@ -42,18 +46,24 @@ pub struct ProxyClient {
 impl ProxyClient {
     pub async fn new(config: Config, uid: Option<u32>) -> Self {
         let additional_cidrs = config.rules.additional_cidrs();
-        let (session_manager, blocking_join_handle) = run_nat(
-            &config.tun_name,
-            config.tun_ip,
-            config.tun_cidr,
-            1300,
-            &additional_cidrs,
-        )
-        .expect("run nat");
-        let nat_join_handle = task::spawn_blocking(move || match blocking_join_handle.join() {
-            Ok(()) => tracing::info!("nat stopped"),
-            Err(e) => tracing::error!("nat stopped with error: {:?}", e),
-        });
+
+        let (session_manager, nat_join_handle) = if !config.redir_mode {
+            let (session_manager, blocking_join_handle) = run_nat(
+                &config.tun_name,
+                config.tun_ip,
+                config.tun_cidr,
+                REDIR_LISTEN_PORT,
+                &additional_cidrs,
+            )
+            .expect("run nat");
+            let nat_join_handle = task::spawn_blocking(move || match blocking_join_handle.join() {
+                Ok(()) => tracing::info!("nat stopped"),
+                Err(e) => tracing::error!("nat stopped with error: {:?}", e),
+            });
+            (Some(session_manager), Some(nat_join_handle))
+        } else {
+            (None, None)
+        };
 
         let dns_client = DnsClient::new(&config.dns_servers, config.dns_timeout).await;
 
@@ -88,14 +98,19 @@ impl ProxyClient {
             uid,
             session_manager,
             server_chooser: chooser,
-            nat_join_handle: Some(nat_join_handle),
+            nat_join_handle,
             dns_server_join_handle: Some(dns_server_join_handle),
             chooser_join_handle: Some(chooser_join_handle),
         }
     }
 
     async fn run_tcp_relay_server(&self) -> Result<()> {
-        let listener = TcpListener::bind((self.config.tun_ip, 1300)).await?;
+        let listener = TcpListener::bind(("0.0.0.0", REDIR_LISTEN_PORT))
+            .await
+            .map_err(|e| {
+                eprintln!("error: bind to {REDIR_LISTEN_PORT}");
+                e
+            })?;
         let mut incoming = listener.incoming();
         while let Some(Ok(conn)) = incoming.next().await {
             let session_manager = self.session_manager.clone();
@@ -105,19 +120,58 @@ impl ProxyClient {
             let server_chooser = self.server_chooser.clone();
             let connectivity = self.connectivity.clone();
             let uid = self.uid;
+            let peer_addr = conn.peer_addr().expect("get peer addr");
+            trace!(peer_addr = ?peer_addr, "new connection");
+            let session_port = peer_addr.port();
+
+            let (real_src, real_dest, host) = match (config.redir_mode, &session_manager) {
+                (true, _) => {
+                    let Some(original_addr) = get_original_addr_from_socket(&conn) else {
+                        panic!("redir mode is not supported on this platform");
+                    };
+                    let host = resolver
+                        .lookup_host(&original_addr.ip().to_string())
+                        .map(|s| Address::DomainNameAddress(s, original_addr.port()))
+                        .unwrap_or_else(|| Address::SocketAddress(original_addr));
+                    (peer_addr, original_addr, host)
+                }
+                (false, Some(session_manager)) => {
+                    get_real_src_real_dest_and_host(
+                        session_port,
+                        session_manager,
+                        &resolver,
+                        &dns_client,
+                        &config,
+                    )
+                    .await?
+                }
+                (false, None) => panic!("session manager is None in non-redir mode"),
+            };
+
+            println!("real_src: {real_src:?}, real_desc: {real_dest:?}, host: {host:?}");
 
             spawn(async move {
                 let _ = relay_tcp_stream(
                     conn,
-                    session_manager,
-                    resolver,
-                    dns_client,
+                    real_src,
+                    real_dest,
+                    host,
                     config,
                     server_chooser,
                     connectivity,
                     uid,
+                    || {
+                        if let Some(session_manager) = &session_manager {
+                            session_manager.update_activity_for_port(session_port)
+                        } else {
+                            true
+                        }
+                    },
                 )
                 .await;
+                if let Some(session_manager) = &session_manager {
+                    session_manager.recycle_port(session_port);
+                }
             });
         }
         Ok::<(), std::io::Error>(())
@@ -131,36 +185,45 @@ impl ProxyClient {
             .run_tcp_relay_server()
             .instrument(tracing::trace_span!("ProxyClient.run_tcp_relay_server"))
             .race(async {
-                let ret = self
-                    .run_udp_relay_server()
-                    .instrument(tracing::trace_span!("ProxyClient.run_udp_relay_server"))
-                    .await;
-                if let Err(e) = &ret {
-                    tracing::error!(?e, "run udp relay server error");
+                if !self.config.redir_mode {
+                    let ret = self
+                        .run_udp_relay_server()
+                        .instrument(tracing::trace_span!("ProxyClient.run_udp_relay_server"))
+                        .await;
+                    if let Err(e) = &ret {
+                        tracing::error!(?e, "run udp relay server error");
+                    }
+                    ret
+                } else {
+                    pending::<Result<()>>().await
                 }
-                ret
             })
             .race(async move {
                 if let Some(chooser_join_handle) = chooser_join_handle {
-                    chooser_join_handle.await
-                };
+                    chooser_join_handle.await;
+                } else {
+                    pending::<()>().await;
+                }
                 Ok(())
             })
             .race(async move {
                 if let Some(dns_server_join_handle) = dns_server_join_handle {
                     dns_server_join_handle.await;
+                } else {
+                    pending::<()>().await;
                 };
                 Ok(())
             })
             .race(async move {
                 if let Some(nat_join_handle) = nat_join_handle {
                     nat_join_handle.await;
-                };
+                } else {
+                    pending::<()>().await;
+                }
                 Ok(())
             })
             .await;
-        tracing::error!(?ret, "run error");
-        ret.expect("run");
+        ret.expect("run proxy client");
     }
 
     async fn get_proxy_udp_socket(
@@ -173,10 +236,16 @@ impl ProxyClient {
             return Ok(r.clone());
         }
 
+        let Some(session_manager) = self.session_manager.clone() else {
+            return Err(Error::new(
+                ErrorKind::Other,
+                "session manager not initialized",
+            ));
+        };
         relay_udp_socket(
             tun_socket,
             tun_addr,
-            self.session_manager.clone(),
+            session_manager,
             self.resolver.clone(),
             self.dns_client.clone(),
             self.config.clone(),
@@ -189,7 +258,11 @@ impl ProxyClient {
     }
 
     async fn run_udp_relay_server(&self) -> Result<()> {
-        let udp_listener = Arc::new(UdpSocket::bind("0.0.0.0:1300").await?);
+        assert!(
+            !self.config.redir_mode,
+            "UDP is not supported in redir mode, skipping"
+        );
+        let udp_listener = Arc::new(UdpSocket::bind(format!("0.0.0.0:{REDIR_LISTEN_PORT}")).await?);
         let mut buf = vec![0; 2000];
         loop {
             let (size, peer_addr) = udp_listener.recv_from(&mut buf).await.map_err(|e| {
@@ -215,7 +288,9 @@ impl ProxyClient {
             .await;
             if let Err(e) = ret {
                 error!("send udp packet error {}: {:?}", host, e);
-                self.session_manager.recycle_port(session_port);
+                if let Some(session_manager) = &self.session_manager {
+                    session_manager.recycle_port(session_port);
+                }
             }
         }
     }
@@ -357,4 +432,25 @@ pub(crate) async fn get_real_src_real_dest_and_host(
 
     trace!(ip = ?ip, host = ?host, "lookup host");
     Ok((real_src, sock_addr, host))
+}
+
+// get original addr from socket use SO_ORIGINAL_DST
+#[cfg(target_os = "linux")]
+fn get_original_addr_from_socket(conn: &TcpStream) -> Option<SocketAddr> {
+    // When in redir mode, we get the original destination from the socket option.
+    let original_dst =
+        nix::sys::socket::getsockopt(conn.as_raw_fd(), nix::sys::socket::sockopt::OriginalDst)
+            .expect("get original dst");
+    // convert sockaddr_in to SocketAddress
+    // sin_addr, sin_port are stored in network edian
+    let original_addr = SocketAddr::new(
+        IpAddr::V4(Ipv4Addr::from(u32::from_be(original_dst.sin_addr.s_addr))),
+        u16::from_be(original_dst.sin_port),
+    );
+    Some(original_addr)
+}
+
+#[cfg(target_os = "macos")]
+fn get_original_addr_from_socket(_conn: &TcpStream) -> Option<SocketAddr> {
+    None
 }
