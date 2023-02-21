@@ -128,6 +128,7 @@ fn main() -> anyhow::Result<()> {
     eprint!(".");
     block_on(async {
         let cidr = config.tun_cidr.to_string();
+        let redir_mode = config.redir_mode;
         let client = ProxyClient::new(config, uid)
             .instrument(tracing::trace_span!("ProxyClient.new"))
             .await;
@@ -136,8 +137,12 @@ fn main() -> anyhow::Result<()> {
         dns_setup.start();
         eprintln!("Started!");
 
-        let iptables_setup = IptablesSetup::new(REDIR_LISTEN_PORT, cidr);
-        iptables_setup.start();
+        let mut _iptables_setup: Option<IptablesSetup> = None;
+        if redir_mode {
+            let setup = IptablesSetup::new(REDIR_LISTEN_PORT, cidr);
+            setup.start();
+            _iptables_setup = Some(setup);
+        }
 
         client
             .run()
