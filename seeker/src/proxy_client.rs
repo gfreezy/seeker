@@ -136,19 +136,21 @@ impl ProxyClient {
                     (peer_addr, original_addr, host)
                 }
                 (false, Some(session_manager)) => {
-                    get_real_src_real_dest_and_host(
+                    let Ok(ret) = get_real_src_real_dest_and_host(
                         session_port,
                         session_manager,
                         &resolver,
                         &dns_client,
                         &config,
-                    )
-                    .await?
+                    ).await else {
+                        continue;
+                    };
+                    ret
                 }
                 (false, None) => panic!("session manager is None in non-redir mode"),
             };
 
-            println!("real_src: {real_src:?}, real_desc: {real_dest:?}, host: {host:?}");
+            tracing::info!("real_src: {real_src:?}, real_desc: {real_dest:?}, host: {host:?}");
 
             spawn(async move {
                 let _ = relay_tcp_stream(
@@ -426,7 +428,10 @@ pub(crate) async fn get_real_src_real_dest_and_host(
         Ok(a) => a,
         Err(e) => {
             error!(?e, ?host, "error resolve dns");
-            return Err(Error::new(std::io::ErrorKind::Other, "resolve dns error"));
+            return Err(Error::new(
+                std::io::ErrorKind::Other,
+                format!("resolve dns error: {host}"),
+            ));
         }
     };
 
