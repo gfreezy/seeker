@@ -108,8 +108,16 @@ impl PingURL {
         Address::DomainNameAddress(self.host.clone(), self.port)
     }
 
+    pub fn host(&self) -> &str {
+        &self.host
+    }
+
     pub fn path(&self) -> &str {
         &self.path
+    }
+
+    pub fn port(&self) -> u16 {
+        self.port
     }
 }
 

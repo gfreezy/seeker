@@ -6,6 +6,7 @@ use anyhow::Result;
 use async_std::io::timeout;
 use async_std::prelude::*;
 use async_std::task::{sleep, spawn};
+use async_tls::TlsConnector;
 use config::rule::Action;
 use config::{Address, PingURL, ServerConfig};
 use futures_util::stream::FuturesUnordered;
@@ -262,23 +263,77 @@ impl ServerChooser {
     async fn ping_server(&self, config: ServerConfig) -> std::io::Result<Duration> {
         let instant = Instant::now();
         for ping_url in &self.ping_urls {
-            let addr = ping_url.address();
-            let path = ping_url.path();
-            let ret: std::io::Result<_> = timeout(self.ping_timeout, async {
-                let mut conn =
-                    ProxyTcpStream::connect(addr, Some(&config), self.dns_client.clone()).await?;
-                conn.write_all(format!("GET {path} HTTP/1.1\r\n\r\n").as_bytes())
-                    .await?;
-                let mut buf = vec![0; 1024];
-                let _size = conn.read(&mut buf).await?;
-                Ok(())
-            })
+            let ret = ping_server(
+                config.clone(),
+                ping_url,
+                self.ping_timeout,
+                self.dns_client.clone(),
+            )
             .await;
+
             if let Err(e) = ret {
                 self.set_server_down(&config);
                 return Err(e);
             }
         }
         Ok(instant.elapsed())
+    }
+}
+
+async fn ping_server(
+    config: ServerConfig,
+    ping_url: &PingURL,
+    ping_timeout: Duration,
+    dns_client: DnsClient,
+) -> std::io::Result<()> {
+    let addr = ping_url.address();
+    let path = ping_url.path();
+    timeout(ping_timeout, async {
+        let stream = ProxyTcpStream::connect(addr.clone(), Some(&config), dns_client).await?;
+        if ping_url.port() == 443 {
+            let connector = TlsConnector::default();
+            let mut conn = connector.connect(ping_url.host(), stream).await?;
+            conn.write_all(format!("GET {path} HTTP/1.1\r\n\r\n").as_bytes())
+                .await?;
+            let mut buf = vec![0; 1024];
+            let _size = conn.read(&mut buf).await?;
+        } else {
+            let mut conn = stream;
+            conn.write_all(format!("GET {path} HTTP/1.1\r\n\r\n").as_bytes())
+                .await?;
+            let mut buf = vec![0; 1024];
+            let _size = conn.read(&mut buf).await?;
+        }
+        Ok(())
+    })
+    .await
+}
+
+#[cfg(test)]
+mod tests {
+    use std::str::FromStr;
+
+    use super::*;
+
+    #[async_std::test]
+    async fn test_ping_server() -> Result<()> {
+        store::Store::setup_global_for_test();
+        let url = "ss://YWVzLTI1Ni1nY206MTE0NTE0@1eae257e44aa9d5b.jijifun.com:30002/?plugin=obfs-local%3Bobfs%3Dhttp%3Bobfs-host%3Dc61be5399e.microsoft.com#%E9%A6%99%E6%B8%AF-ByWave+01";
+        let server_config = ServerConfig::from_str(url)?;
+        let dns_client = DnsClient::new(
+            &[config::DnsServerAddr::UdpSocketAddr(
+                "114.114.114.114:53".parse().unwrap(),
+            )],
+            Duration::from_secs(1),
+        )
+        .await;
+        ping_server(
+            server_config,
+            &PingURL::new("github.com".to_string(), 443, "/".to_string()),
+            Duration::from_secs(5),
+            dns_client,
+        )
+        .await?;
+        Ok(())
     }
 }

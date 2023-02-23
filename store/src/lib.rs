@@ -40,12 +40,13 @@ impl Store {
     }
 
     pub fn try_setup_global(path: impl AsRef<Path>, initial_ip: Ipv4Addr) -> Result<(), Self> {
-        let store = if cfg!(test) {
-            Store::new_in_memory(initial_ip).expect("init store")
-        } else {
-            Store::new(path, initial_ip).expect("init store")
-        };
+        let store = Store::new(path, initial_ip).expect("init store");
         INSTANCE.set(store)
+    }
+
+    pub fn setup_global_for_test() {
+        let _ = INSTANCE
+            .get_or_init(|| Store::new_in_memory("10.0.0.1".parse().unwrap()).expect("init store"));
     }
 
     pub fn global() -> &'static Self {
