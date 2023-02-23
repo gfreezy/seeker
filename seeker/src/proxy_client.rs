@@ -438,6 +438,9 @@ pub(crate) async fn get_real_src_real_dest_and_host(
 #[cfg(target_os = "linux")]
 fn get_original_addr_from_socket(conn: &TcpStream) -> Option<SocketAddr> {
     // When in redir mode, we get the original destination from the socket option.
+
+    use std::net::Ipv4Addr;
+    use std::os::fd::AsRawFd;
     let original_dst =
         nix::sys::socket::getsockopt(conn.as_raw_fd(), nix::sys::socket::sockopt::OriginalDst)
             .expect("get original dst");
