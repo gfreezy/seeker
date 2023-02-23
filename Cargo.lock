@@ -1976,6 +1976,7 @@ name = "store"
 version = "0.0.0"
 dependencies = [
  "anyhow",
+ "cfg-if",
  "once_cell",
  "parking_lot",
  "rusqlite",

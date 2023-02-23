@@ -317,11 +317,7 @@ mod tests {
 
     #[async_std::test]
     async fn test_ping_server() -> Result<()> {
-        let dir = tempfile::tempdir().unwrap();
-        let _ = store::Store::try_setup_global(
-            dir.path().join("db.sqlite"),
-            "10.0.0.1".parse().unwrap(),
-        );
+        store::Store::setup_global_for_test();
         let url = "ss://YWVzLTI1Ni1nY206MTE0NTE0@1eae257e44aa9d5b.jijifun.com:30002/?plugin=obfs-local%3Bobfs%3Dhttp%3Bobfs-host%3Dc61be5399e.microsoft.com#%E9%A6%99%E6%B8%AF-ByWave+01";
         let server_config = ServerConfig::from_str(url)?;
         let dns_client = DnsClient::new(
