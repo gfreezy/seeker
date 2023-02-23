@@ -182,18 +182,14 @@ impl DnsResolver for RuleBasedDnsResolver {
 
 #[cfg(test)]
 mod tests {
-    use std::net::Ipv4Addr;
-
     use super::*;
     use crate::tests::new_resolver;
     use async_std::task;
 
     #[test]
     fn test_inner_resolve_ip_and_lookup_host() {
-        let dir = tempfile::tempdir().unwrap();
-        let start_ip = "10.0.0.1".parse::<Ipv4Addr>().unwrap();
+        store::Store::setup_global_for_test();
         let dns = std::env::var("DNS").unwrap_or_else(|_| "223.5.5.5".to_string());
-        let _ = Store::try_setup_global(dir.path().join("db.sqlite"), start_ip);
         task::block_on(async {
             let resolver = RuleBasedDnsResolver::new(
                 true,
