@@ -65,7 +65,7 @@ pub(crate) mod tests {
             )
             .await;
             task::spawn(server.run_server());
-            task::sleep(Duration::from_secs(1)).await;
+            task::sleep(Duration::from_secs(3)).await;
             let client = DnsNetworkClient::new(0, Duration::from_secs(3)).await;
             let baidu_ip = get_ip(&client, "baidu.com").await;
             assert!(baidu_ip.is_some());
