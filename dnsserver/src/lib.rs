@@ -24,12 +24,11 @@ pub(crate) mod tests {
     use async_std_resolver::config::{NameServerConfigGroup, ResolverConfig, ResolverOpts};
     use hermesdns::{DnsClient, DnsNetworkClient, QueryType};
     use std::time::Duration;
-    use store::Store;
 
     const LOCAL_UDP_PORT: u16 = 6153;
     async fn get_ip(client: &DnsNetworkClient, host: &str) -> Option<String> {
         let resp = io::timeout(
-            Duration::from_secs(5),
+            Duration::from_secs(10),
             client.send_query(host, QueryType::A, ("127.0.0.1", LOCAL_UDP_PORT), true),
         )
         .await
@@ -52,9 +51,8 @@ pub(crate) mod tests {
 
     #[test]
     fn test_resolve_ip() {
-        let dir = tempfile::tempdir().unwrap();
-        let dns = std::env::var("DNS").unwrap_or_else(|_| "223.5.5.5".to_string());
-        let _ = Store::try_setup_global(dir.path().join("db.sqlite"), "10.0.0.1".parse().unwrap());
+        store::Store::setup_global_for_test();
+        let dns = std::env::var("DNS").unwrap_or_else(|_| "114.114.114.114".to_string());
         task::block_on(async {
             let resolver = new_resolver(dns, 53).await;
             let (server, resolver) = create_dns_server(
@@ -65,19 +63,20 @@ pub(crate) mod tests {
             )
             .await;
             task::spawn(server.run_server());
-            task::sleep(Duration::from_secs(1)).await;
-            let client = DnsNetworkClient::new(0, Duration::from_secs(3)).await;
+            task::sleep(Duration::from_secs(3)).await;
+            let client = DnsNetworkClient::new(0, Duration::from_secs(50)).await;
+            let ali_ip = get_ip(&client, "google.com").await;
+            assert!(ali_ip.is_some());
             let baidu_ip = get_ip(&client, "baidu.com").await;
             assert!(baidu_ip.is_some());
-            let ali_ip = get_ip(&client, "bing.com").await;
-            assert!(ali_ip.is_some());
+
             assert_eq!(
                 resolver.lookup_host(&baidu_ip.unwrap()),
                 Some("baidu.com".to_string())
             );
             assert_eq!(
                 resolver.lookup_host(&ali_ip.unwrap()),
-                Some("bing.com".to_string())
+                Some("google.com".to_string())
             )
         });
     }

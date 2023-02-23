@@ -224,6 +224,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "async-tls"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cfeefd0ca297cbbb3bd34fd6b228401c2a5177038257afd751bc29f0a2da4795"
+dependencies = [
+ "futures-core",
+ "futures-io",
+ "rustls 0.20.8",
+ "rustls-pemfile",
+ "webpki 0.22.0",
+ "webpki-roots 0.22.6",
+]
+
+[[package]]
 name = "async-trait"
 version = "0.1.64"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -272,6 +286,12 @@ name = "base64"
 version = "0.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0ea22880d78093b0cbe17c89f64a7d457941e65759157ec6cb31a31d652b05e5"
+
+[[package]]
+name = "base64"
+version = "0.21.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a4a4ddaa51a5bc52a6948f74c06d20aaaddb71924eab79b8c97a8c556e942d6a"
 
 [[package]]
 name = "bitflags"
@@ -898,7 +918,7 @@ name = "http_proxy_client"
 version = "0.1.0"
 dependencies = [
  "async-std",
- "async-tls",
+ "async-tls 0.11.0",
  "base64 0.13.1",
  "config",
  "parking_lot",
@@ -1714,6 +1734,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rustls-pemfile"
+version = "1.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d194b56d58803a43635bdc398cd17e383d6f71f9182b9a192c127ca42494a59b"
+dependencies = [
+ "base64 0.21.0",
+]
+
+[[package]]
 name = "ryu"
 version = "1.0.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1759,7 +1788,7 @@ dependencies = [
  "async-signals",
  "async-std",
  "async-std-resolver",
- "async-tls",
+ "async-tls 0.12.0",
  "base64 0.13.1",
  "bytes",
  "clap",
@@ -1778,6 +1807,7 @@ dependencies = [
  "store",
  "sysconfig",
  "tcp_connection",
+ "tempfile",
  "tracing",
  "tracing-chrome",
  "tracing-futures",
@@ -1946,6 +1976,7 @@ name = "store"
 version = "0.0.0"
 dependencies = [
  "anyhow",
+ "cfg-if",
  "once_cell",
  "parking_lot",
  "rusqlite",
