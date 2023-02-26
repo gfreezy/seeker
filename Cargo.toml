@@ -18,7 +18,7 @@ members = [
 lto = "thin"
 codegen-units = 1
 incremental = false
-strip = "debuginfo"
+strip = true
 
 [workspace.metadata.workspaces]
 no_individual_tags = true
