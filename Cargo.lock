@@ -151,17 +151,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "async-signals"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7764064e8871fca00fb487328c3c9cfc71c0871b46d7b61f0089fd8a2d69cc30"
-dependencies = [
- "futures-core",
- "nix 0.23.2",
- "once_cell",
-]
-
-[[package]]
 name = "async-std"
 version = "1.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -517,6 +506,16 @@ checksum = "6d2301688392eb071b0bf1a37be05c469d3cc4dbbd95df672fe28ab021e6a096"
 dependencies = [
  "quote",
  "syn",
+]
+
+[[package]]
+name = "ctrlc"
+version = "3.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bbcf33c2a618cbe41ee43ae6e9f2e48368cd9f9db2896f10167d8d762679f639"
+dependencies = [
+ "nix",
+ "windows-sys 0.45.0",
 ]
 
 [[package]]
@@ -1241,15 +1240,6 @@ checksum = "2dffe52ecf27772e601905b7522cb4ef790d2cc203488bbd0e2fe85fcb74566d"
 
 [[package]]
 name = "memoffset"
-version = "0.6.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5aa361d4faea93603064a027415f07bd8e1d5c88c9fbf68bf56a285428fd79ce"
-dependencies = [
- "autocfg",
-]
-
-[[package]]
-name = "memoffset"
 version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5de893c32cde5f383baa4c04c5d6dbdd735cfd4a794b0debdb2bb1b421da5ff4"
@@ -1280,19 +1270,6 @@ checksum = "6a51313c5820b0b02bd422f4b44776fbf47961755c74ce64afc73bfad10226c3"
 
 [[package]]
 name = "nix"
-version = "0.23.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8f3790c00a0150112de0f4cd161e3d7fc4b2d8a5542ffc35f099a2562aecb35c"
-dependencies = [
- "bitflags",
- "cc",
- "cfg-if",
- "libc",
- "memoffset 0.6.5",
-]
-
-[[package]]
-name = "nix"
 version = "0.26.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bfdda3d196821d6af13126e40375cdf7da646a96114af134d5f417a9a1dc8e1a"
@@ -1300,7 +1277,7 @@ dependencies = [
  "bitflags",
  "cfg-if",
  "libc",
- "memoffset 0.7.1",
+ "memoffset",
  "pin-utils",
  "static_assertions",
 ]
@@ -1785,7 +1762,6 @@ name = "seeker"
 version = "0.5.5"
 dependencies = [
  "anyhow",
- "async-signals",
  "async-std",
  "async-std-resolver",
  "async-tls 0.12.0",
@@ -1794,12 +1770,13 @@ dependencies = [
  "clap",
  "config",
  "crypto",
+ "ctrlc",
  "dnsserver",
  "file-rotate",
  "futures-util",
  "http_proxy_client",
  "libc",
- "nix 0.26.2",
+ "nix",
  "os_socketaddr",
  "parking_lot",
  "socks5_client",
