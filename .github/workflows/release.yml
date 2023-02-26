@@ -79,10 +79,14 @@ jobs:
             os: macos-latest
             rust: nightly
             target: aarch64-apple-darwin
-          - build: linux-arm
+          - build: linux-armv7
             os: ubuntu-latest
             rust: nightly
             target: armv7-unknown-linux-musleabi
+          - build: nightly-armv5
+            os: ubuntu-latest
+            rust: nightly
+            target: armv5te-unknown-linux-musleabi
           # - build: win-msvc
           #   os: windows-2019
           #   rust: nightly
@@ -152,19 +156,6 @@ jobs:
 
       - name: Build release binary
         run: ${{ env.CARGO }} build --verbose --release ${{ env.TARGET_FLAGS }}
-
-      - name: Strip release binary (linux and macos)
-        if: matrix.build == 'linux' || matrix.build == 'macos' || matrix.build == 'macos-m1'
-        run: strip "target/${{ matrix.target }}/release/${{ env.BINARY_NAME }}"
-
-      - name: Strip release binary (arm)
-        if: matrix.build == 'linux-arm'
-        run: |
-          docker run --rm -v \
-            "$PWD/target:/target:Z" \
-            rustembedded/cross:arm-unknown-linux-gnueabihf \
-            arm-linux-gnueabihf-strip \
-            /target/arm-unknown-linux-gnueabihf/release/${{ env.BINARY_NAME }}
 
       - name: Build archive
         shell: bash

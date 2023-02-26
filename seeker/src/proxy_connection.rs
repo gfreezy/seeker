@@ -1,4 +1,4 @@
-use std::sync::atomic::AtomicU64;
+use std::sync::atomic::AtomicUsize;
 use std::time::{Duration, Instant};
 
 use crate::traffic::Traffic;
@@ -6,10 +6,10 @@ use config::{rule::Action, Address, ServerConfig};
 use store::Store;
 
 // id generator for connection
-pub static CONNECTION_ID: AtomicU64 = AtomicU64::new(0);
+pub static CONNECTION_ID: AtomicUsize = AtomicUsize::new(0);
 
 pub fn next_connection_id() -> u64 {
-    CONNECTION_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+    CONNECTION_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst) as u64
 }
 
 pub trait ProxyConnection {
