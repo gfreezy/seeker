@@ -19,8 +19,7 @@ use std::time::Duration;
 use crate::logger::setup_logger;
 use crate::proxy_client::ProxyClient;
 use anyhow::{bail, Context};
-use async_signals::Signals;
-use async_std::prelude::{FutureExt, StreamExt};
+use async_std::prelude::FutureExt;
 use async_std::task::block_on;
 use clap::{Arg, ArgAction, Command};
 use config::Config;
@@ -115,8 +114,6 @@ fn main() -> anyhow::Result<()> {
     eprint!("Starting.");
     let _guard = setup_logger(log_path, to_trace)?;
     eprint!(".");
-    let mut signals = Signals::new(vec![libc::SIGINT, libc::SIGTERM]).unwrap();
-    eprint!(".");
     set_rlimit_no_file(10240)?;
     eprint!(".");
     let _ip_forward = if config.gateway_mode {
@@ -126,6 +123,11 @@ fn main() -> anyhow::Result<()> {
         None
     };
     eprint!(".");
+    // oneshot channel
+    let (tx, rx) = async_std::channel::bounded(1);
+    ctrlc::set_handler(move || block_on(tx.send(())).expect("send signal"))
+        .expect("Error setting Ctrl-C handler");
+
     block_on(async {
         let cidr = config.tun_cidr.to_string();
         let redir_mode = config.redir_mode;
@@ -147,13 +149,12 @@ fn main() -> anyhow::Result<()> {
         client
             .run()
             .instrument(tracing::trace_span!("ProxyClient.run"))
-            .race(
-                async {
-                    let signal = signals.next().await.unwrap();
-                    println!("Signal {signal} received.");
-                }
-                .instrument(tracing::trace_span!("Signal receiver")),
-            )
+            .race(async {
+                rx.recv()
+                    .instrument(tracing::trace_span!("Signal receiver"))
+                    .await
+                    .expect("Could not receive signal on channel.");
+            })
             .await;
     });
 

@@ -62,15 +62,14 @@ jobs:
           - build: macos
             os: macos-latest
             rust: nightly
-          - build: nightly-arm
+          - build: nightly-armv7
             os: ubuntu-latest
             rust: nightly
-            # For stripping release binaries:
-            # docker run --rm -v $PWD/target:/target:Z \
-            #   rustembedded/cross:armv7-unknown-linux-musleabi \
-            #   arm-linux-gnueabihf-strip \
-            #   /target/armv7-unknown-linux-musleabi/debug/rg
             target: armv7-unknown-linux-musleabi
+          - build: nightly-armv5
+            os: ubuntu-latest
+            rust: nightly
+            target: armv5te-unknown-linux-musleabi
           # - build: beta
           #   os: ubuntu-latest
           #   rust: beta

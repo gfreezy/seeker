@@ -12,7 +12,7 @@ tracing-subscriber = { version = "0.3.15", features = ["env-filter"] }
 tracing-futures = { version = "0.2.5", features = [
     "std-future",
 ], default-features = false }
-tracing-chrome = "0.7"
+tracing-chrome = { version = "0.7", optional = true }
 config = { path = "../config" }
 dnsserver = { path = "../dnsserver" }
 ssclient = { path = "../ssclient" }
@@ -24,7 +24,7 @@ file-rotate = "0.7.0"
 async-std = { version = "1.12.0", features = ["attributes"] }
 async-tls = "0.12"
 parking_lot = { version = "0.12.1", features = ["deadlock_detection"] }
-async-signals = "0.4.0"
+ctrlc = { version = "3.0", features = ["termination"] }
 libc = "0.2.133"
 futures-util = "0.3.24"
 clap = "4.0"
