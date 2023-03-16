@@ -63,5 +63,5 @@ rules:
   - 'DOMAIN-KEYWORD,uk-live,PROXY'
   - 'DOMAIN-SUFFIX,snssdk.com,DIRECT'
   - 'DOMAIN-SUFFIX,toutiao.com,PROBE'
-  - 'GEOIP,CN,DIRECT'  // geoip
+  - 'GEOIP,CN,DIRECT'  # geoip
   - 'MATCH,PROBE'
