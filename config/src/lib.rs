@@ -136,6 +136,7 @@ fn default_ping_timeout() -> Duration {
 
 mod ipv4_cidr {
     use crate::parse_cidr;
+    use serde::de::Error;
     use serde::{Deserialize, Deserializer};
     use smoltcp::wire::Ipv4Cidr;
 
@@ -144,7 +145,8 @@ mod ipv4_cidr {
         D: Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
-        Ok(parse_cidr(s))
+        Ok(parse_cidr(s.clone())
+            .map_err(|_| Error::invalid_value(serde::de::Unexpected::Str(&s), &"10.0.0.1/16"))?)
     }
 }
 
@@ -176,7 +178,8 @@ mod duration {
         D: Deserializer<'de>,
     {
         let s: String = String::deserialize(deserializer)?;
-        parse_duration(&s).map_err(Error::custom)
+        parse_duration(&s)
+            .map_err(|_| Error::invalid_value(serde::de::Unexpected::Str(&s), &"10s or 10ms"))
     }
 }
 
@@ -198,13 +201,16 @@ mod rules {
     }
 }
 
-fn parse_cidr(s: String) -> Ipv4Cidr {
-    let segments = s.splitn(2, '/').collect::<Vec<&str>>();
+fn parse_cidr(s: String) -> Result<Ipv4Cidr, String> {
+    let segments = s.split('/').collect::<Vec<&str>>();
+    if segments.len() != 2 {
+        return Err("invalid cidr: {}".to_string());
+    }
     let addr = segments[0];
     let len = segments[1];
     let addr: Ipv4Addr = addr.parse().unwrap();
     let prefix = len.parse().unwrap();
-    Ipv4Cidr::new(Ipv4Address::from(addr), prefix)
+    Ok(Ipv4Cidr::new(Ipv4Address::from(addr), prefix))
 }
 
 impl Config {

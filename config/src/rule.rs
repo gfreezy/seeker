@@ -150,7 +150,7 @@ impl fmt::Display for Action {
 }
 
 impl FromStr for Rule {
-    type Err = ();
+    type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let segments = s.splitn(3, ',').collect::<Vec<_>>();
@@ -169,7 +169,7 @@ impl FromStr for Rule {
                 Rule::DomainKeyword(criteria.to_string(), Action::from_str(action).unwrap())
             }
             "IP-CIDR" => Rule::IpCidr(
-                parse_cidr(criteria.to_string()),
+                parse_cidr(criteria.to_string())?,
                 Action::from_str(action).unwrap(),
             ),
             "GEOIP" => Rule::GeoIp(criteria.to_string(), Action::from_str(action).unwrap()),
