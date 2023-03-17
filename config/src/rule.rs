@@ -138,7 +138,7 @@ impl FromStr for Action {
             "DIRECT" => Action::Direct,
             "PROXY" => Action::Proxy,
             "PROBE" => Action::Probe,
-            _ => unreachable!(),
+            _ => panic!("Invalid action: {}", s),
         })
     }
 }
