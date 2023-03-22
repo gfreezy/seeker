@@ -120,7 +120,9 @@ impl ProxyClient {
             let server_chooser = self.server_chooser.clone();
             let connectivity = self.connectivity.clone();
             let uid = self.uid;
-            let peer_addr = conn.peer_addr().expect("get peer addr");
+            let Ok(peer_addr) = conn.peer_addr() else {
+                continue;
+            };
             trace!(peer_addr = ?peer_addr, "new connection");
             let session_port = peer_addr.port();
 
