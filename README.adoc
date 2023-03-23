@@ -4,7 +4,7 @@ image::https://github.com/gfreezy/seeker/actions/workflows/release.yml/badge.svg
 image::https://github.com/gfreezy/seeker/actions/workflows/ci.yml/badge.svg?branch=master[]
 
 
-使用 Tun 实现 ss 透明代理（支持 Mac & Linux 系统），支持 TCP、UDP。
+使用 Tun 实现透明代理（支持 Mac & Linux 系统），支持 TCP、UDP。
 
 == Slack
 https://join.slack.com/t/allsunday/shared_invite/zt-f8xw3uzl-qchMa2jQOfQF1T89w3lfiw
