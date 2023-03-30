@@ -124,7 +124,10 @@ pub fn run_nat(
                 ),
                 _ => continue,
             } {
-                let _ = tun.write(packet.as_ref()).unwrap();
+                let ret = tun.write(packet.as_ref());
+                if let Err(err) = ret {
+                    eprintln!("tun_nat: write packet error: {:?}", err);
+                }
             }
         }
     });
