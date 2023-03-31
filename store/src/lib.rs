@@ -66,6 +66,12 @@ impl Store {
                 Connection::open(&path)?
             }
         };
+        conn.pragma_update(None, "journal_mode", "WAL")
+            .expect("set journal_mode");
+        conn.pragma_update(None, "synchronous", "off")
+            .expect("set synchronous");
+        conn.pragma_update(None, "temp_store", "memory")
+            .expect("set temp_store");
         let store = Store {
             db_path: path,
             conn: ReentrantMutex::new(conn),
