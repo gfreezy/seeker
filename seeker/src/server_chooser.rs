@@ -25,6 +25,7 @@ pub struct ServerChooser {
     selected_server: Arc<Mutex<ServerConfig>>,
     dns_client: DnsClient,
     live_connections: Arc<RwLock<Vec<Box<dyn ProxyConnection + Send + Sync>>>>,
+    show_stats: bool,
 }
 
 impl ServerChooser {
@@ -33,6 +34,7 @@ impl ServerChooser {
         dns_client: DnsClient,
         ping_urls: Vec<PingURL>,
         ping_timeout: Duration,
+        show_stats: bool,
     ) -> Self {
         let selected = servers.first().cloned().expect("no server available");
         let chooser = ServerChooser {
@@ -43,6 +45,7 @@ impl ServerChooser {
             dns_client,
             live_connections: Arc::new(RwLock::new(vec![])),
             selected_server: Arc::new(Mutex::new(selected)),
+            show_stats: show_stats,
         };
         chooser.ping_servers().await;
         chooser
@@ -157,7 +160,9 @@ impl ServerChooser {
         loop {
             if last_updated.elapsed() > Duration::from_secs(10) {
                 self.ping_servers().await;
-                self.print_connection_stats();
+                if self.show_stats {
+                    self.print_connection_stats();
+                }
                 last_updated = Instant::now();
             }
             self.recycle_live_connections();
