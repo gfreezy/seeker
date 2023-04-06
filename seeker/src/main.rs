@@ -14,6 +14,7 @@ mod relay_udp_socket;
 mod server_chooser;
 mod traffic;
 
+use clap::Parser;
 use std::time::Duration;
 
 use crate::logger::setup_logger;
@@ -21,7 +22,6 @@ use crate::proxy_client::ProxyClient;
 use anyhow::{bail, Context};
 use async_std::prelude::FutureExt;
 use async_std::task::block_on;
-use clap::{Arg, ArgAction, Command};
 use config::Config;
 use crypto::CipherType;
 use std::fs::File;
@@ -30,71 +30,55 @@ use tracing::Instrument;
 
 const REDIR_LISTEN_PORT: u16 = 1300;
 
-fn main() -> anyhow::Result<()> {
-    let version = env!("CARGO_PKG_VERSION");
-    let matches = Command::new("Seeker")
-        .version(version)
-        .author("gfreezy <gfreezy@gmail.com>")
-        .about("Tun to Shadowsockets proxy. https://github.com/gfreezy/seeker")
-        .arg(
-            Arg::new("config")
-                .short('c')
-                .long("config")
-                .value_name("FILE")
-                .help("Set config file. The sample config at https://github.com/gfreezy/seeker/blob/master/sample_config.yml")
-                .required(false),
-        )
-        .arg(
-            Arg::new("config-url")
-                .long("config-url")
-                .value_name("CONFIG_URL")
-                .help("URL to config")
-                .required(false),
-        )
-        .arg(
-            Arg::new("key")
-                .long("key")
-                .help("Key for encryption/decryption")
-                .value_name("KEY")
-                .required(false),
-        )
-        .arg(
-            Arg::new("user_id")
-                .short('u')
-                .long("uid")
-                .value_name("UID")
-                .help("User id to proxy")
-                .required(false),
-        )
-        .arg(
-            Arg::new("encrypt")
-                .long("encrypt")
-                .help("Encrypt config file and output to terminal")
-                .action(ArgAction::SetTrue)
-                .required(false),
-        )
-        .arg(
-            Arg::new("log")
-                .short('l')
-                .long("log")
-                .value_name("PATH")
-                .help("Log file")
-                .required(false),
-        )
-        .arg(
-            Arg::new("trace")
-                .short('t')
-                .long("trace")
-                .action(ArgAction::SetTrue)
-                .help("Write a trace log")
-                .required(false),
-        )
-        .get_matches();
+/// CLI program for a proxy
+#[derive(Parser, Debug)]
+#[clap(
+    name = "Seeker",
+    author = "gfreezy <gfreezy@gmail.com>",
+    about = "Tun to Shadowsockets proxy. https://github.com/gfreezy/seeker"
+)]
+struct SeekerArgs {
+    /// Set config file. The sample config at https://github.com/gfreezy/seeker/blob/master/sample_config.yml
+    #[clap(short, long, value_name = "FILE")]
+    config: Option<String>,
 
-    let path = matches.get_one::<String>("config").map(String::as_ref);
-    let key = matches.get_one::<String>("key").map(String::as_ref);
-    let to_encrypt = matches.get_flag("encrypt");
-    let to_trace = matches.get_flag("trace");
+    /// URL to config
+    #[clap(long, value_name = "CONFIG_URL")]
+    config_url: Option<String>,
+
+    /// Key for encryption/decryption
+    #[clap(long, value_name = "KEY")]
+    key: Option<String>,
+
+    /// User id to proxy
+    #[clap(short = 'u', long, value_name = "UID")]
+    user_id: Option<u32>,
+
+    /// Encrypt config file and output to terminal
+    #[clap(long)]
+    encrypt: bool,
+
+    /// Log file
+    #[clap(short = 'l', long, value_name = "PATH")]
+    log: Option<String>,
+
+    /// Write a trace log
+    #[clap(short = 't', long)]
+    trace: bool,
+
+    /// Show connection stats
+    #[clap(short = 's', long)]
+    stats: bool,
+}
+
+fn main() -> anyhow::Result<()> {
+    let args = SeekerArgs::parse();
+
+    let path = args.config.as_ref().map(String::as_ref);
+    let key = args.key.as_ref().map(String::as_ref);
+    let to_encrypt = args.encrypt;
+    let to_trace = args.trace;
+
     if to_encrypt {
         println!(
             "Encrypted content is as below:\n\n\n{}\n\n",
@@ -102,17 +86,18 @@ fn main() -> anyhow::Result<()> {
         );
         return Ok(());
     }
-    let config_url = matches.get_one::<String>("config-url").map(String::as_ref);
+    let config_url = args.config_url;
 
     let dns_setup = DNSSetup::new("127.0.0.1".to_string());
 
-    let config = load_config(path, config_url, dns_setup.original_dns(), key)?;
+    let config = load_config(path, config_url.as_deref(), dns_setup.original_dns(), key)?;
 
-    let uid = matches.get_one::<u32>("user_id").copied();
-    let log_path = matches.get_one::<String>("log").map(String::as_ref);
+    let uid = args.user_id;
+    let log_path = args.log;
+    let show_stats = args.stats;
 
     eprint!("Starting.");
-    let _guard = setup_logger(log_path, to_trace)?;
+    let _guard = setup_logger(log_path.as_deref(), to_trace)?;
     eprint!(".");
     set_rlimit_no_file(10240)?;
     eprint!(".");
@@ -131,7 +116,7 @@ fn main() -> anyhow::Result<()> {
     block_on(async {
         let cidr = config.tun_cidr.to_string();
         let redir_mode = config.redir_mode;
-        let client = ProxyClient::new(config, uid)
+        let client = ProxyClient::new(config, uid, show_stats)
             .instrument(tracing::trace_span!("ProxyClient.new"))
             .await;
         eprint!(".");

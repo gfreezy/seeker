@@ -44,7 +44,7 @@ pub struct ProxyClient {
 }
 
 impl ProxyClient {
-    pub async fn new(config: Config, uid: Option<u32>) -> Self {
+    pub async fn new(config: Config, uid: Option<u32>, show_stats: bool) -> Self {
         let additional_cidrs = config.rules.additional_cidrs();
 
         let (session_manager, nat_join_handle) = if !config.redir_mode {
@@ -77,6 +77,7 @@ impl ProxyClient {
                 dns_client.clone(),
                 ping_urls,
                 config.ping_timeout,
+                show_stats,
             )
             .await,
         );
