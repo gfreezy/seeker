@@ -224,10 +224,22 @@ impl InnerSessionManager {
     }
 
     pub fn update_activity_for_port(&mut self, port: u16) -> bool {
+        self.clear_expired();
         if let Some(assoc) = self.map.get_mut(&port) {
             // if `recycling` is true, the port is marked recycle. We shouldn't update activity ts.
             if !assoc.recycling {
                 assoc.last_activity_ts = now();
+                tracing::debug!(
+                    "update port: {:?}, addr: {:?}, last_activity_ts: {}",
+                    port,
+                    (
+                        assoc.src_addr,
+                        assoc.src_port,
+                        assoc.dest_addr,
+                        assoc.dest_port,
+                    ),
+                    assoc.last_activity_ts
+                );
                 return true;
             }
         } else {
@@ -237,10 +249,22 @@ impl InnerSessionManager {
     }
 
     pub fn recycle_port(&mut self, port: u16) {
+        self.clear_expired();
         if let Some(assoc) = self.map.get_mut(&port) {
             // we have 30 seconds to clean the connection.
             assoc.last_activity_ts = now() - EXPIRE_SECONDS + 30;
             assoc.recycling = true;
+            tracing::debug!(
+                "recycle port: {:?}, addr: {:?}, last_activity_ts: {}",
+                port,
+                (
+                    assoc.src_addr,
+                    assoc.src_port,
+                    assoc.dest_addr,
+                    assoc.dest_port,
+                ),
+                assoc.last_activity_ts
+            );
         } else {
             eprintln!("recycle_port: port {} not exists", port);
         }
@@ -277,6 +301,17 @@ impl InnerSessionManager {
         self.reverse_map
             .insert((src_addr, src_port, dest_addr, dest_port), port);
 
+        tracing::debug!(
+            "insert port: {:?}, addr: {:?}",
+            port,
+            (src_addr, src_port, dest_addr, dest_port,)
+        );
+        self.clear_expired();
+        port
+    }
+
+    fn clear_expired(&mut self) {
+        let now = now();
         let map = &mut self.map;
         let reverse_map = &mut self.reverse_map;
         let available_ports = &mut self.available_ports;
@@ -285,6 +320,17 @@ impl InnerSessionManager {
             // when sleeping on Mac m1, subtract with overflow happens.
             let retain = now.wrapping_sub(assoc.last_activity_ts) < EXPIRE_SECONDS;
             if !retain {
+                tracing::debug!(
+                    "remove port: {:?}, addr: {:?}, last_activity_ts: {}",
+                    port,
+                    (
+                        assoc.src_addr,
+                        assoc.src_port,
+                        assoc.dest_addr,
+                        assoc.dest_port,
+                    ),
+                    assoc.last_activity_ts
+                );
                 reverse_map.remove(&(
                     assoc.src_addr,
                     assoc.src_port,
@@ -296,7 +342,6 @@ impl InnerSessionManager {
             }
             retain
         });
-        port
     }
 }
 
