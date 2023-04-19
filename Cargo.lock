@@ -2058,6 +2058,7 @@ name = "tcp_connection"
 version = "0.4.8"
 dependencies = [
  "async-std",
+ "base64 0.13.1",
  "dyn-clone",
  "memchr",
  "nanorand",
