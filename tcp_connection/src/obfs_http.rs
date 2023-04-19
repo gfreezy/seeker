@@ -21,6 +21,7 @@ use crate::Connection;
 
 #[derive(Clone)]
 pub(crate) struct ObfsHttpTcpStream {
+    addr: SocketAddr,
     conn: TcpStream,
     sent_first_request: Arc<AtomicBool>,
     recvd_first_response: Arc<AtomicBool>,
@@ -37,6 +38,7 @@ impl ObfsHttpTcpStream {
         let conn = TcpStream::connect(addr).await?;
 
         Ok(ObfsHttpTcpStream {
+            addr,
             conn,
             sent_first_request: Arc::new(AtomicBool::new(false)),
             recvd_first_response: Arc::new(AtomicBool::new(false)),
@@ -49,36 +51,32 @@ impl ObfsHttpTcpStream {
     /// Returns the request as a slice of bytes.
     fn build_request(&mut self, content_length: usize) -> Vec<u8> {
         let mut rng = tls_rng();
-
-        let chars = (0..31)
-            .map(|_| rng.generate::<u8>())
-            .map(|s| s.to_string())
-            .collect::<Vec<_>>();
-        let key = chars.concat();
-
+        let random_num: u128 = rng.generate();
+        let random_bytes = random_num.to_be_bytes();
+        let key = base64::encode_config(&random_bytes, base64::URL_SAFE);
+        let host = if self.addr.port() != 80 {
+            format!("{}:{}", self.host, self.addr.port())
+        } else {
+            self.host.clone()
+        };
         // Http Get request text
         let headers = [
             "GET / HTTP/1.1\r\n",
             "Host: ",
-            self.host.as_str(),
+            host.as_str(),
             "\r\n",
-            "Connection: keep-alive\r\n",
-            "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36\r\n",
-            "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9\r\n",
-            "Accept-Language: zh-CN,zh;q=0.9\r\n",
-            "Accept-Encoding: gzip, deflate\r\n",
+            "User-Agent: curl/7.1.3\r\n",
+            "Upgrade: websocket\r\n",
+            "Connection: Upgrade\r\n",
             "Content-Length: ",
             content_length.to_string().as_str(),
             "\r\n",
-            "Upgrade-Insecure-Requests: 1\r\n",
-            "Sec-Fetch-User: ?1\r\n",
-            "Sec-Fetch-Site: same-origin\r\n",
-            "Sec-Fetch-Mode: navigate\r\n",
-            "Sec-Fetch-Dest: document\r\n",
             "Sec-WebSocket-Key: ",
             key.as_str(),
             "\r\n\r\n",
-        ].concat().into_bytes();
+        ]
+        .concat()
+        .into_bytes();
         headers
     }
 }
@@ -162,15 +160,18 @@ impl Write for ObfsHttpTcpStream {
             let mut new_bufs = bufs.to_vec();
             new_bufs.insert(0, buf);
 
-            let ret = ready!(Pin::new(&mut self.conn).poll_write_vectored(cx, &new_bufs));
+            let ret = Pin::new(&mut self.conn).poll_write_vectored(cx, &new_bufs);
             let ret = match ret {
-                Ok(size) => {
+                Poll::Ready(Ok(size)) => {
                     if size <= http_req_size {
                         return Poll::Ready(Err(ErrorKind::UnexpectedEof.into()));
                     }
                     Ok(size - http_req_size)
                 }
-                e => e,
+                Poll::Ready(e) => e,
+                Poll::Pending => {
+                    panic!("obfs should be written once.");
+                }
             };
             return Poll::Ready(ret);
         }
@@ -189,14 +190,17 @@ impl Write for ObfsHttpTcpStream {
             let http_req_size = send_buf.len();
             send_buf.extend_from_slice(buf);
 
-            let ret = ready!(Pin::new(&mut self.conn).poll_write(cx, &send_buf));
+            let ret = Pin::new(&mut self.conn).poll_write(cx, &send_buf);
             let ret = match ret {
-                Ok(size) => {
+                Poll::Ready(Ok(size)) => {
                     // If the first request is not sent completely, abort.
                     assert!(size > http_req_size);
                     Ok(size - http_req_size)
                 }
-                e => e,
+                Poll::Ready(e) => e,
+                Poll::Pending => {
+                    panic!("obfs should be written once.");
+                }
             };
             return Poll::Ready(ret);
         }
