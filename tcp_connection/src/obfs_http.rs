@@ -13,7 +13,6 @@ use std::{
 use async_std::{
     io::{Read, Write},
     net::TcpStream,
-    task::ready,
 };
 use nanorand::{tls_rng, Rng};
 
