@@ -288,7 +288,7 @@ mod tests {
         let docker = Cli::default();
         let _c = run_obfs_server(&docker, "http");
 
-        let listener = TcpListener::bind("localhost:12345").await.unwrap();
+        let listener = TcpListener::bind("0.0.0.0:12345").await.unwrap();
 
         let handle = spawn(async move {
             while let Some(conn) = listener.incoming().next().await {
