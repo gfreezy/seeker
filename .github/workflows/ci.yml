@@ -152,6 +152,10 @@ jobs:
 #          fi
 #          set -x
 
+      - name: Run tests (without cross)
+        if: matrix.target == ''
+        run: ${{ env.CARGO }} test --verbose --all
+
       - name: Run tests (with cross)
         if: matrix.target != ''
         run: ${{ env.CARGO }} test --verbose --all ${{ env.TARGET_FLAGS }}
