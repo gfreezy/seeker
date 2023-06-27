@@ -275,7 +275,10 @@ mod tests {
 
     /// This test use docker so it can only be runned in
     /// macos x86_64, aarch and linux x86_64
-    #[cfg(any(target_os = "macos", all(target_os = "linux", target_arch = "x86_64")))]
+    #[cfg(any(
+        target_os = "macos",
+        all(target_os = "linux", target_arch = "x86_64", target_env = "gnu")
+    ))]
     #[async_std::test]
     async fn test_obfs_docker_http_read_write() {
         const HOST: &str = "baidu.com";
