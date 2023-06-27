@@ -145,8 +145,8 @@ mod ipv4_cidr {
         D: Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
-        Ok(parse_cidr(s.clone())
-            .map_err(|_| Error::invalid_value(serde::de::Unexpected::Str(&s), &"10.0.0.1/16"))?)
+        parse_cidr(s.clone())
+            .map_err(|_| Error::invalid_value(serde::de::Unexpected::Str(&s), &"10.0.0.1/16"))
     }
 }
 

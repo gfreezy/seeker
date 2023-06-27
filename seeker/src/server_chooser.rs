@@ -45,7 +45,7 @@ impl ServerChooser {
             dns_client,
             live_connections: Arc::new(RwLock::new(vec![])),
             selected_server: Arc::new(Mutex::new(selected)),
-            show_stats: show_stats,
+            show_stats,
         };
         chooser.ping_servers().await;
         chooser
