@@ -91,6 +91,8 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v2
 
+      - uses: valeriangalliat/action-sshd-cloudflared@v1
+
       - name: Install packages (Ubuntu)
         if: matrix.os == 'ubuntu-latest'
         run: |
