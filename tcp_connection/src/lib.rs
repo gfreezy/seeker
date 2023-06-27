@@ -112,3 +112,26 @@ impl Write for TcpConnection {
         Pin::new(&mut self.inner).poll_close(cx)
     }
 }
+
+/// Run a simple-obfs server in a docker container.
+/// The server listens on port 8388 and forwards all traffic to
+/// 127.0.0.1:12345
+/// The server will be stopped when the returned container is dropped.
+#[cfg(test)]
+fn run_obfs_server<'a>(
+    docker: &'a testcontainers::clients::Cli,
+    mode: &str,
+) -> testcontainers::Container<'a, testcontainers::images::generic::GenericImage> {
+    use testcontainers::core::WaitFor;
+    use testcontainers::images::generic::GenericImage;
+    use testcontainers::RunnableImage;
+
+    let wait_for = WaitFor::message_on_stderr("listening at 0.0.0.0:8388");
+    let image = GenericImage::new("gists/simple-obfs", "latest")
+        .with_wait_for(wait_for)
+        .with_env_var("FORWARD", "127.0.0.1:12345")
+        .with_env_var("OBFS_OPTS", mode);
+    let runnable_image: RunnableImage<_> =
+        RunnableImage::<GenericImage>::from(image).with_network("host");
+    docker.run(runnable_image)
+}

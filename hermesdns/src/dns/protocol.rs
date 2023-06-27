@@ -576,20 +576,15 @@ impl DnsRecord {
 
 /// The result code for a DNS query, as described in the specification
 #[allow(clippy::upper_case_acronyms)]
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
 pub enum ResultCode {
+    #[default]
     NOERROR = 0,
     FORMERR = 1,
     SERVFAIL = 2,
     NXDOMAIN = 3,
     NOTIMP = 4,
     REFUSED = 5,
-}
-
-impl Default for ResultCode {
-    fn default() -> Self {
-        ResultCode::NOERROR
-    }
 }
 
 impl ResultCode {
