@@ -349,5 +349,5 @@ fn now() -> u64 {
     SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
         .unwrap()
-        .as_secs() as u64
+        .as_secs()
 }

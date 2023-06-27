@@ -52,7 +52,7 @@ impl ObfsHttpTcpStream {
         let mut rng = tls_rng();
         let random_num: u128 = rng.generate();
         let random_bytes = random_num.to_be_bytes();
-        let key = base64::encode_config(&random_bytes, base64::URL_SAFE);
+        let key = base64::encode_config(random_bytes, base64::URL_SAFE);
         let host = if self.addr.port() != 80 {
             format!("{}:{}", self.host, self.addr.port())
         } else {
@@ -223,7 +223,10 @@ impl Write for ObfsHttpTcpStream {
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
     use std::time::Duration;
+
+    use crate::run_obfs_server;
 
     use super::*;
     use async_std::{
@@ -232,6 +235,7 @@ mod tests {
         prelude::StreamExt,
         task::{sleep, spawn},
     };
+    use testcontainers::clients::Cli;
 
     #[async_std::test]
     async fn test_obfs_http_connect() {
@@ -259,6 +263,45 @@ mod tests {
         let mut stream = ObfsHttpTcpStream::connect(addr, HOST.to_string())
             .await
             .unwrap();
+
+        let mut buf = [0; 1024];
+        let sent = stream.write(REQ.as_bytes()).await.unwrap();
+        assert_eq!(sent, REQ.len());
+        let n = stream.read(&mut buf).await.unwrap();
+        assert_eq!(&buf[..n], RESP.as_bytes());
+
+        let _ = handle.cancel().await;
+    }
+
+    #[async_std::test]
+    async fn test_obfs_http_read_write() {
+        const HOST: &str = "baidu.com";
+        const REQ: &str = "hello";
+        const RESP: &str = "world";
+
+        let docker = Cli::default();
+        let _c = run_obfs_server(&docker, "http");
+
+        let listener = TcpListener::bind("localhost:12345").await.unwrap();
+
+        let handle = spawn(async move {
+            while let Some(conn) = listener.incoming().next().await {
+                let mut stream = conn.unwrap();
+                let mut buf = [0; 1024];
+                let n = stream.read(&mut buf).await.unwrap();
+                assert_eq!(&buf[..n], REQ.as_bytes());
+                let n = stream.write(RESP.as_bytes()).await.unwrap();
+                assert_eq!(n, RESP.len());
+            }
+        });
+
+        sleep(Duration::from_secs(1)).await;
+        let mut stream = ObfsHttpTcpStream::connect(
+            SocketAddr::from_str("127.0.0.1:8388").unwrap(),
+            HOST.to_string(),
+        )
+        .await
+        .unwrap();
 
         let mut buf = [0; 1024];
         let sent = stream.write(REQ.as_bytes()).await.unwrap();
