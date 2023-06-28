@@ -1,4 +1,5 @@
 mod obfs_http;
+mod obfs_tls;
 
 use async_std::{
     io::{Read, Write},
@@ -7,6 +8,7 @@ use async_std::{
 use dyn_clone::DynClone;
 
 use obfs_http::ObfsHttpTcpStream;
+use obfs_tls::ObfsTlsTcpStream;
 use serde::Deserialize;
 
 use std::{
@@ -30,7 +32,7 @@ pub struct TcpConnection {
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Deserialize)]
 pub enum ObfsMode {
     Http,
-    // Ssl,
+    Tls,
 }
 
 impl Connection for TcpStream {}
@@ -44,6 +46,9 @@ impl TcpConnection {
         let conn = match mode {
             ObfsMode::Http => {
                 Box::new(ObfsHttpTcpStream::connect(addr, host).await?) as Box<dyn Connection>
+            }
+            ObfsMode::Tls => {
+                Box::new(ObfsTlsTcpStream::connect(addr, host).await?) as Box<dyn Connection>
             }
         };
 
@@ -121,15 +126,20 @@ impl Write for TcpConnection {
 fn run_obfs_server<'a>(
     docker: &'a testcontainers::clients::Cli,
     mode: &str,
+    server_port: usize,
+    forward_port: usize,
 ) -> testcontainers::Container<'a, testcontainers::images::generic::GenericImage> {
+    use std::fmt::format;
+
     use testcontainers::core::WaitFor;
     use testcontainers::images::generic::GenericImage;
     use testcontainers::RunnableImage;
 
-    let wait_for = WaitFor::message_on_stderr("listening at 0.0.0.0:8388");
+    let wait_for = WaitFor::message_on_stderr(format!("listening at 0.0.0.0:{server_port}"));
     let image = GenericImage::new("gists/simple-obfs", "latest")
         .with_wait_for(wait_for)
-        .with_env_var("FORWARD", "127.0.0.1:12345")
+        .with_env_var("FORWARD", format!("127.0.0.1:{forward_port}"))
+        .with_env_var("SERVER_PORT", server_port.to_string())
         .with_env_var("OBFS_OPTS", mode);
     let runnable_image: RunnableImage<_> =
         RunnableImage::<GenericImage>::from(image).with_network("host");
