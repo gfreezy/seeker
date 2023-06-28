@@ -273,8 +273,7 @@ mod tests {
         let _ = handle.cancel().await;
     }
 
-    /// This test use docker so it can only be runned in
-    /// macos x86_64, aarch and linux x86_64
+    /// This test use docker so it can only be run in linux x86_64
     #[cfg(target_os = "linux", target_arch = "x86_64", target_env = "gnu")]
     #[async_std::test]
     async fn test_obfs_docker_http_read_write() {
