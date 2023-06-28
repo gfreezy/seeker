@@ -273,12 +273,8 @@ mod tests {
         let _ = handle.cancel().await;
     }
 
-    /// This test use docker so it can only be runned in
-    /// macos x86_64, aarch and linux x86_64
-    #[cfg(any(
-        target_os = "macos",
-        all(target_os = "linux", target_arch = "x86_64", target_env = "gnu")
-    ))]
+    /// This test use docker so it can only be run in linux x86_64
+    #[cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]
     #[async_std::test]
     async fn test_obfs_docker_http_read_write() {
         const HOST: &str = "baidu.com";
@@ -288,7 +284,7 @@ mod tests {
         let docker = Cli::default();
         let _c = run_obfs_server(&docker, "http");
 
-        let listener = TcpListener::bind("localhost:12345").await.unwrap();
+        let listener = TcpListener::bind("0.0.0.0:12345").await.unwrap();
 
         let handle = spawn(async move {
             while let Some(conn) = listener.incoming().next().await {
