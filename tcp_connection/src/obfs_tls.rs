@@ -349,9 +349,9 @@ mod tests {
         const RESP: &str = "world";
 
         let docker = Cli::default();
-        let _c = run_obfs_server(&docker, "tls");
+        let _c = run_obfs_server(&docker, "tls", 8389, 12346);
 
-        let listener = TcpListener::bind("localhost:12345").await.unwrap();
+        let listener = TcpListener::bind("0.0.0.0:12346").await.unwrap();
 
         let handle = spawn(async move {
             while let Some(conn) = listener.incoming().next().await {
@@ -369,7 +369,7 @@ mod tests {
 
         sleep(Duration::from_secs(1)).await;
         let mut stream = ObfsTlsTcpStream::connect(
-            SocketAddr::from_str("127.0.0.1:8388").unwrap(),
+            SocketAddr::from_str("127.0.0.1:8389").unwrap(),
             HOST.to_string(),
         )
         .await

@@ -282,7 +282,7 @@ mod tests {
         const RESP: &str = "world";
 
         let docker = Cli::default();
-        let _c = run_obfs_server(&docker, "http");
+        let _c = run_obfs_server(&docker, "http", 8388, 12345);
 
         let listener = TcpListener::bind("0.0.0.0:12345").await.unwrap();
 
