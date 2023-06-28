@@ -39,9 +39,9 @@ if git tag | grep -q "^${TAG}$"; then
 fi
 
 # 创建新的标签
-# git tag $TAG
+git tag $TAG
 
 # 打印新的标签
 echo "Created new tag: $TAG"
 
-# git push origin $TAG
+git push origin $TAG
