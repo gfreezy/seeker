@@ -168,10 +168,7 @@ impl FromStr for Rule {
             "DOMAIN-KEYWORD" => {
                 Rule::DomainKeyword(criteria.to_string(), Action::from_str(action).unwrap())
             }
-            "IP-CIDR" => Rule::IpCidr(
-                parse_cidr(criteria.to_string())?,
-                Action::from_str(action).unwrap(),
-            ),
+            "IP-CIDR" => Rule::IpCidr(parse_cidr(criteria)?, Action::from_str(action).unwrap()),
             "GEOIP" => Rule::GeoIp(criteria.to_string(), Action::from_str(action).unwrap()),
             "MATCH" => Rule::Match(Action::from_str(action).unwrap()),
             _ => unreachable!(),

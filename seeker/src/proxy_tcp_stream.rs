@@ -67,7 +67,7 @@ impl ProxyTcpStream {
                     ProxyTcpStreamInner::HttpsProxy(
                         HttpsProxyTcpStream::connect(
                             proxy_socket_addr,
-                            proxy_hostname.to_string(),
+                            proxy_hostname,
                             remote_addr,
                             config.username(),
                             config.password(),
