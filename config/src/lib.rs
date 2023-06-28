@@ -145,7 +145,7 @@ mod ipv4_cidr {
         D: Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
-        parse_cidr(s.clone())
+        parse_cidr(&s)
             .map_err(|_| Error::invalid_value(serde::de::Unexpected::Str(&s), &"10.0.0.1/16"))
     }
 }
@@ -201,10 +201,10 @@ mod rules {
     }
 }
 
-fn parse_cidr(s: String) -> Result<Ipv4Cidr, String> {
+fn parse_cidr(s: &str) -> Result<Ipv4Cidr, &str> {
     let segments = s.split('/').collect::<Vec<&str>>();
     if segments.len() != 2 {
-        return Err("invalid cidr: {}".to_string());
+        return Err("invalid cidr: {}");
     }
     let addr = segments[0];
     let len = segments[1];

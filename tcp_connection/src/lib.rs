@@ -1,4 +1,5 @@
 mod obfs_http;
+mod obfs_tls;
 
 use async_std::{
     io::{Read, Write},
@@ -7,6 +8,7 @@ use async_std::{
 use dyn_clone::DynClone;
 
 use obfs_http::ObfsHttpTcpStream;
+use obfs_tls::ObfsTlsTcpStream;
 use serde::Deserialize;
 
 use std::{
@@ -30,7 +32,7 @@ pub struct TcpConnection {
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Deserialize)]
 pub enum ObfsMode {
     Http,
-    // Ssl,
+    Tls,
 }
 
 impl Connection for TcpStream {}
@@ -44,6 +46,9 @@ impl TcpConnection {
         let conn = match mode {
             ObfsMode::Http => {
                 Box::new(ObfsHttpTcpStream::connect(addr, host).await?) as Box<dyn Connection>
+            }
+            ObfsMode::Tls => {
+                Box::new(ObfsTlsTcpStream::connect(addr, host).await?) as Box<dyn Connection>
             }
         };
 
