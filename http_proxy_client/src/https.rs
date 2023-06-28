@@ -18,7 +18,7 @@ pub struct HttpsProxyTcpStream {
 impl HttpsProxyTcpStream {
     pub async fn connect(
         proxy_server: SocketAddr,
-        proxy_server_domain: String,
+        proxy_server_domain: &str,
         addr: Address,
         username: Option<&str>,
         password: Option<&str>,
