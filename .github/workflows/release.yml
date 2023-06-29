@@ -17,7 +17,7 @@ on:
     # branches:
     # - ag/release
     tags:
-      - 'v.*'
+      - 'v*'
 jobs:
   create-release:
     name: create-release
