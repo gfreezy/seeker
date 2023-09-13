@@ -272,7 +272,8 @@ impl Config {
                 Err(e) => {
                     eprintln!("Load servers from remote config `{url}` error: {e}");
 
-                    let Ok(Some(data)) = store::Store::global().get_cached_remote_config_data(&url) else {
+                    let Ok(Some(data)) = store::Store::global().get_cached_remote_config_data(&url)
+                    else {
                         eprintln!("No cached config for `{url}`.");
                         continue;
                     };

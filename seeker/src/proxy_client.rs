@@ -145,7 +145,9 @@ impl ProxyClient {
                         &resolver,
                         &dns_client,
                         &config,
-                    ).await else {
+                    )
+                    .await
+                    else {
                         continue;
                     };
                     ret
@@ -396,10 +398,7 @@ pub(crate) async fn get_real_src_real_dest_and_host(
     };
 
     let IpAddr::V4(ipv4) = real_src.ip() else {
-        return Err(Error::new(
-            std::io::ErrorKind::Other,
-            "only support ipv4",
-        ));
+        return Err(Error::new(std::io::ErrorKind::Other, "only support ipv4"));
     };
     let is_tun_ip = config.tun_cidr.contains_addr(&ipv4.into());
     let ip = real_dest.ip().to_string();

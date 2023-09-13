@@ -117,8 +117,12 @@ fn parse_scutil_dns(lines: &str) -> Vec<String> {
         if !l.trim().starts_with("nameserver[") {
             continue;
         }
-        let Some(ip) = l.split(':').nth(1) else { continue };
-        let Ok(ip) = ip.trim().parse::<IpAddr>() else {continue;};
+        let Some(ip) = l.split(':').nth(1) else {
+            continue;
+        };
+        let Ok(ip) = ip.trim().parse::<IpAddr>() else {
+            continue;
+        };
         let ip = ip.to_string();
         if !dns.contains(&ip) {
             dns.push(ip);
