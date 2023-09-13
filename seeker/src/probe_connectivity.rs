@@ -30,16 +30,14 @@ impl ProbeConnectivity {
         addr: &Address,
         timeout: Duration,
     ) -> bool {
-        let Ok(Ok(tcp_stream)) = TcpStream::connect(sock_addr)
-        .timeout(timeout)
-        .await else {
+        let Ok(Ok(tcp_stream)) = TcpStream::connect(sock_addr).timeout(timeout).await else {
             return false;
         };
 
         if addr.port() == 443 {
             let Some(hostname) = addr.hostname() else {
-            return false;
-        };
+                return false;
+            };
             let connector = async_tls::TlsConnector::default();
             let encrypted_stream = connector
                 .connect(hostname, tcp_stream)
