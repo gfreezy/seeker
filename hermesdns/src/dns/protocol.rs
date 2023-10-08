@@ -73,8 +73,8 @@ impl PartialEq<TransientTtl> for TransientTtl {
 }
 
 impl PartialOrd<TransientTtl> for TransientTtl {
-    fn partial_cmp(&self, _: &TransientTtl) -> Option<Ordering> {
-        Some(Ordering::Equal)
+    fn partial_cmp(&self, other: &TransientTtl) -> Option<Ordering> {
+        Some(self.cmp(other))
     }
 }
 

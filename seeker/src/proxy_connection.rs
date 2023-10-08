@@ -50,11 +50,11 @@ impl ProxyConnectionEventListener for StoreListener {
         let host = conn
             .remote_addr()
             .map(|addr| addr.to_string())
-            .unwrap_or(String::new());
+            .unwrap_or_default();
         let proxy_server = conn
             .config()
             .map(|config| config.addr().to_string())
-            .unwrap_or(String::new());
+            .unwrap_or_default();
         let ret = store.new_connection(
             conn.id(),
             &host,

@@ -366,7 +366,7 @@ mod tests {
 
             // Disable recursive resolves to generate a failure
             match Arc::get_mut(&mut context) {
-                Some(mut ctx) => {
+                Some(ctx) => {
                     ctx.allow_recursive = false;
                 }
                 None => panic!(),

@@ -93,7 +93,7 @@ fn crypto_stream_xor_ic<B: BufMut>(
     let ret = unsafe {
         match t {
             CipherType::ChaCha20 => crypto_stream_chacha20_xor_ic(
-                out.chunk_mut().as_mut_ptr() as *mut u8,
+                out.chunk_mut().as_mut_ptr(),
                 data.as_ptr(),
                 data.len() as c_ulonglong,
                 iv.as_ptr(),
@@ -101,7 +101,7 @@ fn crypto_stream_xor_ic<B: BufMut>(
                 key.as_ptr(),
             ),
             CipherType::ChaCha20Ietf => crypto_stream_chacha20_ietf_xor_ic(
-                out.chunk_mut().as_mut_ptr() as *mut u8,
+                out.chunk_mut().as_mut_ptr(),
                 data.as_ptr(),
                 data.len() as c_ulonglong,
                 iv.as_ptr(),
@@ -109,7 +109,7 @@ fn crypto_stream_xor_ic<B: BufMut>(
                 key.as_ptr(),
             ),
             CipherType::Salsa20 => crypto_stream_salsa20_xor_ic(
-                out.chunk_mut().as_mut_ptr() as *mut u8,
+                out.chunk_mut().as_mut_ptr(),
                 data.as_ptr(),
                 data.len() as c_ulonglong,
                 iv.as_ptr(),
@@ -117,7 +117,7 @@ fn crypto_stream_xor_ic<B: BufMut>(
                 key.as_ptr(),
             ),
             CipherType::XSalsa20 => crypto_stream_xsalsa20_xor_ic(
-                out.chunk_mut().as_mut_ptr() as *mut u8,
+                out.chunk_mut().as_mut_ptr(),
                 data.as_ptr(),
                 data.len() as c_ulonglong,
                 iv.as_ptr(),
