@@ -223,10 +223,10 @@ impl Write for ObfsHttpTcpStream {
 
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
+    
     use std::time::Duration;
 
-    use crate::run_obfs_server;
+    
 
     use super::*;
     use async_std::{
@@ -235,7 +235,7 @@ mod tests {
         prelude::StreamExt,
         task::{sleep, spawn},
     };
-    use testcontainers::clients::Cli;
+    
 
     #[async_std::test]
     async fn test_obfs_http_connect() {

@@ -147,8 +147,7 @@ impl<T: Read + Write + Unpin> DecryptedReader<T> {
         // Done reading data, decrypt it
         unsafe {
             // It has enough space, I am sure about that
-            let buffer =
-                slice::from_raw_parts_mut(self.data.chunk_mut().as_mut_ptr() as *mut u8, size);
+            let buffer = slice::from_raw_parts_mut(self.data.chunk_mut().as_mut_ptr(), size);
             self.cipher.decrypt(&self.buffer[..], buffer)?;
 
             // Move forward the pointer
@@ -178,10 +177,8 @@ impl<T: Read + Write + Unpin> DecryptedReader<T> {
             let remaining = size - self.buffer.len();
             unsafe {
                 // It has enough space, I am sure about that
-                let buffer = slice::from_raw_parts_mut(
-                    self.buffer.chunk_mut().as_mut_ptr() as *mut u8,
-                    remaining,
-                );
+                let buffer =
+                    slice::from_raw_parts_mut(self.buffer.chunk_mut().as_mut_ptr(), remaining);
                 let n = ready!(Pin::new(&mut self.conn).poll_read(ctx, buffer))?;
                 if n == 0 {
                     if self.buffer.is_empty() && allow_eof && !self.got_final {
@@ -284,10 +281,8 @@ impl<T: Read + Write + Unpin> EncryptedWriter<T> {
                     BigEndian::write_u16(&mut data_len_buf, data_length);
 
                     unsafe {
-                        let b = slice::from_raw_parts_mut(
-                            buf.chunk_mut().as_mut_ptr() as *mut u8,
-                            output_length,
-                        );
+                        let b =
+                            slice::from_raw_parts_mut(buf.chunk_mut().as_mut_ptr(), output_length);
 
                         let output_length_size = 2 + self.tag_size;
                         self.cipher

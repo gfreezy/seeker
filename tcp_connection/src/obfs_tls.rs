@@ -291,10 +291,10 @@ impl Write for ObfsTlsTcpStream {
 
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
+    
     use std::time::Duration;
 
-    use crate::run_obfs_server;
+    
 
     use super::*;
     use async_std::{
@@ -304,7 +304,7 @@ mod tests {
         task::{sleep, spawn},
     };
 
-    use testcontainers::clients::Cli;
+    
 
     const HANDSHAKE_HEAD_LEN: usize = 142;
 

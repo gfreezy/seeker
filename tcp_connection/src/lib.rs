@@ -129,7 +129,7 @@ fn run_obfs_server<'a>(
     server_port: usize,
     forward_port: usize,
 ) -> testcontainers::Container<'a, testcontainers::images::generic::GenericImage> {
-    use std::fmt::format;
+    
 
     use testcontainers::core::WaitFor;
     use testcontainers::images::generic::GenericImage;
