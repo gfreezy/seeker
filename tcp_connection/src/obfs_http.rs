@@ -223,10 +223,8 @@ impl Write for ObfsHttpTcpStream {
 
 #[cfg(test)]
 mod tests {
-    
-    use std::time::Duration;
 
-    
+    use std::time::Duration;
 
     use super::*;
     use async_std::{
@@ -235,7 +233,6 @@ mod tests {
         prelude::StreamExt,
         task::{sleep, spawn},
     };
-    
 
     #[async_std::test]
     async fn test_obfs_http_connect() {
