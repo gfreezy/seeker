@@ -16,9 +16,7 @@ use std::{
     u8, vec,
 };
 
-pub use self::consts::{
-    SOCKS5_AUTH_METHOD_NONE,
-};
+pub use self::consts::SOCKS5_AUTH_METHOD_NONE;
 use async_std::io::prelude::{Read, Write};
 
 #[rustfmt::skip]
