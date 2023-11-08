@@ -31,9 +31,9 @@ impl Clone for Store {
 }
 
 impl Store {
-    const TABLE_HOST_IP: &str = "host_ip";
-    const TABLE_REMOTE_CONFIG_CACHE: &str = "remote_config_cache";
-    const TABLE_CONNECTIONS: &str = "connections";
+    const TABLE_HOST_IP: &'static str = "host_ip";
+    const TABLE_REMOTE_CONFIG_CACHE: &'static str = "remote_config_cache";
+    const TABLE_CONNECTIONS: &'static str = "connections";
 
     pub fn setup_global(path: impl AsRef<Path>, initial_ip: Ipv4Addr) {
         Self::try_setup_global(path, initial_ip).expect("init global store")
