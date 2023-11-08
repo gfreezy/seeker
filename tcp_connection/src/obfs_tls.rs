@@ -355,7 +355,7 @@ mod tests {
             while let Some(conn) = listener.incoming().next().await {
                 let mut stream = conn.unwrap();
                 let mut buf = [0; 1024];
-                let n = stream.read(&mut buf).await.unwrap();
+                let _n = stream.read(&mut buf).await.unwrap();
                 assert_eq!(
                     &buf[HANDSHAKE_HEAD_LEN..HANDSHAKE_HEAD_LEN + REQ.len()],
                     REQ.as_bytes()
