@@ -17,8 +17,7 @@ use std::{
 };
 
 pub use self::consts::{
-    SOCKS5_AUTH_METHOD_GSSAPI, SOCKS5_AUTH_METHOD_NONE, SOCKS5_AUTH_METHOD_NOT_ACCEPTABLE,
-    SOCKS5_AUTH_METHOD_PASSWORD,
+    SOCKS5_AUTH_METHOD_NONE,
 };
 use async_std::io::prelude::{Read, Write};
 
