@@ -10,6 +10,6 @@ pub struct SocketInfo {
 #[path = "darwin.rs"]
 pub mod sys;
 
-#[cfg(all(target_os = "linux"))]
+#[cfg(target_os = "linux")]
 #[path = "linux.rs"]
 pub mod sys;

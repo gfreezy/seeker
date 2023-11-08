@@ -38,8 +38,7 @@ fn _list_system_proc_socks() -> ProcResult<HashMap<i32, Vec<SocketInfo>>> {
                 local: entry.local_address,
                 remote: entry.remote_address,
             });
-        } else {
-        }
+        } 
     }
     Ok(socks_map)
 }
@@ -78,8 +77,7 @@ fn _list_user_proc_socks(expected_uid: u32) -> ProcResult<HashMap<i32, Vec<Socke
                 local: entry.local_address,
                 remote: entry.remote_address,
             });
-        } else {
-        }
+        } 
     }
     Ok(socks_map)
 }
