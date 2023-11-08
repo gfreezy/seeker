@@ -292,15 +292,17 @@ impl Write for ObfsTlsTcpStream {
 #[cfg(test)]
 mod tests {
 
-    use std::time::Duration;
-
     use super::*;
+    use crate::run_obfs_server;
     use async_std::{
         io::{ReadExt, WriteExt},
         net::TcpListener,
         prelude::StreamExt,
         task::{sleep, spawn},
     };
+    use std::str::FromStr;
+    use std::time::Duration;
+    use testcontainers::clients::Cli;
 
     const HANDSHAKE_HEAD_LEN: usize = 142;
 
