@@ -14,7 +14,7 @@ digest = "0.10.5"
 typenum = "1.15.0"
 byte_string = "1.0.0"
 byteorder = "1.4.3"
-openssl = { version = "0.10.55", optional = true, features = ["vendored"] }
+openssl = { version = "0.10.60", optional = true, features = ["vendored"] }
 libc = "0.2.133"
 hkdf = "0.12.3"
 sha-1 = "0.10.0"
