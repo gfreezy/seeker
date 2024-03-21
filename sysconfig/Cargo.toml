@@ -6,8 +6,8 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
-tracing = "0.1.36"
-libc = "0.2.133"
+tracing = { workspace = true }
+libc = { workspace = true }
 
 [target.'cfg(target_os="macos")'.dependencies]
 libproc = { git = "https://github.com/gfreezy/libproc-rs", rev = "bffc2c4" }

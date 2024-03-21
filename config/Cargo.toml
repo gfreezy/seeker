@@ -7,22 +7,18 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-serde = { version = "1.0.144", features = ["derive", "rc"] }
-url = { version = "2.3.1", features = ["serde"] }
-serde_yaml = "0.9.13"
-bytes = "1.2.1"
+serde = { workspace = true, features = ["derive", "rc"] }
+url = { workspace = true, features = ["serde"] }
+serde_yaml = { workspace = true }
+bytes = { workspace = true }
 crypto = { path = "../crypto" }
 socks5_client = { path = "../socks5_client" }
 tcp_connection = { path = "../tcp_connection" }
-smoltcp = { version = "0.8.1", default-features = false, features = [
-    "proto-ipv6",
-    "proto-ipv4",
-    "std",
-] }
-base64 = "0.20.0"
-percent-encoding = "2.1.0"
-tracing = "0.1.29"
-ureq = "2.5"
-maxminddb = "0.23"
-parking_lot = "0.12"
+smoltcp = { workspace = true, features = ["proto-ipv6", "proto-ipv4", "std"] }
+base64 = { workspace = true }
+percent-encoding = { workspace = true }
+tracing = { workspace = true }
+ureq = { workspace = true }
+maxminddb = { workspace = true }
+parking_lot = { workspace = true }
 store = { path = "../store" }

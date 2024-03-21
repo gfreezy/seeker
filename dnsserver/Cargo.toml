@@ -7,15 +7,15 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-async-std = "1.12.0"
+async-std = { workspace = true }
 hermesdns = { path = "../hermesdns" }
 config = { path = "../config" }
-async-trait = "0.1.57"
-tracing = "0.1.36"
-async-std-resolver = "0.22.0"
-trust-dns-proto = { version = "0.22.0", default-features = false }
+async-trait = { workspace = true }
+tracing = { workspace = true }
+async-std-resolver = { workspace = true }
+trust-dns-proto = { workspace = true }
 store = { path = "../store" }
-parking_lot = "0.12"
+parking_lot = { workspace = true }
 
 [dev-dependencies]
-tempfile = "3.3.0"
+tempfile = { workspace = true }

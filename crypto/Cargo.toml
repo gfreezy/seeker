@@ -7,19 +7,19 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-bytes = "1.2.1"
-rand = "0.8.5"
-md-5 = "0.10.4"
-digest = "0.10.5"
-typenum = "1.15.0"
-byte_string = "1.0.0"
-byteorder = "1.4.3"
-openssl = { version = "0.10.55", optional = true, features = ["vendored"] }
-libc = "0.2.133"
-hkdf = "0.12.3"
-sha-1 = "0.10.0"
-libsodium-sys-stable = { version = "1.19.23", optional = true }
-ring = { version = "0.16.20", optional = true }
+bytes = { workspace = true }
+rand = { workspace = true }
+md-5 = { workspace = true }
+digest = { workspace = true }
+typenum = { workspace = true }
+byte_string = { workspace = true }
+byteorder = { workspace = true }
+openssl = { workspace = true, features = ["vendored"], optional = true }
+libc = { workspace = true }
+hkdf = { workspace = true }
+sha-1 = { workspace = true }
+libsodium-sys-stable = { workspace = true, optional = true }
+ring = { workspace = true, optional = true }
 
 [features]
 default = ["sodium", "rc4", "aes-cfb", "aes-ctr", "camellia-cfb", "use-ring"]
