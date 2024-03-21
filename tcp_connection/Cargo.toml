@@ -6,13 +6,13 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-dyn-clone = "1.0.9"
-async-std = "1.12.0"
-nanorand = "0.7.0"
-memchr = "2.5.0"
-serde = { version = "1.0.144", features = ["derive"] }
-base64 = "0.13.0"
+dyn-clone = { workspace = true }
+async-std = { workspace = true }
+nanorand = { workspace = true }
+memchr = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+base64 = { workspace = true }
 
 [dev-dependencies]
-async-std = { version = "1.12.0", features = ["attributes"] }
-testcontainers = "0.14.0"
+async-std = { workspace = true, features = ["attributes"] }
+testcontainers = { workspace = true }

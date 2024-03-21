@@ -7,12 +7,10 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-tracing = { version = "0.1.36", features = ["attributes"] }
-tracing-subscriber = { version = "0.3.15", features = ["env-filter"] }
-tracing-futures = { version = "0.2.5", features = [
-    "std-future",
-], default-features = false }
-tracing-chrome = { version = "0.7", optional = true }
+tracing = { workspace = true, features = ["attributes"] }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+tracing-futures = { workspace = true, features = ["std-future"] }
+tracing-chrome = { workspace = true, optional = true }
 config = { path = "../config" }
 dnsserver = { path = "../dnsserver" }
 ssclient = { path = "../ssclient" }
@@ -20,25 +18,25 @@ socks5_client = { path = "../socks5_client" }
 http_proxy_client = { path = "../http_proxy_client" }
 sysconfig = { path = "../sysconfig" }
 tun_nat = { path = "../tun_nat" }
-file-rotate = "0.7.0"
-async-std = { version = "1.12.0", features = ["attributes"] }
-async-tls = "0.12"
-parking_lot = { version = "0.12.1", features = ["deadlock_detection"] }
-ctrlc = { version = "3.0", features = ["termination"] }
-libc = "0.2.133"
-futures-util = "0.3.24"
-clap = { version = "3", features = ["derive"] }
-async-std-resolver = "0.22.0"
-ureq = { version = "2.5.0", features = ["json"] }
+file-rotate = { workspace = true }
+async-std = { workspace = true, features = ["attributes"] }
+async-tls = { workspace = true }
+parking_lot = { workspace = true, features = ["deadlock_detection"] }
+ctrlc = { workspace = true, features = ["termination"] }
+libc = { workspace = true }
+futures-util = { workspace = true }
+clap = { workspace = true, features = ["derive"] }
+async-std-resolver = { workspace = true }
+ureq = { workspace = true, features = ["json"] }
 crypto = { path = "../crypto" }
-bytes = "1.2.1"
-base64 = "0.13.0"
-anyhow = "1.0.65"
+bytes = { workspace = true }
+base64 = { workspace = true }
+anyhow = { workspace = true }
 tcp_connection = { path = "../tcp_connection" }
-url = "2.3"
+url = { workspace = true }
 store = { path = "../store" }
-nix = { version = "0.26", features = ["socket"] }
-os_socketaddr = "0.2"
+nix = { workspace = true, features = ["socket"] }
+os_socketaddr = { workspace = true }
 
 [dev-dependencies]
-tempfile = "3.2.0"
+tempfile = { workspace = true }
