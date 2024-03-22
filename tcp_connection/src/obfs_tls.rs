@@ -293,16 +293,13 @@ impl Write for ObfsTlsTcpStream {
 mod tests {
 
     use super::*;
-    use crate::run_obfs_server;
     use async_std::{
         io::{ReadExt, WriteExt},
         net::TcpListener,
         prelude::StreamExt,
         task::{sleep, spawn},
     };
-    use std::str::FromStr;
     use std::time::Duration;
-    use testcontainers::clients::Cli;
 
     const HANDSHAKE_HEAD_LEN: usize = 142;
 
@@ -342,6 +339,7 @@ mod tests {
     #[cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]
     #[async_std::test]
     async fn test_obfs_docker_tls_read_write() {
+        use testcontainers::clients::Cli;
         const HOST: &str = "baidu.com";
         const REQ: &str = "hello";
         const RESP: &str = "world";

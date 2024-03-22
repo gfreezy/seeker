@@ -123,6 +123,7 @@ impl Write for TcpConnection {
 /// 127.0.0.1:12345
 /// The server will be stopped when the returned container is dropped.
 #[cfg(test)]
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
 fn run_obfs_server<'a>(
     docker: &'a testcontainers::clients::Cli,
     mode: &str,

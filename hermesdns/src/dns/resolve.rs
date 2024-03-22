@@ -4,7 +4,6 @@
 use async_trait::async_trait;
 use std::io::Result;
 use std::io::{Error, ErrorKind};
-use std::vec::Vec;
 
 use crate::dns::authority::Authority;
 use crate::dns::cache::SynchronizedCache;
@@ -171,7 +170,7 @@ impl RecursiveDnsResolver {
             // corresponding A record in the additional section
             if let Some(new_ns) = response.get_resolved_ns(qname) {
                 // If there is such a record, we can retry the loop with that NS
-                ns = new_ns.clone();
+                ns.clone_from(&new_ns);
                 let _ = self.cache.store(&response.answers);
                 let _ = self.cache.store(&response.authorities);
                 let _ = self.cache.store(&response.resources);
@@ -190,7 +189,7 @@ impl RecursiveDnsResolver {
 
             // Pick a random IP and restart
             if let Some(new_ns) = recursive_response.get_random_a() {
-                ns = new_ns.clone();
+                ns.clone_from(&new_ns);
             } else {
                 return Ok(response.clone());
             }

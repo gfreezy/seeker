@@ -27,7 +27,7 @@ pub(crate) mod tests {
 
     const LOCAL_UDP_PORT: u16 = 6153;
     async fn get_ip(client: &DnsNetworkClient, host: &str) -> Option<String> {
-        let a = client.get_failed_count();
+        let _a = client.get_failed_count();
         let resp = io::timeout(
             Duration::from_secs(10),
             client.send_query(host, QueryType::A, ("127.0.0.1", LOCAL_UDP_PORT), true),

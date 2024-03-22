@@ -1,7 +1,5 @@
 //! Cipher defined with Rust binding for libcrypto (OpenSSL)
 
-use std::convert::From;
-
 use super::{cipher, CipherResult, CipherType, StreamCipher};
 
 use super::CryptoMode;
