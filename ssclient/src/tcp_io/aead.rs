@@ -47,7 +47,7 @@ use bytes::{BufMut, Bytes, BytesMut};
 
 use crate::BUFFER_SIZE;
 use async_std::io::{Read, Write};
-use crypto::{self, BoxAeadDecryptor, BoxAeadEncryptor, CipherType};
+use crypto::{BoxAeadDecryptor, BoxAeadEncryptor, CipherType};
 
 /// AEAD packet payload must be smaller than 0x3FFF
 const MAX_PACKET_SIZE: usize = 0x3FFF;

@@ -7,7 +7,6 @@
 use async_std::prelude::*;
 use bytes::{Buf, BufMut, BytesMut};
 use std::{
-    convert::From,
     error,
     fmt::{self, Debug, Formatter},
     io::{self, Cursor},
@@ -94,7 +93,7 @@ pub enum Reply {
     CommandNotSupported,
     AddressTypeNotSupported,
 
-    OtherReply(u8),
+    Other(u8),
 }
 
 impl Reply {
@@ -111,7 +110,7 @@ impl Reply {
             Reply::TtlExpired              => consts::SOCKS5_REPLY_TTL_EXPIRED,
             Reply::CommandNotSupported     => consts::SOCKS5_REPLY_COMMAND_NOT_SUPPORTED,
             Reply::AddressTypeNotSupported => consts::SOCKS5_REPLY_ADDRESS_TYPE_NOT_SUPPORTED,
-            Reply::OtherReply(c)           => c,
+            Reply::Other(c)           => c,
         }
     }
 
@@ -128,7 +127,7 @@ impl Reply {
             consts::SOCKS5_REPLY_TTL_EXPIRED                => Reply::TtlExpired,
             consts::SOCKS5_REPLY_COMMAND_NOT_SUPPORTED      => Reply::CommandNotSupported,
             consts::SOCKS5_REPLY_ADDRESS_TYPE_NOT_SUPPORTED => Reply::AddressTypeNotSupported,
-            _                                               => Reply::OtherReply(code),
+            _                                               => Reply::Other(code),
         }
     }
 }
@@ -145,7 +144,7 @@ impl fmt::Display for Reply {
             Reply::GeneralFailure          => write!(f, "General failure"),
             Reply::HostUnreachable         => write!(f, "Host unreachable"),
             Reply::NetworkUnreachable      => write!(f, "Network unreachable"),
-            Reply::OtherReply(u)           => write!(f, "Other reply ({u})"),
+            Reply::Other(u)           => write!(f, "Other reply ({u})"),
             Reply::TtlExpired              => write!(f, "TTL expired"),
         }
     }

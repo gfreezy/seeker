@@ -1,7 +1,6 @@
 //! Ciphers
 
 use std::{
-    convert::From,
     fmt::{self, Debug, Display},
     io, mem,
     str::{self, FromStr},
@@ -13,7 +12,7 @@ use bytes::{BufMut, Bytes, BytesMut};
 use openssl::nid::Nid;
 #[cfg(feature = "openssl")]
 use openssl::symm;
-use rand::{self, RngCore};
+use rand::RngCore;
 #[cfg(feature = "use-ring")]
 use ring::aead::{AES_128_GCM, AES_256_GCM, CHACHA20_POLY1305};
 

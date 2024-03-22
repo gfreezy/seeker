@@ -1,6 +1,6 @@
 //! a threadsafe cache for DNS information
 
-use chrono::{DateTime, Duration, Local};
+use chrono::{DateTime, Local, TimeDelta};
 use std::clone::Clone;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::hash::{Hash, Hasher};
@@ -117,7 +117,10 @@ impl DomainEntry {
 
                 let mut valid_count = 0;
                 for entry in records {
-                    let ttl_offset = Duration::seconds(entry.record.get_ttl() as i64);
+                    let Some(ttl_offset) = TimeDelta::try_seconds(entry.record.get_ttl() as i64)
+                    else {
+                        return CacheState::NotCached;
+                    };
                     let expires = entry.timestamp + ttl_offset;
                     if expires < now {
                         continue;
@@ -136,7 +139,9 @@ impl DomainEntry {
             }
             Some(&RecordSet::NoRecords { ttl, timestamp, .. }) => {
                 let now = Local::now();
-                let ttl_offset = Duration::seconds(ttl as i64);
+                let Some(ttl_offset) = TimeDelta::try_seconds(ttl as i64) else {
+                    return CacheState::NotCached;
+                };
                 let expires = timestamp + ttl_offset;
 
                 if expires < now {
@@ -159,7 +164,9 @@ impl DomainEntry {
 
         if let RecordSet::Records { records, .. } = current_set {
             for entry in records {
-                let ttl_offset = Duration::seconds(entry.record.get_ttl() as i64);
+                let Some(ttl_offset) = TimeDelta::try_seconds(entry.record.get_ttl() as i64) else {
+                    continue;
+                };
                 let expires = entry.timestamp + ttl_offset;
                 if expires < now {
                     continue;

@@ -12,6 +12,7 @@ pub fn next_connection_id() -> u64 {
     CONNECTION_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst) as u64
 }
 
+#[allow(dead_code)]
 pub trait ProxyConnection {
     fn id(&self) -> u64;
     fn network(&self) -> &'static str;

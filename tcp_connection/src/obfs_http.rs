@@ -227,14 +227,12 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
-    use crate::run_obfs_server;
     use async_std::{
         io::{ReadExt, WriteExt},
         net::TcpListener,
         prelude::StreamExt,
         task::{sleep, spawn},
     };
-    use std::str::FromStr;
 
     #[async_std::test]
     async fn test_obfs_http_connect() {
