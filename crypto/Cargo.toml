@@ -22,9 +22,8 @@ libsodium-sys-stable = { workspace = true, optional = true }
 ring = { workspace = true, optional = true }
 
 [features]
-default = ["sodium", "rc4", "aes-cfb", "aes-ctr", "camellia-cfb", "use-ring"]
+default = ["sodium", "aes-cfb", "aes-ctr", "camellia-cfb", "use-ring"]
 sodium = ["libsodium-sys-stable"]
-rc4 = ["openssl"]
 aes-cfb = ["openssl"]
 aes-ctr = ["openssl"]
 camellia-cfb = ["openssl"]

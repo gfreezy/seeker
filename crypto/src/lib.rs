@@ -17,8 +17,6 @@ pub mod digest;
 pub mod dummy;
 #[cfg(feature = "openssl")]
 pub mod openssl;
-#[cfg(feature = "rc4")]
-pub mod rc4_md5;
 #[cfg(feature = "use-ring")]
 pub mod ring;
 #[cfg(feature = "miscreant")]
