@@ -336,10 +336,13 @@ mod tests {
         let _ = handle.cancel().await;
     }
 
-    #[cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
     #[async_std::test]
     async fn test_obfs_docker_tls_read_write() {
+        use crate::run_obfs_server;
+        use std::str::FromStr;
         use testcontainers::clients::Cli;
+
         const HOST: &str = "baidu.com";
         const REQ: &str = "hello";
         const RESP: &str = "world";
