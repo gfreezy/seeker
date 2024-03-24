@@ -274,6 +274,9 @@ mod tests {
     #[cfg(all(target_os = "linux", target_env = "gnu"))]
     #[async_std::test]
     async fn test_obfs_docker_http_read_write() {
+        use crate::run_obfs_server;
+        use std::str::FromStr;
+
         const HOST: &str = "baidu.com";
         const REQ: &str = "hello";
         const RESP: &str = "world";
