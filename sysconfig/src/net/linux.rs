@@ -6,12 +6,33 @@ use tracing::info;
 
 pub struct DNSSetup {
     original_dns: Vec<String>,
+    use_resolved: bool,
+    dns: String,
 }
 
 const RESOLV_PATH: &str = "/etc/resolv.conf";
+const RESOLVED_OVERRIDE_PATH: &str = "/etc/systemd/resolved.conf.d/00-dns.conf";
+
 impl DNSSetup {
     pub fn new(dns: String) -> Self {
-        info!("setup dns");
+        if Self::is_system_using_resolved() {
+            info!("setup dns with systemd-resolved");
+            DNSSetup {
+                original_dns: vec![],
+                use_resolved: true,
+                dns,
+            }
+        } else {
+            info!("setup dns with /etc/resolv.conf");
+            DNSSetup {
+                original_dns: vec![],
+                use_resolved: false,
+                dns,
+            }
+        }
+    }
+
+    fn set_with_dnsresolv_conf(&mut self) {
         let mut resolv = OpenOptions::new()
             .read(true)
             .write(true)
@@ -21,45 +42,79 @@ impl DNSSetup {
         let _ = resolv.read_to_end(&mut buf).unwrap();
 
         let content = std::str::from_utf8(&buf).unwrap();
-        let original_dns = get_original_dns(content, &dns);
+        let original_dns = get_original_dns(content, &self.dns);
         info!("original dns: {:?}", &original_dns);
 
         resolv.set_len(0).unwrap();
         resolv.rewind().unwrap();
         resolv
-            .write_all(generate_resolve_file(&["127.0.0.1", &dns]).as_slice())
+            .write_all(generate_resolve_file(&["127.0.0.1", &self.dns]).as_slice())
             .unwrap();
+        self.original_dns = original_dns;
+    }
 
-        DNSSetup { original_dns }
+    fn is_system_using_resolved() -> bool {
+        // check `/etc/resolv.conf` is a symlink
+        return std::fs::symlink_metadata(RESOLV_PATH)
+            .map(|m| m.file_type().is_symlink())
+            .unwrap_or(false);
+    }
+
+    fn set_with_systemd_resolved(&self) {
+        // create `/etc/resolved.conf.d` folder if not exists
+        let _ = run_cmd("mkdir", &["-p", "/etc/systemd/resolved.conf.d"]);
+        // create `/etc/resolved.conf.d/00-dns.conf` file
+        let mut dns_conf = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .open(RESOLVED_OVERRIDE_PATH)
+            .unwrap();
+        dns_conf
+            .write_all(format!("[Resolve]\nDNS={}\n", &self.dns).as_bytes())
+            .unwrap();
+        // restart systemd-resolved
+        let _ = run_cmd("systemctl", &["restart", "systemd-resolved.service"]);
     }
 
     pub fn original_dns(&self) -> Vec<String> {
         self.original_dns.clone()
     }
 
-    pub fn start(&self) {}
+    pub fn start(&mut self) {
+        if self.use_resolved {
+            self.set_with_systemd_resolved();
+        } else {
+            self.set_with_dnsresolv_conf();
+        }
+    }
 }
 
 impl Drop for DNSSetup {
     fn drop(&mut self) {
-        info!("Restore original DNS: {:?}", self.original_dns);
-        let mut resolv = OpenOptions::new()
-            .write(true)
-            .truncate(true)
-            .open(RESOLV_PATH)
-            .unwrap();
-        resolv
-            .write_all(
-                generate_resolve_file(
-                    self.original_dns
-                        .iter()
-                        .map(|s| s.as_str())
-                        .collect::<Vec<_>>()
-                        .as_slice(),
+        if self.use_resolved {
+            info!("Restore original DNS");
+            let _ = run_cmd("rm", &["-f", RESOLVED_OVERRIDE_PATH]);
+            let _ = run_cmd("systemctl", &["restart", "systemd-resolved.service"]);
+        } else {
+            info!("Restore original DNS: {:?}", self.original_dns);
+            let mut resolv = OpenOptions::new()
+                .write(true)
+                .truncate(true)
+                .open(RESOLV_PATH)
+                .unwrap();
+            resolv
+                .write_all(
+                    generate_resolve_file(
+                        self.original_dns
+                            .iter()
+                            .map(|s| s.as_str())
+                            .collect::<Vec<_>>()
+                            .as_slice(),
+                    )
+                    .as_slice(),
                 )
-                .as_slice(),
-            )
-            .unwrap();
+                .unwrap();
+        }
     }
 }
 
