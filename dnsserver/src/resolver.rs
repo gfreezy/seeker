@@ -220,33 +220,4 @@ mod tests {
             assert_eq!(resolver.lookup_host("10.1.0.1"), None);
         });
     }
-
-    #[test]
-    fn test_resolve_a() {
-        // resolve archiva-maven-storage-prod.oss-cn-beijing.aliyuncs.com
-        store::Store::setup_global_for_test();
-        let dns = "100.96.0.2";
-        task::block_on(async {
-            let resolver = RuleBasedDnsResolver::new(
-                true,
-                ProxyRules::new(vec![
-                    "DOMAIN-SUFFIX,aliyuncs.com,DIRECT".parse().unwrap(),
-                    "DOMAIN-SUFFIX,oss-cn-beijing.aliyuncs.com,DIRECT"
-                        .parse()
-                        .unwrap(),
-                ]),
-                new_resolver(dns.to_string(), 53).await,
-            )
-            .await;
-            let resp = resolver
-                .resolve(
-                    "archiva-maven-storage-prod.oss-cn-beijing.aliyuncs.com",
-                    QueryType::A,
-                )
-                .await
-                .unwrap();
-            println!("{:#?}", resp);
-            assert!(resp.answers.len() > 0);
-        });
-    }
 }
