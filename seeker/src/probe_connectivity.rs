@@ -30,22 +30,48 @@ impl ProbeConnectivity {
         addr: &Address,
         timeout: Duration,
     ) -> bool {
-        let Ok(Ok(tcp_stream)) = TcpStream::connect(sock_addr).timeout(timeout).await else {
-            return false;
-        };
-
-        if addr.port() == 443 {
-            let Some(hostname) = addr.hostname() else {
+        let ret = async {
+            let Ok(tcp_stream) = TcpStream::connect(sock_addr).await else {
                 return false;
             };
-            let connector = async_tls::TlsConnector::default();
-            let encrypted_stream = connector
-                .connect(hostname, tcp_stream)
-                .timeout(timeout)
-                .await;
-            return encrypted_stream.is_ok();
+
+            if addr.port() == 443 {
+                let Some(hostname) = addr.hostname() else {
+                    // If the address is an IP address, we assume it is a direct connection.
+                    return true;
+                };
+                let connector = async_tls::TlsConnector::default();
+                let encrypted_stream = connector.connect(hostname, tcp_stream).await;
+                let Ok(mut tls_stream) = encrypted_stream else {
+                    return false;
+                };
+                // Send a HTTP HEAD request to the server to check if the server is alive.
+                if tls_stream
+                    .write_all("HEAD / HTTP/1.0\r\n\r\n".as_bytes())
+                    .await
+                    .is_err()
+                {
+                    return false;
+                }
+
+                // Read the response from the server.
+                let mut buf = vec![0u8; 1024];
+                if tls_stream.read(&mut buf).await.is_err() {
+                    return false;
+                }
+                return true;
+            }
+
+            // If the port is not 443, we assume it is a direct connection.
+            true
         }
-        true
+        .timeout(timeout)
+        .await;
+
+        match ret {
+            Ok(result) => result,
+            Err(_) => false,
+        }
     }
 
     pub(crate) async fn probe_connectivity(&self, sock_addr: SocketAddr, addr: &Address) -> bool {
