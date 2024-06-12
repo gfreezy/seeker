@@ -88,7 +88,7 @@ fn main() -> anyhow::Result<()> {
     }
     let config_url = args.config_url;
 
-    let dns_setup = DNSSetup::new("127.0.0.1".to_string());
+    let mut dns_setup = DNSSetup::new("127.0.0.1".to_string());
 
     let config = load_config(path, config_url.as_deref(), dns_setup.original_dns(), key)?;
 
