@@ -47,7 +47,6 @@ pub(crate) mod tests {
             ResolverOpts::default(),
         )
         .await
-        .expect("failed to create resolver")
     }
 
     #[test]

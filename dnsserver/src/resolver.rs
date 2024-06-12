@@ -1,3 +1,5 @@
+use async_std_resolver::proto::rr::rdata::{A, AAAA};
+use async_std_resolver::proto::rr::{RData, RecordType};
 use async_std_resolver::AsyncStdResolver;
 use async_trait::async_trait;
 use config::rule::{Action, ProxyRules};
@@ -8,7 +10,6 @@ use std::io::Result;
 use std::sync::Arc;
 use store::Store;
 use tracing::{debug, error};
-use trust_dns_proto::rr::{RData, RecordType};
 
 /// A Forwarding DNS Resolver
 ///
@@ -62,12 +63,12 @@ impl RuleBasedDnsResolver {
                 None => {
                     continue;
                 }
-                Some(RData::A(ip)) => DnsRecord::A {
+                Some(RData::A(A(ip))) => DnsRecord::A {
                     domain: domain.to_string(),
                     addr: *ip,
                     ttl: TransientTtl(record.ttl()),
                 },
-                Some(RData::AAAA(ip)) => DnsRecord::AAAA {
+                Some(RData::AAAA(AAAA(ip))) => DnsRecord::AAAA {
                     domain: domain.to_string(),
                     addr: *ip,
                     ttl: TransientTtl(record.ttl()),
