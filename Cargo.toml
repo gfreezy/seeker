@@ -28,7 +28,7 @@ independent = false
 [workspace.dependencies]
 anyhow = "1.0.65"
 async-std = "1.12.0"
-async-std-resolver = "0.22.0"
+async-std-resolver = "0.24.1"
 async-trait = "0.1.57"
 bitvec = "1.0.1"
 byte_string = "1.0.0"
@@ -68,7 +68,6 @@ tracing = "0.1.36"
 tracing-chrome = "0.7"
 tracing-futures = { version = "0.2.5", default-features = false }
 tracing-subscriber = "0.3.15"
-trust-dns-proto = { version = "0.22.0", default-features = false }
 typenum = "1.15.0"
 ureq = "2.5.0"
 url = "2.3.1"

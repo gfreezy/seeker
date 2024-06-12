@@ -24,7 +24,7 @@ impl DnsClient {
                         socket_addr: *addr,
                         protocol: Protocol::Udp,
                         tls_dns_name: None,
-                        trust_nx_responses: false,
+                        trust_negative_responses: false,
                         bind_addr: None,
                     };
                     name_servers.push(udp);
@@ -39,7 +39,7 @@ impl DnsClient {
                             .unwrap(),
                         protocol: Protocol::Tcp,
                         tls_dns_name: None,
-                        trust_nx_responses: false,
+                        trust_negative_responses: false,
                         bind_addr: None,
                     };
                     name_servers.push(tcp);
@@ -59,8 +59,7 @@ impl DnsClient {
                 opts
             },
         )
-        .await
-        .expect("failed to create resolver");
+        .await;
 
         DnsClient { resolver }
     }
