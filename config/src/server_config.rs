@@ -23,9 +23,13 @@ pub enum DnsServerAddr {
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Copy)]
 pub enum ServerProtocol {
+    #[serde(alias = "http")]
     Http,
+    #[serde(alias = "https")]
     Https,
+    #[serde(alias = "socks5")]
     Socks5,
+    #[serde(alias = "ss")]
     Shadowsocks,
 }
 
@@ -34,12 +38,15 @@ pub enum ServerProtocol {
 pub struct ServerConfig {
     /// Server address
     name: String,
+    #[serde(alias = "server")]
     #[serde(with = "server_addr")]
     addr: Address,
+    #[serde(alias = "type")]
     protocol: ServerProtocol,
     username: Option<String>,
     password: Option<String>,
     #[serde(default)]
+    #[serde(alias = "cipher")]
     #[serde(with = "cipher_type")]
     method: Option<CipherType>,
     obfs: Option<Obfs>,

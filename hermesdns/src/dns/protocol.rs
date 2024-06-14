@@ -481,7 +481,7 @@ impl DnsRecord {
                 ref data,
                 ttl: TransientTtl(ttl),
             } => {
-                assert!(data.len() < u8::MAX as usize);
+                assert!(data.len() < u8::MAX as usize); // crash here
                 buffer.write_qname(domain)?;
                 buffer.write_u16(QueryType::TXT.to_num())?;
                 buffer.write_u16(1)?;
