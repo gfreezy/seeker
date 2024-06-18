@@ -68,10 +68,7 @@ impl ProbeConnectivity {
         .timeout(timeout)
         .await;
 
-        match ret {
-            Ok(result) => result,
-            Err(_) => false,
-        }
+        ret.unwrap_or(false)
     }
 
     pub(crate) async fn probe_connectivity(&self, sock_addr: SocketAddr, addr: &Address) -> bool {
