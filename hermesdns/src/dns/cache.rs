@@ -39,11 +39,13 @@ impl Hash for RecordEntry {
 #[derive(Clone, Debug)]
 pub enum RecordSet {
     NoRecords {
+        #[allow(unused)]
         qtype: QueryType,
         ttl: u32,
         timestamp: DateTime<Local>,
     },
     Records {
+        #[allow(unused)]
         qtype: QueryType,
         records: HashSet<RecordEntry>,
     },
@@ -51,6 +53,7 @@ pub enum RecordSet {
 
 #[derive(Clone, Debug)]
 pub struct DomainEntry {
+    #[allow(unused)]
     pub domain: String,
     pub record_types: HashMap<QueryType, RecordSet>,
     pub hits: u32,

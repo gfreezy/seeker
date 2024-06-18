@@ -12,7 +12,7 @@ use std::{
     io::{self, Cursor},
     net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6, ToSocketAddrs},
     str::FromStr,
-    u8, vec,
+    vec,
 };
 
 pub use self::consts::SOCKS5_AUTH_METHOD_NONE;
@@ -416,7 +416,7 @@ fn write_ipv6_address<B: BufMut>(addr: &SocketAddrV6, buf: &mut B) {
 }
 
 fn write_domain_name_address<B: BufMut>(dnaddr: &str, port: u16, buf: &mut B) {
-    assert!(dnaddr.len() <= u8::max_value() as usize);
+    assert!(dnaddr.len() <= u8::MAX as usize);
 
     buf.put_u8(consts::SOCKS5_ADDR_TYPE_DOMAIN_NAME);
     buf.put_u8(dnaddr.len() as u8);
