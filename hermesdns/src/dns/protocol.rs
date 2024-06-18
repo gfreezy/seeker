@@ -481,15 +481,23 @@ impl DnsRecord {
                 ref data,
                 ttl: TransientTtl(ttl),
             } => {
-                assert!(data.len() < u8::MAX as usize); // crash here
-                buffer.write_qname(domain)?;
-                buffer.write_u16(QueryType::TXT.to_num())?;
-                buffer.write_u16(1)?;
-                buffer.write_u32(ttl)?;
-                buffer.write_u16((data.len() + 1) as u16)?;
-                buffer.write_u8(data.len() as u8)?;
-                for b in data.as_bytes() {
-                    buffer.write_u8(*b)?;
+                // assert!(data.len() < u8::MAX as usize); // crash here
+                if data.len() > u8::MAX as usize {
+                    tracing::error!(
+                        "TXT record data too long: {}, payload: {}",
+                        data.len(),
+                        data
+                    );
+                } else {
+                    buffer.write_qname(domain)?;
+                    buffer.write_u16(QueryType::TXT.to_num())?;
+                    buffer.write_u16(1)?;
+                    buffer.write_u32(ttl)?;
+                    buffer.write_u16((data.len() + 1) as u16)?;
+                    buffer.write_u8(data.len() as u8)?;
+                    for b in data.as_bytes() {
+                        buffer.write_u8(*b)?;
+                    }
                 }
             }
             DnsRecord::OPT { .. } => {}
