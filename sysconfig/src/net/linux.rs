@@ -69,8 +69,11 @@ impl DNSSetup {
             .create(true)
             .open(RESOLVED_OVERRIDE_PATH)
             .unwrap();
+        // 172.17.0.1 is the host ip in docker default network. Set it as the second DNS server
+        // to resolve the domain in the docker. It's required by docker containers in the default
+        // network and when building images.
         dns_conf
-            .write_all(format!("[Resolve]\nDNS={}\n", &self.dns).as_bytes())
+            .write_all(format!("[Resolve]\nDNS={}\nDNS={}\n", &self.dns, "172.17.0.1").as_bytes())
             .unwrap();
         // restart systemd-resolved
         let _ = run_cmd("systemctl", &["restart", "systemd-resolved.service"]);
