@@ -8,18 +8,18 @@ pub enum ResolveStrategy {
 }
 
 pub struct ServerContext {
-    pub listen: String,
+    pub listens: Vec<String>,
     pub resolver: Box<dyn DnsResolver + Send + Sync>,
     pub allow_recursive: bool,
 }
 
 impl ServerContext {
     pub async fn new(
-        listen: String,
+        listens: Vec<String>,
         resolver: Box<dyn DnsResolver + Send + Sync>,
     ) -> ServerContext {
         Self {
-            listen,
+            listens,
             resolver,
             allow_recursive: true,
         }

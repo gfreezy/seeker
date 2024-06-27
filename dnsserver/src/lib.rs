@@ -6,13 +6,13 @@ use hermesdns::DnsUdpServer;
 use resolver::RuleBasedDnsResolver;
 
 pub async fn create_dns_server(
-    listen: String,
+    listens: Vec<String>,
     bypass_direct: bool,
     rules: ProxyRules,
     async_resolver: AsyncStdResolver,
 ) -> (DnsUdpServer, RuleBasedDnsResolver) {
     let resolver = RuleBasedDnsResolver::new(bypass_direct, rules, async_resolver).await;
-    let server = DnsUdpServer::new(listen, Box::new(resolver.clone())).await;
+    let server = DnsUdpServer::new(listens, Box::new(resolver.clone())).await;
     (server, resolver)
 }
 
