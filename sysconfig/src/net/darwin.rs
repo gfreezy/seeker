@@ -4,9 +4,9 @@ use tracing::info;
 
 pub struct DNSSetup {
     primary_network: String,
-    // DNS servers from networksetup. DHCP dns servers are not included.
-    original_real_dns: Vec<String>,
     // DNS servers from scutil. Real used DNS servers.
+    original_real_dns: Vec<String>,
+    // DNS servers from networksetup. DHCP dns servers are not included.
     original_manual_dns: Vec<String>,
     // DNS servers to be set.
     dns: String,
@@ -25,8 +25,7 @@ impl DNSSetup {
             .collect::<Vec<_>>();
 
         // Get macos dns servers from terminal
-        let lines = run_cmd("scutil", &["--dns"]);
-        let original_dns = parse_scutil_dns(&lines);
+        let original_dns = get_current_dns();
 
         DNSSetup {
             primary_network: network,
@@ -109,6 +108,14 @@ fn get_primary_network() -> String {
             panic!("No primary network found");
         }
     }
+}
+
+pub fn get_current_dns() -> Vec<String> {
+    // Get macos dns servers from terminal
+    let lines = run_cmd("scutil", &["--dns"]);
+    let original_dns = parse_scutil_dns(&lines);
+    info!("Original DNS is {:?}", original_dns);
+    return original_dns;
 }
 
 fn parse_scutil_dns(lines: &str) -> Vec<String> {
