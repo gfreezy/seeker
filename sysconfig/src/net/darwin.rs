@@ -9,17 +9,16 @@ pub struct DNSSetup {
     // DNS servers from networksetup. DHCP dns servers are not included.
     original_manual_dns: Vec<String>,
     // DNS servers to be set.
-    dns: String,
+    dns: Vec<String>,
 }
 
 impl DNSSetup {
     #[allow(clippy::new_without_default)]
-    pub fn new(dns: String) -> Self {
+    pub fn new(dns: Vec<String>) -> Self {
         let network = get_primary_network();
         info!("Primary netowrk service is {}", &network);
         let original_manual_dns = run_cmd("networksetup", &["-getdnsservers", &network])
             .lines()
-            .filter(|l| *l != "127.0.0.1" && *l != dns)
             .filter_map(|l| l.parse::<IpAddr>().ok())
             .map(|ip| ip.to_string())
             .collect::<Vec<_>>();
@@ -41,14 +40,15 @@ impl DNSSetup {
         if self.dns.is_empty() {
             let _ = run_cmd("networksetup", &["-setdnsservers", network, "127.0.0.1"]);
         } else {
+            let to_set = self.dns.join(" ");
             let _ = run_cmd(
                 "networksetup",
-                &["-setdnsservers", network, "127.0.0.1", &self.dns],
+                &["-setdnsservers", network, "127.0.0.1", &to_set],
             );
         }
 
         info!(
-            "Setup DNS: {}, Original DNS is {:?}, Original real DNS is {:?}",
+            "Setup DNS: {:?}, Original DNS is {:?}, Original real DNS is {:?}",
             &self.dns, &self.original_manual_dns, &original_dns,
         );
     }

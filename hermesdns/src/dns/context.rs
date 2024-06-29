@@ -43,7 +43,7 @@ pub mod tests {
         match resolve_strategy {
             ResolveStrategy::Recursive => Arc::new(
                 ServerContext::new(
-                    "127.0.0.1:53".into(),
+                    vec!["127.0.0.1:53".into()],
                     Box::new(
                         RecursiveDnsResolver::new(true, Box::new(DnsStubClient::new(callback)))
                             .await,
@@ -53,7 +53,7 @@ pub mod tests {
             ),
             ResolveStrategy::Forward { host, port } => Arc::new(
                 ServerContext::new(
-                    "127.0.0.1:53".into(),
+                    vec!["127.0.0.1:53".into()],
                     Box::new(
                         ForwardingDnsResolver::new(
                             (host, port),
