@@ -350,7 +350,7 @@ async fn run_dns_resolver(
     resolver: AsyncStdResolver,
 ) -> (RuleBasedDnsResolver, JoinHandle<()>) {
     let (dns_server, resolver) = create_dns_server(
-        config.dns_listen.clone(),
+        config.dns_listens.clone(),
         config.tun_bypass_direct,
         config.rules.clone(),
         resolver,
