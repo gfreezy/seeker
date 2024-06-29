@@ -397,6 +397,7 @@ pub(crate) async fn get_real_src_real_dest_and_host(
         }
     };
 
+    trace!(src = ?real_src, dest = ?real_dest, "get real src and dest");
     let IpAddr::V4(ipv4) = real_src.ip() else {
         return Err(Error::new(std::io::ErrorKind::Other, "only support ipv4"));
     };
@@ -409,15 +410,16 @@ pub(crate) async fn get_real_src_real_dest_and_host(
     let host = match (host_optional, is_tun_ip) {
         (Some(h), _) => h,
 
-        // 如果是 tun 的 ip，但是没有找到对应的域名，说明是非法的访问，需要忽略。
-        (None, true) => {
+        // 如果是 tun 的 ip，说明是指定了 ip 的访问。
+        (None, true) => Address::SocketAddress(real_dest),
+
+        // 如果不是 tun 的 ip，没有找到对应的域名，说明是非法的访问，需要忽略。
+        _ => {
             return Err(Error::new(
                 std::io::ErrorKind::Other,
                 format!("no host found for tun ip: {ip}"),
             ))
         }
-        // 如果不是 tun 的 ip，说明是制定了 ip 的访问。
-        (None, false) => Address::SocketAddress(real_dest),
     };
 
     trace!(dest_host = ?host, "new relay connection");

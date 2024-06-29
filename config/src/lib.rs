@@ -230,7 +230,7 @@ impl Config {
                 "servers can not be empty.",
             ));
         };
-        if conf.dns_servers.is_empty() {
+        if conf.dns_listens.is_empty() {
             if let Some(dns) = &conf.dns_listen {
                 conf.dns_listens.push(dns.clone());
             } else {
