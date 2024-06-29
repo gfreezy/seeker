@@ -56,7 +56,7 @@ pub(crate) mod tests {
         task::block_on(async {
             let resolver = new_resolver(dns, 53).await;
             let (server, resolver) = create_dns_server(
-                format!("0.0.0.0:{LOCAL_UDP_PORT}"),
+                vec![format!("0.0.0.0:{LOCAL_UDP_PORT}")],
                 false,
                 ProxyRules::new(vec![]),
                 resolver,
