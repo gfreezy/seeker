@@ -15,6 +15,7 @@ mod server_chooser;
 mod traffic;
 
 use clap::Parser;
+use std::net::SocketAddrV4;
 use std::time::Duration;
 
 use crate::logger::setup_logger;
@@ -90,9 +91,14 @@ fn main() -> anyhow::Result<()> {
 
     let config = load_config(path, config_url.as_deref(), get_current_dns(), key)?;
 
+    let dns = config
+        .dns_listen
+        .iter()
+        .map(|addr| addr.parse::<SocketAddrV4>().unwrap().ip().to_string())
+        .collect();
     // Linux system needs to be mut.
     #[allow(unused_mut)]
-    let mut dns_setup = DNSSetup::new(config.dns_listens.clone());
+    let mut dns_setup = DNSSetup::new(dns);
 
     let uid = args.user_id;
     let log_path = args.log;
