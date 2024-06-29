@@ -151,8 +151,11 @@ pub struct DnsUdpServer {
 }
 
 impl DnsUdpServer {
-    pub async fn new(listen: String, resolver: Box<dyn DnsResolver + Send + Sync>) -> DnsUdpServer {
-        let context = Arc::new(ServerContext::new(listen, resolver).await);
+    pub async fn new(
+        listens: Vec<String>,
+        resolver: Box<dyn DnsResolver + Send + Sync>,
+    ) -> DnsUdpServer {
+        let context = Arc::new(ServerContext::new(listens, resolver).await);
         DnsUdpServer { context }
     }
 
@@ -165,60 +168,72 @@ impl DnsUdpServer {
     /// This method takes ownership of the server, preventing the method from
     /// being called multiple times.
     pub async fn run_server(self) {
-        // Bind the socket
-        let socket = Arc::new(UdpSocket::bind(&self.context.listen).await.unwrap());
-
-        loop {
-            // Read a query packet
-            let mut req_buffer = BytePacketBuffer::new();
-            let (_, src) = match socket.recv_from(&mut req_buffer.buf).await {
-                Ok(x) => x,
-                Err(e) => {
-                    println!("Failed to read from UDP socket: {e:?}");
-                    continue;
-                }
-            };
-
+        let mut handles = Vec::new();
+        for listen in &self.context.listens {
+            let listen = listen.clone();
             let context = self.context.clone();
-            let socket_clone = socket.clone();
-            spawn(async move {
-                async move {
-                    // Parse it
-                    let request = return_or_report!(
-                        DnsPacket::from_buffer(&mut req_buffer),
-                        "failed to parse packet"
-                    );
+            let h = spawn(async move {
+                // Bind the socket
+                let socket = Arc::new(UdpSocket::bind(&listen).await.unwrap());
 
-                    let mut size_limit = 512;
-
-                    // Check for EDNS
-                    if request.resources.len() == 1 {
-                        if let DnsRecord::OPT { packet_len, .. } = request.resources[0] {
-                            size_limit = packet_len as usize;
+                loop {
+                    // Read a query packet
+                    let mut req_buffer = BytePacketBuffer::new();
+                    let (_, src) = match socket.recv_from(&mut req_buffer.buf).await {
+                        Ok(x) => x,
+                        Err(e) => {
+                            println!("Failed to read from UDP socket: {e:?}");
+                            continue;
                         }
-                    }
+                    };
 
-                    // Create a response buffer, and ask the context for an appropriate
-                    // resolver
-                    let mut res_buffer = VectorPacketBuffer::new();
+                    let context = context.clone();
+                    let socket_clone = socket.clone();
+                    spawn(async move {
+                        async move {
+                            // Parse it
+                            let request = return_or_report!(
+                                DnsPacket::from_buffer(&mut req_buffer),
+                                "failed to parse packet"
+                            );
 
-                    let mut packet = execute_query(context, &request).await;
-                    let _ = packet.write(&mut res_buffer, size_limit);
+                            let mut size_limit = 512;
 
-                    // Fire off the response
-                    let len = res_buffer.pos();
-                    let data = return_or_report!(
-                        res_buffer.get_range(0, len),
-                        "Failed to get buffer data"
-                    );
-                    ignore_or_report!(
-                        socket_clone.send_to(data, src).await,
-                        "Failed to send response packet"
-                    );
+                            // Check for EDNS
+                            if request.resources.len() == 1 {
+                                if let DnsRecord::OPT { packet_len, .. } = request.resources[0] {
+                                    size_limit = packet_len as usize;
+                                }
+                            }
+
+                            // Create a response buffer, and ask the context for an appropriate
+                            // resolver
+                            let mut res_buffer = VectorPacketBuffer::new();
+
+                            let mut packet = execute_query(context, &request).await;
+                            let _ = packet.write(&mut res_buffer, size_limit);
+
+                            // Fire off the response
+                            let len = res_buffer.pos();
+                            let data = return_or_report!(
+                                res_buffer.get_range(0, len),
+                                "Failed to get buffer data"
+                            );
+                            ignore_or_report!(
+                                socket_clone.send_to(data, src).await,
+                                "Failed to send response packet"
+                            );
+                        }
+                        .instrument(tracing::trace_span!("udp_server"))
+                        .await
+                    });
                 }
-                .instrument(tracing::trace_span!("udp_server"))
-                .await
             });
+            handles.push(h);
+        }
+
+        for h in handles {
+            h.await;
         }
     }
 }

@@ -1,20 +1,20 @@
 use crate::command::run_cmd;
 use std::fs::OpenOptions;
-use std::io::{Read, Seek, Write};
+use std::io::{Read, Write};
 use std::net::IpAddr;
 use tracing::info;
 
 pub struct DNSSetup {
     original_dns: Vec<String>,
     use_resolved: bool,
-    dns: String,
+    dns: Vec<String>,
 }
 
 const RESOLV_PATH: &str = "/etc/resolv.conf";
 const RESOLVED_OVERRIDE_PATH: &str = "/etc/systemd/resolved.conf.d/00-dns.conf";
 
 impl DNSSetup {
-    pub fn new(dns: String) -> Self {
+    pub fn new(dns: Vec<String>) -> Self {
         if Self::is_system_using_resolved() {
             info!("setup dns with systemd-resolved");
             DNSSetup {
@@ -33,22 +33,11 @@ impl DNSSetup {
     }
 
     fn set_with_dnsresolv_conf(&mut self) {
-        let mut resolv = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open(RESOLV_PATH)
-            .unwrap();
-        let mut buf = vec![];
-        let _ = resolv.read_to_end(&mut buf).unwrap();
-
-        let content = std::str::from_utf8(&buf).unwrap();
-        let original_dns = get_original_dns(content, &self.dns);
+        let original_dns = get_current_dns();
         info!("original dns: {:?}", &original_dns);
-
-        resolv.set_len(0).unwrap();
-        resolv.rewind().unwrap();
+        let mut resolv = OpenOptions::new().write(true).open(RESOLV_PATH).unwrap();
         resolv
-            .write_all(generate_resolve_file(&["127.0.0.1", &self.dns]).as_slice())
+            .write_all(generate_resolve_file(&self.dns).as_slice())
             .unwrap();
         self.original_dns = original_dns;
     }
@@ -72,9 +61,12 @@ impl DNSSetup {
         // 172.17.0.1 is the host ip in docker default network. Set it as the second DNS server
         // to resolve the domain in the docker. It's required by docker containers in the default
         // network and when building images.
-        dns_conf
-            .write_all(format!("[Resolve]\nDNS={}\nDNS={}\n", &self.dns, "172.17.0.1").as_bytes())
-            .unwrap();
+        dns_conf.write_all(b"[Resolve]\n").unwrap();
+        for d in &self.dns {
+            dns_conf
+                .write_all(format!("DNS={}\n", d).as_bytes())
+                .unwrap();
+        }
         // restart systemd-resolved
         let _ = run_cmd("systemctl", &["restart", "systemd-resolved.service"]);
     }
@@ -106,16 +98,7 @@ impl Drop for DNSSetup {
                 .open(RESOLV_PATH)
                 .unwrap();
             resolv
-                .write_all(
-                    generate_resolve_file(
-                        self.original_dns
-                            .iter()
-                            .map(|s| s.as_str())
-                            .collect::<Vec<_>>()
-                            .as_slice(),
-                    )
-                    .as_slice(),
-                )
+                .write_all(generate_resolve_file(&self.original_dns).as_slice())
                 .unwrap();
         }
     }
@@ -141,22 +124,23 @@ pub fn setup_ip(tun_name: &str, ip: &str, cidr: &str, additional_cidrs: Vec<Stri
     }
 }
 
-fn get_original_dns(content: &str, dns: &str) -> Vec<String> {
-    let mut dns_list: Vec<_> = content
+pub fn get_current_dns() -> Vec<String> {
+    let mut resolv = OpenOptions::new().read(true).open(RESOLV_PATH).unwrap();
+    let mut buf = vec![];
+    let _ = resolv.read_to_end(&mut buf).unwrap();
+    let content = std::str::from_utf8(&buf).unwrap();
+
+    let dns_list: Vec<String> = content
         .lines()
         .filter(|l| l.contains("nameserver"))
         .filter_map(|l| l.split_whitespace().last())
-        .filter(|l| *l != dns && *l != "127.0.0.1")
         .filter_map(|ip| ip.parse::<IpAddr>().ok())
         .map(|ip| ip.to_string())
         .collect();
-    if dns_list.is_empty() && !dns.is_empty() {
-        dns_list.push(dns.to_string())
-    }
     dns_list
 }
 
-fn generate_resolve_file(dns: &[&str]) -> Vec<u8> {
+fn generate_resolve_file(dns: &[String]) -> Vec<u8> {
     let mut content = Vec::new();
     for d in dns {
         if !d.is_empty() {

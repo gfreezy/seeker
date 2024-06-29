@@ -46,7 +46,9 @@ pub struct Config {
     pub tun_cidr: Ipv4Cidr,
     #[serde(with = "rules")]
     pub rules: ProxyRules,
-    pub dns_listen: String,
+    pub dns_listen: Option<String>,
+    #[serde(default)]
+    pub dns_listens: Vec<String>,
     #[serde(default)]
     pub gateway_mode: bool,
     #[serde(with = "duration", default = "default_connect_timeout")]
@@ -79,7 +81,7 @@ impl Debug for Config {
             .field("verbose", &self.verbose)
             .field("tun_cidr", &self.tun_cidr)
             .field("rules", &self.rules)
-            .field("dns_listen", &self.dns_listen)
+            .field("dns_listens", &self.dns_listens)
             .field("gateway_mode", &self.gateway_mode)
             .field("ping_timeout", &self.ping_timeout)
             .field("ping_urls", &self.ping_urls)
@@ -228,6 +230,16 @@ impl Config {
                 "servers can not be empty.",
             ));
         };
+        if conf.dns_servers.is_empty() {
+            if let Some(dns) = &conf.dns_listen {
+                conf.dns_listens.push(dns.clone());
+            } else {
+                return Err(io::Error::new(
+                    ErrorKind::InvalidData,
+                    "dns_listens must be provided.",
+                ));
+            }
+        }
 
         Store::setup_global("seeker.sqlite", conf.dns_start_ip);
 

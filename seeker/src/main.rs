@@ -25,7 +25,7 @@ use async_std::task::block_on;
 use config::Config;
 use crypto::CipherType;
 use std::fs::File;
-use sysconfig::{set_rlimit_no_file, DNSSetup, IpForward, IptablesSetup};
+use sysconfig::{get_current_dns, set_rlimit_no_file, DNSSetup, IpForward, IptablesSetup};
 use tracing::Instrument;
 
 const REDIR_LISTEN_PORT: u16 = 1300;
@@ -88,11 +88,11 @@ fn main() -> anyhow::Result<()> {
     }
     let config_url = args.config_url;
 
+    let config = load_config(path, config_url.as_deref(), get_current_dns(), key)?;
+
     // Linux system needs to be mut.
     #[allow(unused_mut)]
-    let mut dns_setup = DNSSetup::new("127.0.0.1".to_string());
-
-    let config = load_config(path, config_url.as_deref(), dns_setup.original_dns(), key)?;
+    let mut dns_setup = DNSSetup::new(config.dns_listens.clone());
 
     let uid = args.user_id;
     let log_path = args.log;
