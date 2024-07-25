@@ -11,7 +11,7 @@ use std::ptr::null_mut;
 const CTRL_NAME: &[u8] = b"com.apple.net.utun_control";
 
 #[repr(C)]
-pub struct ctl_info {
+pub struct CtlInfo {
     pub ctl_id: u32,
     pub ctl_name: [c_uchar; 96],
 }
@@ -39,7 +39,7 @@ union IfrIfru {
 }
 
 #[repr(C)]
-pub struct ifreq {
+pub struct IfReq {
     ifr_name: [c_uchar; IF_NAMESIZE],
     ifr_ifru: IfrIfru,
 }
@@ -93,13 +93,13 @@ impl TunSocket {
             fd => fd,
         };
 
-        let mut info = ctl_info {
+        let mut info = CtlInfo {
             ctl_id: 0,
             ctl_name: [0u8; 96],
         };
         info.ctl_name[..CTRL_NAME.len()].copy_from_slice(CTRL_NAME);
 
-        if unsafe { ioctl(fd, CTLIOCGINFO, &mut info as *mut ctl_info) } < 0 {
+        if unsafe { ioctl(fd, CTLIOCGINFO, &mut info as *mut CtlInfo) } < 0 {
             unsafe { close(fd) };
             return Err(Error::last_os_error());
         }
@@ -167,7 +167,7 @@ impl TunSocket {
 
         let name = self.name()?;
         let iface_name: &[u8] = name.as_ref();
-        let mut ifr = ifreq {
+        let mut ifr = IfReq {
             ifr_name: [0; IF_NAMESIZE],
             ifr_ifru: IfrIfru { ifru_mtu: 0 },
         };
