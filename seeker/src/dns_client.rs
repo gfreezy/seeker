@@ -72,11 +72,11 @@ impl DnsClient {
             .resolver
             .lookup_ip(domain)
             .await
-            .map_err(|_| Error::new(ErrorKind::NotFound, format!("{domain} not resolved")))?;
+            .map_err(|e| Error::new(ErrorKind::NotFound, format!("{domain} not resolved.\n{e}")))?;
         response
             .iter()
             .next()
-            .ok_or_else(|| Error::new(ErrorKind::NotFound, format!("{domain} not resolved")))
+            .ok_or_else(|| Error::new(ErrorKind::NotFound, format!("no response returned for {domain}.")))
     }
 
     #[tracing::instrument(skip(self))]
