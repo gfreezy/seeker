@@ -224,7 +224,6 @@ impl InnerSessionManager {
     }
 
     pub fn update_activity_for_port(&mut self, port: u16) -> bool {
-        self.clear_expired();
         if let Some(assoc) = self.map.get_mut(&port) {
             // if `recycling` is true, the port is marked recycle. We shouldn't update activity ts.
             if !assoc.recycling {
@@ -245,11 +244,11 @@ impl InnerSessionManager {
         } else {
             eprintln!("update_activity_or_port: port {} not exists", port);
         }
+        self.clear_expired();
         false
     }
 
     pub fn recycle_port(&mut self, port: u16) {
-        self.clear_expired();
         if let Some(assoc) = self.map.get_mut(&port) {
             // we have 30 seconds to clean the connection.
             assoc.last_activity_ts = now() - EXPIRE_SECONDS + 30;
@@ -268,6 +267,7 @@ impl InnerSessionManager {
         } else {
             eprintln!("recycle_port: port {} not exists", port);
         }
+        self.clear_expired();
     }
 
     pub fn get_or_create_session(
