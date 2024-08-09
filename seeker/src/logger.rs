@@ -2,7 +2,7 @@ use file_rotate::{suffix::AppendTimestamp, FileRotate};
 use std::io;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-#[cfg(target_feature = "tracing-chrome")]
+#[cfg(feature = "tracing-chrome")]
 use tracing_chrome::{ChromeLayerBuilder, FlushGuard};
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::{EnvFilter, Layer, Registry};
@@ -31,7 +31,7 @@ impl io::Write for TracingWriter {
 }
 
 pub(crate) struct LoggerGuard {
-    #[cfg(target_feature = "tracing-chrome")]
+    #[cfg(feature = "tracing-chrome")]
     _chrome_layer_guard: Option<FlushGuard>,
 }
 
@@ -62,7 +62,7 @@ pub(crate) fn setup_logger(log_path: Option<&str>, trace: bool) -> anyhow::Resul
                 .with_writer(move || TracingWriter::new(logger.clone()))
                 .and_then(env_filter);
 
-            #[cfg(target_feature = "tracing-chrome")]
+            #[cfg(feature = "tracing-chrome")]
             {
                 let (chrome_layer, guard) = ChromeLayerBuilder::new()
                     .include_args(true)
@@ -76,7 +76,7 @@ pub(crate) fn setup_logger(log_path: Option<&str>, trace: bool) -> anyhow::Resul
                 Some(guard)
             }
 
-            #[cfg(not(target_feature = "tracing-chrome"))]
+            #[cfg(not(feature = "tracing-chrome"))]
             {
                 let registry = Registry::default().with(fmt_layer);
 
@@ -100,7 +100,7 @@ pub(crate) fn setup_logger(log_path: Option<&str>, trace: bool) -> anyhow::Resul
     };
 
     let guard = LoggerGuard {
-        #[cfg(target_feature = "tracing-chrome")]
+        #[cfg(feature = "tracing-chrome")]
         _chrome_layer_guard: _chrome_layer_guard,
     };
 

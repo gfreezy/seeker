@@ -40,3 +40,6 @@ os_socketaddr = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+
+[features]
+tracing-chrome = ["dep:tracing-chrome"]
