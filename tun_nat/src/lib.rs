@@ -265,7 +265,7 @@ impl InnerSessionManager {
                 assoc.last_activity_ts
             );
         } else {
-            eprintln!("recycle_port: port {} not exists", port);
+            tracing::warn!("recycle_port: port {} not exists", port);
         }
         self.clear_expired();
     }
