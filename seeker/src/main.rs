@@ -92,7 +92,7 @@ fn main() -> anyhow::Result<()> {
     let config = load_config(path, config_url.as_deref(), get_current_dns(), key)?;
 
     let dns = config
-        .dns_listen
+        .dns_listens
         .iter()
         .map(|addr| addr.parse::<SocketAddrV4>().unwrap().ip().to_string())
         .collect();
