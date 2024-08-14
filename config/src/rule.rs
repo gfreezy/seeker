@@ -3,10 +3,14 @@ use maxminddb::geoip2::Country;
 use parking_lot::Mutex;
 use smoltcp::wire::{Ipv4Address, Ipv4Cidr};
 use std::fmt::{self, Formatter};
+use std::fs::File;
+use std::io::{copy, BufWriter};
 use std::net::IpAddr;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::thread;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Rule {
@@ -31,6 +35,7 @@ pub enum Action {
 pub struct ProxyRules {
     rules: Arc<Vec<Rule>>,
     geo_ip_path: Option<PathBuf>,
+    inited: Arc<AtomicBool>,
     geo_ip_db: Arc<Mutex<Option<maxminddb::Reader<Vec<u8>>>>>,
 }
 
@@ -39,33 +44,65 @@ impl ProxyRules {
         Self {
             rules: Arc::new(rules),
             geo_ip_db: Arc::new(Mutex::new(None)),
+            inited: Arc::new(AtomicBool::new(false)),
             geo_ip_path: None,
         }
     }
 
-    fn did_geo_ip_matches_name(&self, ip: IpAddr, name: &str) -> bool {
+    fn init_geo_ip_db(&self) {
         let mut guard = self.geo_ip_db.lock();
-        if guard.is_none() {
-            let path = match &self.geo_ip_path {
-                Some(path) => path.clone(),
-                None => {
-                    let Ok(dir) = std::env::current_exe() else {
-                        return false;
+        let path = match &self.geo_ip_path {
+            Some(path) => {
+                tracing::info!("geoip path: {:?}", path);
+                // Check if path is a valid http or https url
+                if path.starts_with("http://") || path.starts_with("https://") {
+                    let Some(url) = path.to_str() else {
+                        tracing::error!("invalid url: {:?}", path);
+                        return;
                     };
-                    dir.join("geoip.mmdb")
+                    let new_path = default_geo_ip_path();
+                    let success = download_geoip_database(url, &new_path);
+                    if !success {
+                        return;
+                    } else {
+                        tracing::info!("downloaded geoip database to {:?}", new_path);
+                        new_path
+                    }
+                } else {
+                    path.clone()
                 }
-            };
-            let reader = match maxminddb::Reader::open_readfile(&path) {
-                Ok(reader) => reader,
-                Err(err) => {
-                    tracing::error!("failed to open geoip database: {}, path: {:?}", err, path);
-                    return false;
+            }
+            None => {
+                tracing::info!("geoip path not set, using default path");
+                default_geo_ip_path()
+            }
+        };
+
+        let reader = match maxminddb::Reader::open_readfile(&path) {
+            Ok(reader) => reader,
+            Err(err) => {
+                tracing::error!("failed to open geoip database: {}, path: {:?}", err, path);
+                return;
+            }
+        };
+        *guard = Some(reader);
+    }
+
+    fn did_geo_ip_matches_name(&self, ip: IpAddr, name: &str) -> bool {
+        let guard = self.geo_ip_db.lock();
+        match &*guard {
+            None => {
+                if !self.inited.load(std::sync::atomic::Ordering::SeqCst) {
+                    self.inited.store(true, std::sync::atomic::Ordering::SeqCst);
+                    let self_clone = self.clone();
+                    let _ = thread::spawn(move || {
+                        self_clone.init_geo_ip_db();
+                    });
                 }
-            };
-            *guard = Some(reader);
+                false
+            }
+            Some(reader) => did_geo_ip_matches_name(reader, ip, name),
         }
-        let reader = guard.as_ref().unwrap();
-        did_geo_ip_matches_name(reader, ip, name)
     }
 
     pub fn action_for_domain(&self, domain: Option<&str>, ip: Option<IpAddr>) -> Option<Action> {
@@ -184,6 +221,49 @@ fn did_geo_ip_matches_name(reader: &maxminddb::Reader<Vec<u8>>, ip: IpAddr, name
         .country
         .and_then(|c| c.iso_code)
         .map_or(false, |code| code == name)
+}
+
+fn default_geo_ip_path() -> PathBuf {
+    let current_exe_path = std::env::current_exe().expect("failed to get current exe path");
+    current_exe_path
+        .parent()
+        .expect("failed to get parent dir")
+        .join("geoip.mmdb")
+}
+
+fn download_geoip_database(url: &str, path: &Path) -> bool {
+    tracing::info!("downloading geoip database from: {:?}, to: {:?}", url, path);
+    let r = ureq::get(url).call();
+
+    let response = match r {
+        Err(e) => {
+            tracing::error!("failed to download geoip database: {:?}, err: {:?}", url, e);
+            return false;
+        }
+        Ok(r) => r,
+    };
+
+    // Create a file to save the downloaded database.
+    let mut file = match File::create(path) {
+        Ok(file) => file,
+        Err(err) => {
+            tracing::error!(
+                "failed to create file for geoip database: {}, path: {:?}",
+                err,
+                path
+            );
+            return false;
+        }
+    };
+
+    // Write the response body to the file.
+    let mut writer = BufWriter::new(&mut file);
+    if copy(&mut response.into_reader(), &mut writer).is_err() {
+        tracing::error!("failed to write to geoip.mmdb file: {:?}", url);
+        return false;
+    }
+
+    true
 }
 
 // #[cfg(test)]

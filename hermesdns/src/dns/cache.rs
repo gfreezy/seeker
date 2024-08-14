@@ -418,53 +418,27 @@ mod tests {
 
         // Check stat counter behavior
         assert_eq!(3, cache.domain_entries.len());
-        assert_eq!(
-            1,
-            cache
-                .domain_entries
-                .get(&"www.google.com".to_string())
-                .unwrap()
-                .hits
-        );
+        assert_eq!(1, cache.domain_entries.get("www.google.com").unwrap().hits);
         assert_eq!(
             2,
-            cache
-                .domain_entries
-                .get(&"www.google.com".to_string())
-                .unwrap()
-                .updates
+            cache.domain_entries.get("www.google.com").unwrap().updates
         );
-        assert_eq!(
-            1,
-            cache
-                .domain_entries
-                .get(&"www.yahoo.com".to_string())
-                .unwrap()
-                .hits
-        );
+        assert_eq!(1, cache.domain_entries.get("www.yahoo.com").unwrap().hits);
         assert_eq!(
             3,
-            cache
-                .domain_entries
-                .get(&"www.yahoo.com".to_string())
-                .unwrap()
-                .updates
+            cache.domain_entries.get("www.yahoo.com").unwrap().updates
         );
         assert_eq!(
             1,
             cache
                 .domain_entries
-                .get(&"www.microsoft.com".to_string())
+                .get("www.microsoft.com")
                 .unwrap()
                 .updates
         );
         assert_eq!(
             1,
-            cache
-                .domain_entries
-                .get(&"www.microsoft.com".to_string())
-                .unwrap()
-                .hits
+            cache.domain_entries.get("www.microsoft.com").unwrap().hits
         );
     }
 }

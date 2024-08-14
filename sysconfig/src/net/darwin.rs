@@ -115,7 +115,7 @@ pub fn get_current_dns() -> Vec<String> {
     let lines = run_cmd("scutil", &["--dns"]);
     let original_dns = parse_scutil_dns(&lines);
     info!("Original DNS is {:?}", original_dns);
-    return original_dns;
+    original_dns
 }
 
 fn parse_scutil_dns(lines: &str) -> Vec<String> {
