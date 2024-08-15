@@ -2,6 +2,7 @@
 #[macro_use]
 mod macros;
 mod config_encryptor;
+mod config_watcher;
 mod dns_client;
 mod logger;
 mod probe_connectivity;
@@ -15,9 +16,12 @@ mod server_chooser;
 mod traffic;
 
 use clap::Parser;
+use std::env::current_dir;
 use std::net::SocketAddrV4;
+use std::path::Path;
 use std::time::Duration;
 
+use crate::config_watcher::watch_config;
 use crate::logger::setup_logger;
 use crate::proxy_client::ProxyClient;
 use anyhow::{bail, Context};
@@ -90,6 +94,40 @@ fn main() -> anyhow::Result<()> {
     let config_url = args.config_url;
 
     let config = load_config(path, config_url.as_deref(), get_current_dns(), key)?;
+
+    // watch config file if path is provided
+    let _watcher_handler = if let Some(p) = path {
+        let config_clone = config.clone();
+        let mut config_path = Path::new(p).to_path_buf();
+        if !config_path.is_absolute() {
+            config_path = current_dir()
+                .expect("get current dir")
+                .join(config_path)
+                .canonicalize()
+                .expect("canonicalize path");
+        }
+        let watch_path = config_path.clone();
+        let path = config_path.to_str().expect("path to str").to_string();
+        tracing::info!("start watching config file: {:?}", watch_path);
+        let debouncer = watch_config(watch_path, move |e| {
+            tracing::info!("config file changed, reload rules: {:?}", e);
+            match load_config(Some(&path), None, vec![], None) {
+                Ok(new_config) => {
+                    config_clone
+                        .rules
+                        .replace_rules(new_config.rules.take_rules());
+                    tracing::info!("Update rules success.");
+                }
+                Err(e) => {
+                    tracing::info!("Reload config error: {:?}", e);
+                    return;
+                }
+            }
+        });
+        Some(debouncer)
+    } else {
+        None
+    };
 
     let dns = config
         .dns_listens

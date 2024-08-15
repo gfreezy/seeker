@@ -36,12 +36,7 @@ impl Store {
     const TABLE_CONNECTIONS: &'static str = "connections";
 
     pub fn setup_global(path: impl AsRef<Path>, initial_ip: Ipv4Addr) {
-        Self::try_setup_global(path, initial_ip).expect("init global store")
-    }
-
-    pub fn try_setup_global(path: impl AsRef<Path>, initial_ip: Ipv4Addr) -> Result<(), Self> {
-        let store = Store::new(path, initial_ip).expect("init store");
-        INSTANCE.set(store)
+        let _ = INSTANCE.get_or_init(|| Store::new(path, initial_ip).expect("init store"));
     }
 
     pub fn setup_global_for_test() {
