@@ -120,7 +120,6 @@ fn main() -> anyhow::Result<()> {
                 }
                 Err(e) => {
                     tracing::info!("Reload config error: {:?}", e);
-                    return;
                 }
             }
         });

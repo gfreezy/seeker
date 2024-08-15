@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
-use std::{mem, thread};
+use std::thread;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Rule {
@@ -50,7 +50,7 @@ impl ProxyRules {
     }
 
     pub fn take_rules(&self) -> Vec<Rule> {
-        mem::replace(&mut *self.rules.write(), Vec::new())
+        std::mem::take(&mut *self.rules.write())
     }
 
     pub fn replace_rules(&self, rules: Vec<Rule>) {
