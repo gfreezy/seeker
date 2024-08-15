@@ -38,7 +38,6 @@ pub(crate) struct LoggerGuard {
 pub(crate) fn setup_logger(log_path: Option<&str>, trace: bool) -> anyhow::Result<LoggerGuard> {
     let env_filter = EnvFilter::new("seeker=trace")
         .add_directive("dnsserver=debug".parse()?)
-        .add_directive("seeker=trace".parse()?)
         .add_directive("sysconfig=info".parse()?)
         .add_directive("config=info".parse()?)
         .add_directive("tun_nat=info".parse()?);

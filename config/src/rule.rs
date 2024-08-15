@@ -1,6 +1,6 @@
 use crate::parse_cidr;
 use maxminddb::geoip2::Country;
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock};
 use smoltcp::wire::{Ipv4Address, Ipv4Cidr};
 use std::fmt::{self, Formatter};
 use std::fs::File;
@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
-use std::thread;
+use std::{mem, thread};
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Rule {
@@ -33,7 +33,7 @@ pub enum Action {
 
 #[derive(Debug, Clone)]
 pub struct ProxyRules {
-    rules: Arc<Vec<Rule>>,
+    rules: Arc<RwLock<Vec<Rule>>>,
     geo_ip_path: Option<PathBuf>,
     inited: Arc<AtomicBool>,
     geo_ip_db: Arc<Mutex<Option<maxminddb::Reader<Vec<u8>>>>>,
@@ -42,15 +42,25 @@ pub struct ProxyRules {
 impl ProxyRules {
     pub fn new(rules: Vec<Rule>) -> Self {
         Self {
-            rules: Arc::new(rules),
+            rules: Arc::new(RwLock::new(rules)),
             geo_ip_db: Arc::new(Mutex::new(None)),
             inited: Arc::new(AtomicBool::new(false)),
             geo_ip_path: None,
         }
     }
 
+    pub fn take_rules(&self) -> Vec<Rule> {
+        mem::replace(&mut *self.rules.write(), Vec::new())
+    }
+
+    pub fn replace_rules(&self, rules: Vec<Rule>) {
+        let mut rules_mut = self.rules.write();
+        *rules_mut = rules;
+    }
+
     fn init_geo_ip_db(&self) {
         let mut guard = self.geo_ip_db.lock();
+        let default_path = default_geo_ip_path();
         let path = match &self.geo_ip_path {
             Some(path) => {
                 tracing::info!("geoip path: {:?}", path);
@@ -60,7 +70,11 @@ impl ProxyRules {
                         tracing::error!("invalid url: {:?}", path);
                         return;
                     };
-                    let new_path = default_geo_ip_path();
+                    if default_path.exists() {
+                        tracing::info!("geoip database already exists, skipping download");
+                        return;
+                    }
+                    let new_path = default_path;
                     let success = download_geoip_database(url, &new_path);
                     if !success {
                         return;
@@ -74,7 +88,7 @@ impl ProxyRules {
             }
             None => {
                 tracing::info!("geoip path not set, using default path");
-                default_geo_ip_path()
+                default_path
             }
         };
 
@@ -110,7 +124,9 @@ impl ProxyRules {
             IpAddr::V4(ip) => Some(ip),
             _ => None,
         });
-        let matched_rule = self.rules.iter().find(|rule| match (rule, domain, ip) {
+        let rules = self.rules.read();
+
+        let matched_rule = rules.iter().find(|rule| match (rule, domain, ip) {
             (Rule::Domain(d, _), Some(domain), _) if d == domain => true,
             (Rule::DomainSuffix(d, _), Some(domain), _) if domain.ends_with(d) => true,
             (Rule::DomainKeyword(d, _), Some(domain), _) if domain.contains(d) => true,
@@ -140,8 +156,8 @@ impl ProxyRules {
         })
     }
 
-    pub fn prepend_rules(&mut self, rules: Vec<Rule>) {
-        let rules_mut = Arc::make_mut(&mut self.rules);
+    pub fn prepend_rules(&self, rules: Vec<Rule>) {
+        let mut rules_mut = self.rules.write();
         for rule in rules {
             rules_mut.insert(0, rule);
         }
@@ -152,7 +168,8 @@ impl ProxyRules {
     }
 
     pub fn additional_cidrs(&self) -> Vec<Ipv4Cidr> {
-        self.rules
+        let rules = self.rules.read();
+        rules
             .iter()
             .filter_map(|rule| match rule {
                 Rule::IpCidr(cidr, Action::Probe | Action::Proxy) => Some(*cidr),
