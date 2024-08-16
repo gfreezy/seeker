@@ -45,6 +45,10 @@ install-path = "CARGO_HOME"
 # Whether to install an updater program
 install-updater = false
 
+[workspace.metadata.release]
+shared-version = true
+tag-name = "v{{version}}"
+
 [workspace.dependencies]
 anyhow = "1.0.65"
 async-std = "1.12.0"
