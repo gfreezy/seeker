@@ -547,6 +547,7 @@ dependencies = [
  "store",
  "tcp_connection",
  "tracing",
+ "tracing-subscriber",
  "ureq",
  "url",
 ]
