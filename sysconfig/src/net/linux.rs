@@ -46,7 +46,7 @@ impl DNSSetup {
         // check `/etc/resolv.conf` is a symlink
         std::fs::symlink_metadata(RESOLV_PATH)
             .map(|m| m.file_type().is_symlink())
-            .unwrap_or(false);
+            .unwrap_or(false)
     }
 
     fn set_with_systemd_resolved(&self) {
