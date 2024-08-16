@@ -6,6 +6,11 @@ on:
       - master
   # schedule:
   #   - cron: '00 01 * * *'
+
+concurrency:
+  group: ${{ github.head_ref }}
+  cancel-in-progress: true
+
 jobs:
   rustfmt:
     name: rustfmt
@@ -32,7 +37,7 @@ jobs:
 
   test:
     name: test
-    needs: ['rustfmt']
+    needs: ["rustfmt"]
     env:
       # For some builds, we use cross to test on 32-bit and big-endian
       # systems.
@@ -92,7 +97,7 @@ jobs:
         uses: actions/checkout@v2
 
       # - name: Setup upterm session
-        # uses: lhotari/action-upterm@v1
+      # uses: lhotari/action-upterm@v1
 
       - name: Install packages (Ubuntu)
         if: matrix.os == 'ubuntu-latest'
@@ -141,17 +146,17 @@ jobs:
 
       # This is useful for debugging problems when the expected build artifacts
       # (like shell completions and man pages) aren't generated.
-#      - name: Show build.rs stderr
-#        shell: bash
-#        run: |
-#          set +x
-#          stderr="$(find "${{ env.TARGET_DIR }}/debug" -name stderr -print0 | xargs -0 ls -t | head -n1)"
-#          if [ -s "$stderr" ]; then
-#            echo "===== $stderr ===== "
-#            cat "$stderr"
-#            echo "====="
-#          fi
-#          set -x
+      #      - name: Show build.rs stderr
+      #        shell: bash
+      #        run: |
+      #          set +x
+      #          stderr="$(find "${{ env.TARGET_DIR }}/debug" -name stderr -print0 | xargs -0 ls -t | head -n1)"
+      #          if [ -s "$stderr" ]; then
+      #            echo "===== $stderr ===== "
+      #            cat "$stderr"
+      #            echo "====="
+      #          fi
+      #          set -x
 
       - name: Run tests (without cross)
         if: matrix.target == ''
@@ -160,7 +165,6 @@ jobs:
       - name: Run tests (with cross)
         if: matrix.target != ''
         run: ${{ env.CARGO }} test --verbose --all ${{ env.TARGET_FLAGS }}
-
 #      - name: Test for existence of build artifacts (Windows)
 #        if: matrix.os == 'windows-2019'
 #        shell: bash

@@ -58,7 +58,7 @@ pub(crate) mod tests {
             let (server, resolver) = create_dns_server(
                 vec![format!("0.0.0.0:{LOCAL_UDP_PORT}")],
                 false,
-                ProxyRules::new(vec![]),
+                ProxyRules::new(vec![], None),
                 resolver,
             )
             .await;

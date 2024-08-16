@@ -26,6 +26,10 @@
 				"$rustc"
 			],
 			"group": "build",
+			"args": [
+				"--",
+				"--nocapture"
+			],
 			"label": "rust: cargo test"
 		}
 	]
