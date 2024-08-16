@@ -46,7 +46,20 @@ impl ProxyRules {
             geo_ip_path: geo_ip_path,
             default_download_path: default_geo_ip_path(),
         };
-        s.init_geo_ip_db();
+        s.init_geo_ip_db(true);
+        s
+    }
+
+    /// Create a new ProxyRules with the given rules and geoip database path.
+    /// Download the geoip database in the foreground if the path is a http or https url.
+    fn new_sync(rules: Vec<Rule>, geo_ip_path: Option<PathBuf>) -> Self {
+        let s = Self {
+            rules: Arc::new(RwLock::new(rules)),
+            geo_ip_db: Arc::new(Mutex::new(None)),
+            geo_ip_path: geo_ip_path,
+            default_download_path: default_geo_ip_path(),
+        };
+        s.init_geo_ip_db(false);
         s
     }
 
@@ -81,7 +94,7 @@ impl ProxyRules {
         success
     }
 
-    fn init_geo_ip_db(&self) {
+    fn init_geo_ip_db(&self, background: bool) {
         let default_path = self.default_download_path.clone();
         let path = match &self.geo_ip_path {
             Some(path) => {
@@ -91,16 +104,18 @@ impl ProxyRules {
                     if !default_path.exists() {
                         let self_clone = self.clone();
                         static ONCE: std::sync::Once = Once::new();
-                        ONCE.call_once(|| {
-                            thread::spawn(move || {
-                                let _ = self_clone.download_geoip_database();
+                        if background {
+                            ONCE.call_once(|| {
+                                thread::spawn(move || {
+                                    let _ = self_clone.download_geoip_database();
+                                });
                             });
-                        });
-
-                        return;
-                    } else {
-                        default_path
+                            return;
+                        } else {
+                            let _ = self_clone.download_geoip_database();
+                        }
                     }
+                    default_path
                 } else {
                     path.clone()
                 }
@@ -321,14 +336,13 @@ mod tests {
     #[test]
     fn test_proxy_rule() {
         tracing_subscriber::fmt::init();
-        let proxy_rule = ProxyRules::new(
+        let proxy_rule = ProxyRules::new_sync(
             vec![Rule::GeoIp("CN".to_string(), Action::Direct)],
             Some(
                 Path::new("https://cdn.jsdelivr.net/gh/Hackl0us/GeoIP2-CN@release/Country.mmdb")
                     .to_path_buf(),
             ),
         );
-        proxy_rule.download_geoip_database();
         let action = proxy_rule.action_for_domain(Some("x.com"), "110.242.68.66".parse().ok());
         assert_eq!(action, Some(Action::Direct));
     }
