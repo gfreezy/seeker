@@ -44,9 +44,9 @@ impl DNSSetup {
 
     fn is_system_using_resolved() -> bool {
         // check `/etc/resolv.conf` is a symlink
-        return std::fs::symlink_metadata(RESOLV_PATH)
+        std::fs::symlink_metadata(RESOLV_PATH)
             .map(|m| m.file_type().is_symlink())
-            .unwrap_or(false);
+            .unwrap_or(false)
     }
 
     fn set_with_systemd_resolved(&self) {
@@ -56,6 +56,7 @@ impl DNSSetup {
         let mut dns_conf = OpenOptions::new()
             .write(true)
             .create(true)
+            .truncate(true)
             .open(RESOLVED_OVERRIDE_PATH)
             .unwrap();
         // 172.17.0.1 is the host ip in docker default network. Set it as the second DNS server
