@@ -48,6 +48,7 @@ install-updater = false
 [workspace.metadata.release]
 shared-version = true
 tag-name = "v{{version}}"
+publish = false
 
 [workspace.dependencies]
 anyhow = "1.0.65"
