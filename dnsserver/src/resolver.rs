@@ -151,11 +151,16 @@ impl RuleBasedDnsResolver {
 
         // direct traffic bypass tun.
         let bypass_direct = self.inner.bypass_direct;
+        let mut real_packet: Result<DnsPacket> = Err(io::Error::new(
+            io::ErrorKind::Other,
+            "real packet not found",
+        ));
         // lookup real ip
         let ip = if bypass_direct {
             // resolve real ip only when `bypass_direct` is false.
-            if let Ok(real_packet) = self.resolve_real(domain, qtype).await {
-                let real_ip = real_packet
+            real_packet = self.resolve_real(domain, qtype).await;
+            if let Ok(p) = &real_packet {
+                let real_ip = p
                     .answers
                     .iter()
                     .filter_map(|record| {
@@ -166,7 +171,6 @@ impl RuleBasedDnsResolver {
                         }
                     })
                     .next();
-                packet = real_packet;
                 real_ip
             } else {
                 None
@@ -178,7 +182,7 @@ impl RuleBasedDnsResolver {
         match self.inner.rules.action_for_domain(Some(domain), ip) {
             // Return real ip when `bypass_direct` is true.
             Some(Action::Direct) if bypass_direct => {
-                return Ok(packet);
+                return real_packet;
             }
             // Do not return dns records when action is reject.
             Some(Action::Reject) => return Ok(packet),
