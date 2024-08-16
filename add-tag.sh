@@ -32,4 +32,4 @@ fi
 
 echo "New version: $new_version"
 
-cargo release $new_version
+cargo release --execute $new_version
