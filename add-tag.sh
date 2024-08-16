@@ -12,36 +12,27 @@ if [ -n "$(git status --porcelain)" ]; then
   exit 1
 fi
 
-# 获取今天的日期
-DATE=$(date +%Y%m%d)
+# 获取今天的日期，格式为 YYYYMMDD
+major=$(date +"%Y%m%d")
+minor=0
+patch=0
 
-# 定义标签前缀
-PREFIX="v"
+# 查找是否存在类似的版本号
+existing_tags=$(git tag | grep "^${major}\.${minor}\.[0-9]\+")
 
-# 定义标签
-TAG="${PREFIX}${DATE}"
-
-# 检查是否存在指定的标签
-if git tag | grep -q "^${TAG}$"; then
-    # 如果存在，找出带有数字后缀的最大标签
-    MAX=$(git tag | grep "^${TAG}-" | sed "s/^${TAG}-//g" | sort -nr | head -n1)
-
-    # 如果没有找到带有数字后缀的标签，设置默认值为 1
-    if [ -z "$MAX" ]; then
-        MAX=1
-    else
-        # 移除数字前的0
-        MAX=$(echo $MAX | sed 's/^0*//')
-    fi
-
-    # 递增后缀数字
-    TAG="${TAG}-$(printf "%02d" $((MAX + 1)))"
+if [ -z "$existing_tags" ]; then
+    # 如果没有类似的版本号，使用 0 作为 patch
+    new_version="${major}.${minor}.${patch}"
+else
+    # 如果有类似的版本号，找到 patch 最大的版本号
+    max_patch=$(echo "$existing_tags" | awk -F'.' '{print $3}' | sort -nr | head -n 1)
+    new_patch=$((max_patch + 1))
+    new_version="${major}.${minor}.${new_patch}"
 fi
 
-# 创建新的标签
-git tag $TAG
+echo "New version: $new_version"
 
-# 打印新的标签
-echo "Created new tag: $TAG"
+创建新的标签
+git tag $new_version
 
-git push origin $TAG
+git push origin $new_version
