@@ -225,7 +225,7 @@ mod tests {
         task::block_on(async {
             let resolver = RuleBasedDnsResolver::new(
                 true,
-                ProxyRules::new(vec![]),
+                ProxyRules::new(vec![], None),
                 new_resolver(dns, 53).await,
             )
             .await;

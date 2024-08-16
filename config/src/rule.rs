@@ -8,7 +8,7 @@ use std::io::{copy, BufWriter};
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
-use std::sync::Arc;
+use std::sync::{Arc, Once};
 use std::thread;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -39,11 +39,11 @@ pub struct ProxyRules {
 }
 
 impl ProxyRules {
-    pub fn new(rules: Vec<Rule>) -> Self {
+    pub fn new(rules: Vec<Rule>, geo_ip_path: Option<PathBuf>) -> Self {
         let s = Self {
             rules: Arc::new(RwLock::new(rules)),
             geo_ip_db: Arc::new(Mutex::new(None)),
-            geo_ip_path: None,
+            geo_ip_path: geo_ip_path,
             default_download_path: default_geo_ip_path(),
         };
         s.init_geo_ip_db();
@@ -59,12 +59,20 @@ impl ProxyRules {
         *rules_mut = rules;
     }
 
-    fn download_geoip_database(&self, url: &str) -> bool {
+    fn download_geoip_database(&self) -> bool {
+        let Some(url) = self
+            .geo_ip_path
+            .as_ref()
+            .map(|p| p.to_string_lossy().to_string())
+        else {
+            return false;
+        };
         let path = &self.default_download_path;
         if self.default_download_path.exists() {
+            tracing::info!("geoip database already exists, skipping download");
             return true;
         }
-        let success = download_geoip_database(url, path);
+        let success = download_geoip_database(&url, path);
         if !success {
             tracing::error!("downloaded geoip failed");
         } else {
@@ -74,7 +82,6 @@ impl ProxyRules {
     }
 
     fn init_geo_ip_db(&self) {
-        let mut guard = self.geo_ip_db.lock();
         let default_path = self.default_download_path.clone();
         let path = match &self.geo_ip_path {
             Some(path) => {
@@ -82,19 +89,16 @@ impl ProxyRules {
                 // Check if path is a valid http or https url
                 if path.starts_with("http://") || path.starts_with("https://") {
                     if !default_path.exists() {
-                        let Some(url) = path.to_str() else {
-                            tracing::error!("invalid url: {:?}", path);
-                            return;
-                        };
-
-                        let url = url.to_string();
                         let self_clone = self.clone();
-                        thread::spawn(move || {
-                            let _ = self_clone.download_geoip_database(&url);
+                        static ONCE: std::sync::Once = Once::new();
+                        ONCE.call_once(|| {
+                            thread::spawn(move || {
+                                let _ = self_clone.download_geoip_database();
+                            });
                         });
+
                         return;
                     } else {
-                        tracing::info!("geoip database already exists, skipping download");
                         default_path
                     }
                 } else {
@@ -107,6 +111,7 @@ impl ProxyRules {
             }
         };
 
+        tracing::info!("use geoip at: {:?}", path);
         let reader = match maxminddb::Reader::open_readfile(&path) {
             Ok(reader) => reader,
             Err(err) => {
@@ -114,16 +119,16 @@ impl ProxyRules {
                 return;
             }
         };
+        let mut guard = self.geo_ip_db.lock();
         *guard = Some(reader);
     }
 
     fn did_geo_ip_matches_name(&self, ip: IpAddr, name: &str) -> bool {
-        let guard = self.geo_ip_db.lock();
-
-        match &*guard {
-            None => false,
-            Some(reader) => did_geo_ip_matches_name(reader, ip, name),
-        }
+        let geo_ip_db = self.geo_ip_db.lock();
+        let Some(reader) = &*geo_ip_db else {
+            return false;
+        };
+        did_geo_ip_matches_name(reader, ip, name)
     }
 
     pub fn action_for_domain(&self, domain: Option<&str>, ip: Option<IpAddr>) -> Option<Action> {
@@ -315,10 +320,15 @@ mod tests {
 
     #[test]
     fn test_proxy_rule() {
-        let proxy_rule = ProxyRules::new(vec![Rule::GeoIp("CN".to_string(), Action::Direct)]);
-        proxy_rule.download_geoip_database(
-            "https://cdn.jsdelivr.net/gh/Hackl0us/GeoIP2-CN@release/Country.mmdb",
+        tracing_subscriber::fmt::init();
+        let proxy_rule = ProxyRules::new(
+            vec![Rule::GeoIp("CN".to_string(), Action::Direct)],
+            Some(
+                Path::new("https://cdn.jsdelivr.net/gh/Hackl0us/GeoIP2-CN@release/Country.mmdb")
+                    .to_path_buf(),
+            ),
         );
+        proxy_rule.download_geoip_database();
         let action = proxy_rule.action_for_domain(Some("x.com"), "110.242.68.66".parse().ok());
         assert_eq!(action, Some(Action::Direct));
     }
