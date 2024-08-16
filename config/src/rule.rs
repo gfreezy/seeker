@@ -43,7 +43,7 @@ impl ProxyRules {
         let s = Self {
             rules: Arc::new(RwLock::new(rules)),
             geo_ip_db: Arc::new(Mutex::new(None)),
-            geo_ip_path: geo_ip_path,
+            geo_ip_path,
             default_download_path: default_geo_ip_path(),
         };
         s.init_geo_ip_db(true);
@@ -52,11 +52,12 @@ impl ProxyRules {
 
     /// Create a new ProxyRules with the given rules and geoip database path.
     /// Download the geoip database in the foreground if the path is a http or https url.
+    #[cfg(test)]
     fn new_sync(rules: Vec<Rule>, geo_ip_path: Option<PathBuf>) -> Self {
         let s = Self {
             rules: Arc::new(RwLock::new(rules)),
             geo_ip_db: Arc::new(Mutex::new(None)),
-            geo_ip_path: geo_ip_path,
+            geo_ip_path,
             default_download_path: default_geo_ip_path(),
         };
         s.init_geo_ip_db(false);
