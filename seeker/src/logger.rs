@@ -86,6 +86,8 @@ pub(crate) fn setup_logger(log_path: Option<&str>, trace: bool) -> anyhow::Resul
         } else {
             let fmt_layer = tracing_subscriber::fmt::layer()
                 .with_ansi(false)
+                .with_file(true)
+                .with_line_number(true)
                 .with_writer(move || TracingWriter::new(logger.clone()))
                 .and_then(env_filter);
             let registry = Registry::default().with(fmt_layer);
