@@ -32,7 +32,4 @@ fi
 
 echo "New version: $new_version"
 
-创建新的标签
-git tag $new_version
-
-git push origin $new_version
+cargo release $new_version
