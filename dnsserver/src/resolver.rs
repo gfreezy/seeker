@@ -9,7 +9,7 @@ use std::io;
 use std::io::Result;
 use std::sync::Arc;
 use store::Store;
-use tracing::{debug, error};
+use tracing::{debug, error, info};
 
 /// A Forwarding DNS Resolver
 ///
@@ -55,7 +55,7 @@ impl RuleBasedDnsResolver {
             .await
             .map_err(|e| {
                 let msg = e.to_string();
-                error!("directly lookup host error: {}", &msg);
+                info!("directly lookup host error: {}", &msg);
                 io::Error::new(io::ErrorKind::Other, msg)
             })?;
         for record in lookup.record_iter() {
@@ -114,7 +114,7 @@ impl RuleBasedDnsResolver {
                     ttl: TransientTtl(record.ttl()),
                 },
                 other => {
-                    tracing::error!("unsupported record type: {:?}", other);
+                    tracing::info!("unsupported record type: {:?}", other);
                     continue;
                 }
             };
@@ -129,7 +129,7 @@ impl RuleBasedDnsResolver {
 
     async fn resolve(&self, domain: &str, qtype: QueryType) -> Result<DnsPacket> {
         // We only support A record for now, for other records, we just forward them to upstream.
-        if !matches!(qtype, QueryType::A | QueryType::AAAA) {
+        if !matches!(qtype, QueryType::A) {
             return self.resolve_real(domain, qtype).await;
         }
 
@@ -182,6 +182,7 @@ impl RuleBasedDnsResolver {
         match self.inner.rules.action_for_domain(Some(domain), ip) {
             // Return real ip when `bypass_direct` is true.
             Some(Action::Direct) if bypass_direct => {
+                tracing::info!("bypass_direct, domain: {:?}, ip: {:?}", domain, ip);
                 return real_packet;
             }
             // Do not return dns records when action is reject.
@@ -197,6 +198,7 @@ impl RuleBasedDnsResolver {
             addr: ip,
             ttl: TransientTtl(3),
         });
+        tracing::info!("lookup domain: {:?}, ip: {:?}", domain, ip);
         Ok(packet)
     }
 }
