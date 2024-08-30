@@ -9,7 +9,7 @@ use std::io;
 use std::io::Result;
 use std::sync::Arc;
 use store::Store;
-use tracing::{debug, error, info};
+use tracing::{debug, info};
 
 /// A Forwarding DNS Resolver
 ///
