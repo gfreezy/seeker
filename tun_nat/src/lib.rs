@@ -107,6 +107,13 @@ pub fn run_nat(
                 Ok(p) => p,
             };
 
+            // convert relay_addr to bytes
+            let relay_addr_bytes = relay_addr.octets();
+            if ipv4_packet.dst_addr().as_bytes() == relay_addr_bytes {
+                tracing::info!("tun_nat: drop packet from relay_addr");
+                continue;
+            }
+
             if let Some(packet) = match ipv4_packet.protocol() {
                 IpProtocol::Udp => route_packet!(
                     UdpPacket,

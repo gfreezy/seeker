@@ -9,7 +9,6 @@ use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::{Arc, Once};
-use std::thread;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Rule {
@@ -43,10 +42,12 @@ impl ProxyRules {
         let s = Self {
             rules: Arc::new(RwLock::new(rules)),
             geo_ip_db: Arc::new(Mutex::new(None)),
-            geo_ip_path,
+            geo_ip_path: geo_ip_path.clone(),
             default_download_path: default_geo_ip_path(),
         };
-        s.init_geo_ip_db(true);
+        if geo_ip_path.is_some() {
+            s.init_geo_ip_db();
+        }
         s
     }
 
@@ -60,7 +61,7 @@ impl ProxyRules {
             geo_ip_path,
             default_download_path: default_geo_ip_path(),
         };
-        s.init_geo_ip_db(false);
+        s.init_geo_ip_db();
         s
     }
 
@@ -95,7 +96,7 @@ impl ProxyRules {
         success
     }
 
-    fn init_geo_ip_db(&self, background: bool) {
+    fn init_geo_ip_db(&self) {
         let default_path = self.default_download_path.clone();
         let path = match &self.geo_ip_path {
             Some(path) => {
@@ -103,18 +104,10 @@ impl ProxyRules {
                 // Check if path is a valid http or https url
                 if path.starts_with("http://") || path.starts_with("https://") {
                     if !default_path.exists() {
-                        let self_clone = self.clone();
                         static ONCE: std::sync::Once = Once::new();
-                        if background {
-                            ONCE.call_once(|| {
-                                thread::spawn(move || {
-                                    let _ = self_clone.download_geoip_database();
-                                });
-                            });
-                            return;
-                        } else {
-                            let _ = self_clone.download_geoip_database();
-                        }
+                        ONCE.call_once(|| {
+                            let _ = self.download_geoip_database();
+                        });
                     }
                     default_path
                 } else {
@@ -208,6 +201,7 @@ impl ProxyRules {
 
     pub(crate) fn set_geo_ip_path(&mut self, path: Option<PathBuf>) {
         self.geo_ip_path = path;
+        self.init_geo_ip_db();
     }
 }
 
