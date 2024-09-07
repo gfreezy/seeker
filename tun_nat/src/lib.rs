@@ -109,8 +109,9 @@ pub fn run_nat(
 
             // convert relay_addr to bytes
             let relay_addr_bytes = relay_addr.octets();
-            if ipv4_packet.dst_addr().as_bytes() == relay_addr_bytes {
-                tracing::info!("tun_nat: drop packet from relay_addr");
+            let dst_addr = ipv4_packet.dst_addr();
+            if dst_addr.as_bytes() == relay_addr_bytes || dst_addr.is_broadcast() {
+                tracing::info!("tun_nat: drop packet to relay_addr or broadcast");
                 continue;
             }
 

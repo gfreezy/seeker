@@ -398,25 +398,36 @@ pub(crate) async fn get_real_src_real_dest_and_host(
     };
 
     trace!(src = ?real_src, dest = ?real_dest, "get real src and dest");
-    let IpAddr::V4(ipv4) = real_src.ip() else {
-        return Err(Error::new(std::io::ErrorKind::Other, "only support ipv4"));
+    let IpAddr::V4(src_ipv4) = real_src.ip() else {
+        return Err(Error::new(
+            std::io::ErrorKind::InvalidData,
+            "only support ipv4",
+        ));
     };
-    let is_tun_ip = config.tun_cidr.contains_addr(&ipv4.into());
-    let ip = real_dest.ip().to_string();
+    let IpAddr::V4(dest_ipv4) = real_dest.ip() else {
+        return Err(Error::new(
+            std::io::ErrorKind::InvalidData,
+            "only support ipv4",
+        ));
+    };
+    let is_src_tun_ip = config.tun_cidr.contains_addr(&src_ipv4.into());
+    let is_dest_tun_ip = config.tun_cidr.contains_addr(&dest_ipv4.into());
+
+    let ip = dest_ipv4.to_string();
     let host_optional = resolver
         .lookup_host(&ip)
         .map(|s| Address::DomainNameAddress(s, real_dest.port()));
 
-    let host = match (host_optional, is_tun_ip) {
-        (Some(h), _) => h,
+    let host = match (host_optional, is_src_tun_ip, is_dest_tun_ip) {
+        (Some(h), _, _) => h,
 
-        // 如果是 tun 的 ip，说明是指定了 ip 的访问。
-        (None, true) => Address::SocketAddress(real_dest),
+        // 如果 src 是 tun 的 ip 且 dest 不是 tun ip，说明是指定了 ip 的访问。
+        (None, true, false) => Address::SocketAddress(real_dest),
 
         // 如果不是 tun 的 ip，没有找到对应的域名，说明是非法的访问，需要忽略。
         _ => {
             return Err(Error::new(
-                std::io::ErrorKind::Other,
+                std::io::ErrorKind::InvalidData,
                 format!("no host found for tun ip: {ip}"),
             ))
         }
