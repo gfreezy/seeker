@@ -315,15 +315,9 @@ docker run -v $PWD:/volume -e OPENSSL_STATIC=yes --rm -t clux/muslrust cargo bui
 
 
 == 如何发布新版本
-=== With `cargo-workspace`
 ```
-cargo ws version
-```
-
-=== Plain git
-```
-git tag v10.0.0
-git push origin v10.0.0
+$ cargo install cargo-release
+$ ./add-tag.sh
 ```
 
 Github Action 会自动编译并发布新的 release。
