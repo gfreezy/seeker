@@ -1,16 +1,15 @@
 use async_std_resolver::proto::rr::rdata::{A, AAAA};
 use async_std_resolver::proto::rr::{RData, RecordType};
-use async_std_resolver::{AsyncStdResolver, ResolveError};
+use async_std_resolver::AsyncStdResolver;
 use async_trait::async_trait;
 use config::rule::{Action, ProxyRules};
 use hermesdns::{DnsPacket, DnsRecord, DnsResolver, Hosts, QueryType, TransientTtl};
 use std::any::Any;
-use std::f32::consts::E;
 use std::io;
 use std::io::Result;
 use std::sync::Arc;
 use store::Store;
-use tracing::{debug, error, info};
+use tracing::{debug, error};
 
 /// A Forwarding DNS Resolver
 ///

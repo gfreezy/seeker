@@ -108,9 +108,8 @@ impl ProxyClient {
     async fn run_tcp_relay_server(&self) -> Result<()> {
         let listener = TcpListener::bind(("0.0.0.0", REDIR_LISTEN_PORT))
             .await
-            .map_err(|e| {
+            .inspect_err(|_e| {
                 eprintln!("error: bind to {REDIR_LISTEN_PORT}");
-                e
             })?;
         let mut incoming = listener.incoming();
         while let Some(Ok(conn)) = incoming.next().await {
