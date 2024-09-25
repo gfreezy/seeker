@@ -1,15 +1,16 @@
 use async_std_resolver::proto::rr::rdata::{A, AAAA};
 use async_std_resolver::proto::rr::{RData, RecordType};
-use async_std_resolver::AsyncStdResolver;
+use async_std_resolver::{AsyncStdResolver, ResolveError};
 use async_trait::async_trait;
 use config::rule::{Action, ProxyRules};
 use hermesdns::{DnsPacket, DnsRecord, DnsResolver, Hosts, QueryType, TransientTtl};
 use std::any::Any;
+use std::f32::consts::E;
 use std::io;
 use std::io::Result;
 use std::sync::Arc;
 use store::Store;
-use tracing::{debug, info};
+use tracing::{debug, error, info};
 
 /// A Forwarding DNS Resolver
 ///
@@ -52,12 +53,18 @@ impl RuleBasedDnsResolver {
             .inner
             .resolver
             .lookup(domain, RecordType::from(qtype.to_num()))
-            .await
-            .map_err(|e| {
-                let msg = e.to_string();
-                info!("directly lookup host error: {}", &msg);
-                io::Error::new(io::ErrorKind::Other, msg)
-            })?;
+            .await;
+        let lookup = match lookup {
+            Ok(v) => v,
+            Err(e) => {
+                error!(
+                    "resolve error, domain: {}, type: {:?}, {:?}",
+                    domain, qtype, e
+                );
+                return Ok(packet);
+            }
+        };
+
         for record in lookup.record_iter() {
             let rdata = match record.data() {
                 None => {
