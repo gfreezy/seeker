@@ -1,6 +1,6 @@
 [package]
 name = "tcp_connection"
-version = "20240830.0.1"
+version = "20240925.0.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
