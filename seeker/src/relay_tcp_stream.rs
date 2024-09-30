@@ -6,7 +6,6 @@ use config::{Address, Config};
 
 use std::net::SocketAddr;
 
-use std::sync::Arc;
 use std::time::Duration;
 use tracing::{error, instrument, trace};
 
@@ -24,7 +23,7 @@ pub(crate) async fn relay_tcp_stream(
     real_dest: SocketAddr,
     host: Address,
     config: Config,
-    server_chooser: Arc<ServerChooser>,
+    server_chooser: ServerChooser,
     connectivity: ProbeConnectivity,
     user_id: Option<u32>,
     on_update_activity: impl Fn() -> bool,
@@ -92,6 +91,7 @@ async fn choose_proxy_tcp_stream(
     )
     .await?;
     trace!(?action, "selected action");
+
     Ok(retry_timeout!(
         config.connect_timeout,
         config.max_connect_errors,

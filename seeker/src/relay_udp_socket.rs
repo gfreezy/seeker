@@ -23,7 +23,7 @@ pub(crate) async fn relay_udp_socket(
     resolver: RuleBasedDnsResolver,
     dns_client: DnsClient,
     config: Config,
-    server_chooser: Arc<ServerChooser>,
+    server_chooser: ServerChooser,
     connectivity: ProbeConnectivity,
     user_id: Option<u32>,
     udp_manager: UdpManager,
@@ -108,6 +108,7 @@ async fn choose_proxy_udp_socket(
     )
     .await?;
     tracing::debug!(?action, ?remote_addr, "udp action");
+
     retry_timeout!(
         config.connect_timeout,
         config.max_connect_errors,

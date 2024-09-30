@@ -37,7 +37,7 @@ pub struct ProxyClient {
     udp_manager: UdpManager,
     resolver: RuleBasedDnsResolver,
     dns_client: DnsClient,
-    server_chooser: Arc<ServerChooser>,
+    server_chooser: ServerChooser,
     nat_join_handle: Option<JoinHandle<()>>,
     dns_server_join_handle: Option<JoinHandle<()>>,
     chooser_join_handle: Option<JoinHandle<()>>,
@@ -71,16 +71,14 @@ impl ProxyClient {
             run_dns_resolver(&config, dns_client.resolver()).await;
 
         let ping_urls = config.ping_urls.clone();
-        let chooser = Arc::new(
-            ServerChooser::new(
-                config.servers.clone(),
-                dns_client.clone(),
-                ping_urls,
-                config.ping_timeout,
-                show_stats,
-            )
-            .await,
-        );
+        let chooser = ServerChooser::new(
+            config.servers.clone(),
+            dns_client.clone(),
+            ping_urls,
+            config.ping_timeout,
+            show_stats,
+        )
+        .await;
         let chooser_clone = chooser.clone();
         let chooser_join_handle = spawn(async move {
             chooser_clone
@@ -92,7 +90,7 @@ impl ProxyClient {
 
         Self {
             resolver,
-            connectivity: ProbeConnectivity::new(config.probe_timeout),
+            connectivity: ProbeConnectivity::new(chooser.clone(), config.probe_timeout),
             udp_manager: Arc::new(RwLock::new(HashMap::new())),
             dns_client,
             config,
@@ -302,7 +300,7 @@ impl ProxyClient {
     }
 }
 
-#[instrument(skip(real_src, real_dest, config, connectivity), ret)]
+#[instrument(skip(real_src, real_dest, connectivity, config), ret)]
 pub(crate) async fn get_action_for_addr(
     real_src: SocketAddr,
     real_dest: SocketAddr,
