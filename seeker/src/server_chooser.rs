@@ -68,7 +68,6 @@ impl ServerChooser {
     fn insert_live_connections(&self, conn: Box<dyn ProxyConnection + Send + Sync>) {
         self.live_connections.write().push(conn);
     }
-
     #[tracing::instrument(skip(self))]
     pub async fn candidate_tcp_stream(
         &self,
@@ -76,34 +75,8 @@ impl ServerChooser {
         action: Action,
     ) -> std::io::Result<ProxyTcpStream> {
         let stream = match action {
-            Action::Proxy => {
-                let config = self.selected_server.lock().clone();
-                let stream = ProxyTcpStream::connect(
-                    remote_addr.clone(),
-                    Some(&config),
-                    self.dns_client.clone(),
-                )
-                .await;
-                if stream.is_err() {
-                    tracing::error!(
-                        ?remote_addr,
-                        ?action,
-                        "Failed to connect to server: {}",
-                        config.addr()
-                    );
-                    self.move_to_next_server();
-                }
-                stream?
-            }
-            Action::Direct => {
-                let ret =
-                    ProxyTcpStream::connect(remote_addr.clone(), None, self.dns_client.clone())
-                        .await;
-                if ret.is_err() {
-                    tracing::error!(?remote_addr, ?action, "Failed to connect to server");
-                }
-                ret?
-            }
+            Action::Proxy => self.proxy_connect(&remote_addr).await?,
+            Action::Direct => self.direct_connect(&remote_addr).await?,
             _ => unreachable!(),
         };
 
@@ -112,6 +85,31 @@ impl ServerChooser {
         self.insert_live_connections(Box::new(stream_clone));
 
         Ok(stream)
+    }
+
+    pub async fn proxy_connect(&self, remote_addr: &Address) -> std::io::Result<ProxyTcpStream> {
+        let config = self.selected_server.lock().clone();
+        let stream =
+            ProxyTcpStream::connect(remote_addr.clone(), Some(&config), self.dns_client.clone())
+                .await;
+        if stream.is_err() {
+            tracing::error!(
+                ?remote_addr,
+                action = ?Action::Proxy,
+                "Failed to connect to server: {}",
+                config.addr()
+            );
+            self.move_to_next_server();
+        }
+        stream
+    }
+
+    pub async fn direct_connect(&self, remote_addr: &Address) -> std::io::Result<ProxyTcpStream> {
+        let ret = ProxyTcpStream::connect(remote_addr.clone(), None, self.dns_client.clone()).await;
+        if ret.is_err() {
+            tracing::error!(?remote_addr, action = ?Action::Direct, "Failed to connect to server");
+        }
+        ret
     }
 
     pub async fn candidate_udp_socket(&self, action: Action) -> std::io::Result<ProxyUdpSocket> {
