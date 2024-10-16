@@ -1,0 +1,13 @@
+services:
+  shadowsocks:
+    image: shadowsocks/shadowsocks-libev
+    container_name: shadowsocks-server
+    ports:
+      - "8388:8388"
+      - "8388:8388/udp"
+    environment:
+      - PASSWORD=9MLSpPmNt # 设置你的密码
+      - METHOD=aes-256-gcm # 加密方式，例：aes-256-gcm
+      - DNS_ADDRS=114.114.114.114 # 可选，多个 DNS 地址用逗号分隔
+    volumes:
+      - ./resolv.conf:/etc/resolv.conf:ro

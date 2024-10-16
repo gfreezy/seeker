@@ -13,3 +13,5 @@ parking_lot = { workspace = true }
 bitvec = { workspace = true }
 smoltcp = { workspace = true, features = ["proto-ipv6", "proto-ipv4", "std"] }
 tracing = { workspace = true }
+crossbeam-channel = "0.5.8"
+object-pool = "0.6.0"

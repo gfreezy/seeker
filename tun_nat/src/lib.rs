@@ -2,6 +2,7 @@ mod tun_socket;
 
 use crate::tun_socket::TunSocket;
 use bitvec::vec::BitVec;
+use object_pool::{Pool, ReusableOwned};
 use parking_lot::RwLock;
 use smoltcp::wire::{IpAddress, IpProtocol, Ipv4Cidr, Ipv4Packet, TcpPacket, UdpPacket};
 use std::collections::HashMap;
@@ -21,7 +22,7 @@ macro_rules! route_packet {
     ($packet_ty: tt, $ipv4_packet: expr, $session_manager: expr, $relay_addr: expr, $relay_port: expr) => {{
         let src_addr = $ipv4_packet.src_addr().into();
         let dest_addr = $ipv4_packet.dst_addr().into();
-        let mut packet = $packet_ty::new_checked($ipv4_packet.payload_mut()).unwrap();
+        let mut packet = $packet_ty::new_unchecked($ipv4_packet.payload_mut());
         let src_port = packet.src_port();
         let dest_port = packet.dst_port();
 
@@ -68,6 +69,7 @@ pub fn run_nat(
     relay_port: u16,
     addition_cidrs: &[Ipv4Cidr],
 ) -> Result<(SessionManager, JoinHandle<()>)> {
+    const BUF_SIZE: usize = 2000;
     let mut tun = TunSocket::new(tun_name)?;
     let tun_name = tun.name()?;
     if cfg!(target_os = "macos") {
@@ -89,62 +91,138 @@ pub fn run_nat(
     let relay_addr = tun_ip;
 
     let session_manager = Arc::new(RwLock::new(InnerSessionManager::new(BEGIN_PORT, END_PORT)));
-    let sesion_mamager_clone = session_manager.clone();
-    let handle = thread::spawn(move || {
-        let mut buf = vec![0; 2000];
+    let session_manager_clone = session_manager.clone();
 
-        loop {
-            let size = tun.read(&mut buf).unwrap();
-            if size == 0 {
-                eprintln!("tun read return 0, exit now");
-                break;
-            }
-            let mut ipv4_packet = match Ipv4Packet::new_checked(&mut buf[..size]) {
-                Err(e) => {
-                    eprint!("tun_nat: new packet error: {:?}", e);
-                    continue;
+    // 创建内存池
+    let pool = Arc::new(Pool::new(100, || vec![0u8; BUF_SIZE]));
+
+    // 创建通道用于发送和接收数据包
+    let (tx, rx) = crossbeam_channel::unbounded();
+    let (processed_tx, processed_rx) = crossbeam_channel::unbounded();
+
+    // 创建处理线程
+    let num_workers = 4;
+    let workers: Vec<_> = (0..num_workers)
+        .map(|i| {
+            let rx = rx.clone();
+            let processed_tx = processed_tx.clone();
+            let sm = session_manager.clone();
+            thread::Builder::new()
+                .name(format!("tun-nat-worker-{}", i))
+                .spawn(move || process_packets(rx, processed_tx, sm, relay_addr, relay_port))
+                .expect("Failed to spawn worker thread")
+        })
+        .collect();
+
+    // 创建主线程
+    let pool_clone = pool.clone();
+    let tx_clone = tx.clone();
+    let mut tun_clone = tun.clone();
+
+    // 从 tun 读取数据
+    let send_handle = thread::Builder::new()
+        .name("tun-nat-read".to_string())
+        .spawn(move || {
+            loop {
+                let mut buf = pool_clone.pull_owned(|| vec![0; BUF_SIZE]);
+                // 从 pool 取出的 buf 不确定是多少，需要重新设置长度。因为 pool 里面的 buf 固定是 2000，所以这里 unsafe 设置长度是 safe 的。
+                unsafe {
+                    buf.set_len(BUF_SIZE);
                 }
-                Ok(p) => p,
-            };
+                let size = match tun.read(&mut buf) {
+                    Ok(0) => {
+                        eprintln!("tun read return 0, exit now");
+                        break;
+                    }
+                    Ok(size) => size,
+                    Err(e) => {
+                        eprintln!("tun read error: {:?}", e);
+                        continue;
+                    }
+                };
 
-            // convert relay_addr to bytes
-            let relay_addr_bytes = relay_addr.octets();
-            let dst_addr = ipv4_packet.dst_addr();
-            if dst_addr.as_bytes() == relay_addr_bytes || dst_addr.is_broadcast() {
-                tracing::info!("tun_nat: drop packet to relay_addr or broadcast");
-                continue;
+                // 从 tun 读取到的 buf 长度是确定的，所以这里 unsafe 设置长度是 safe 的。
+                unsafe {
+                    buf.set_len(size);
+                }
+                if let Err(e) = tx_clone.send(buf) {
+                    eprintln!("Failed to send packet to worker: {:?}", e);
+                }
             }
 
-            if let Some(packet) = match ipv4_packet.protocol() {
-                IpProtocol::Udp => route_packet!(
-                    UdpPacket,
-                    ipv4_packet,
-                    session_manager,
-                    relay_addr,
-                    relay_port
-                ),
-                IpProtocol::Tcp => route_packet!(
-                    TcpPacket,
-                    ipv4_packet,
-                    session_manager,
-                    relay_addr,
-                    relay_port
-                ),
-                _ => continue,
-            } {
-                let ret = tun.write(packet.as_ref());
+            drop(tx_clone); // 关闭发送端，通知所有工作线程退出
+        })
+        .expect("Failed to spawn send thread");
+
+    // 写入 tun 数据线程
+    let handle = thread::Builder::new()
+        .name("tun-nat-write".to_string())
+        .spawn(move || {
+            while let Ok(processed_buf) = processed_rx.recv() {
+                let ret = tun_clone.write(&processed_buf);
                 if let Err(err) = ret {
                     eprintln!("tun_nat: write packet error: {:?}", err);
                 }
             }
-        }
-    });
+            // 通道已关闭，退出循环
+
+            for worker in workers {
+                worker.join().expect("Failed to join worker thread");
+            }
+
+            send_handle.join().expect("Failed to join send thread");
+        })
+        .expect("Failed to spawn receive thread");
+
     Ok((
         SessionManager {
-            inner: sesion_mamager_clone,
+            inner: session_manager_clone,
         },
         handle,
     ))
+}
+
+fn process_packets(
+    rx: crossbeam_channel::Receiver<ReusableOwned<Vec<u8>>>,
+    processed_tx: crossbeam_channel::Sender<ReusableOwned<Vec<u8>>>,
+    session_manager: Arc<RwLock<InnerSessionManager>>,
+    relay_addr: Ipv4Addr,
+    relay_port: u16,
+) {
+    while let Ok(mut buf) = rx.recv() {
+        let mut ipv4_packet = Ipv4Packet::new_unchecked(&mut *buf);
+
+        let relay_addr_bytes = relay_addr.octets();
+        let dst_addr = ipv4_packet.dst_addr();
+        if dst_addr.as_bytes() == relay_addr_bytes || dst_addr.is_broadcast() {
+            tracing::info!("tun_nat: drop packet to relay_addr or broadcast");
+            continue;
+        }
+
+        if let Some(_packet) = match ipv4_packet.protocol() {
+            IpProtocol::Udp => route_packet!(
+                UdpPacket,
+                ipv4_packet,
+                session_manager,
+                relay_addr,
+                relay_port
+            ),
+            IpProtocol::Tcp => route_packet!(
+                TcpPacket,
+                ipv4_packet,
+                session_manager,
+                relay_addr,
+                relay_port
+            ),
+            _ => {
+                continue;
+            }
+        } {
+            if let Err(e) = processed_tx.send(buf) {
+                eprintln!("Failed to send processed packet back: {:?}", e);
+            }
+        }
+    }
 }
 
 pub struct Association {

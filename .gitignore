@@ -16,3 +16,4 @@ seeker.sqlite
 seeker.sqlite-journal
 seeker.sqlite-shm
 seeker.sqlite-wal
+bench/http-server/large_file.bin
