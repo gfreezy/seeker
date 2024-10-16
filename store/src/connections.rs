@@ -4,6 +4,7 @@ use std::time::SystemTime;
 use crate::{now, Store};
 use anyhow::Result;
 use rusqlite::params;
+use std::sync::LazyLock;
 
 #[derive(Debug, Default, PartialEq)]
 pub struct Connection {
@@ -95,14 +96,14 @@ impl Store {
     }
 
     fn maybe_flush_stats(&self) -> Result<()> {
+        static INITIAL: LazyLock<SystemTime> = LazyLock::new(SystemTime::now);
         const FLUSH_INTERVAL: u64 = 5; // Flush every 5 seconds
-        let last_flush = self.last_flush_ts.load(Ordering::SeqCst);
-        let current_time = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)?
-            .as_secs();
+        let last_flush = self.last_flush_ts.load(Ordering::SeqCst) as u64;
+        let current_time = SystemTime::now().duration_since(*INITIAL)?.as_secs();
         if current_time - last_flush >= FLUSH_INTERVAL {
             self.flush_stats()?;
-            self.last_flush_ts.store(current_time, Ordering::SeqCst);
+            self.last_flush_ts
+                .store(current_time as u32, Ordering::SeqCst);
         }
         Ok(())
     }
