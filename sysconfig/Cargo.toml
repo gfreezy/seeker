@@ -1,6 +1,6 @@
 [package]
 name = "sysconfig"
-version = "20240925.0.0"
+version = "20241016.0.0"
 authors = ["gfreezy <gfreezy@gmail.com>"]
 edition = "2021"
 
