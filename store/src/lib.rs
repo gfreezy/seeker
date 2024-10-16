@@ -6,7 +6,7 @@ use parking_lot::ReentrantMutex;
 use std::collections::HashMap;
 use std::net::Ipv4Addr;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::AtomicU64;
+use std::sync::atomic::AtomicU32;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::Result;
@@ -20,7 +20,7 @@ pub struct Store {
     initial_ip: Ipv4Addr,
     db_path: PathBuf,
     cache_stats: RwLock<HashMap<String, u64>>,
-    last_flush_ts: AtomicU64,
+    last_flush_ts: AtomicU32,
 }
 
 static INSTANCE: OnceCell<Store> = OnceCell::new();
@@ -32,7 +32,7 @@ impl Clone for Store {
             initial_ip: self.initial_ip,
             db_path: self.db_path.clone(),
             cache_stats: RwLock::new(HashMap::new()),
-            last_flush_ts: AtomicU64::new(0),
+            last_flush_ts: AtomicU32::new(0),
         }
     }
 }
@@ -79,7 +79,7 @@ impl Store {
             conn: ReentrantMutex::new(conn),
             initial_ip,
             cache_stats: RwLock::new(HashMap::new()),
-            last_flush_ts: AtomicU64::new(0),
+            last_flush_ts: AtomicU32::new(0),
         };
         store.init_tables()?;
         Ok(store)
@@ -97,7 +97,7 @@ impl Store {
             conn: ReentrantMutex::new(conn),
             initial_ip,
             cache_stats: RwLock::new(HashMap::new()),
-            last_flush_ts: AtomicU64::new(0),
+            last_flush_ts: AtomicU32::new(0),
         };
         store.init_tables()?;
         Ok(store)
