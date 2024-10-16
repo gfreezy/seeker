@@ -33,6 +33,7 @@ pub struct Config {
     pub remote_config_urls: Vec<String>,
     geo_ip: Option<PathBuf>,
     pub dns_start_ip: Ipv4Addr,
+    pub db_path: Option<PathBuf>,
     #[serde(default)]
     pub dns_servers: Vec<DnsServerAddr>,
     #[serde(default)]
@@ -241,7 +242,11 @@ impl Config {
             }
         }
 
-        Store::setup_global("seeker.sqlite", conf.dns_start_ip);
+        if let Some(db_path) = &conf.db_path {
+            Store::setup_global(db_path, conf.dns_start_ip);
+        } else {
+            Store::setup_global("seeker.sqlite", conf.dns_start_ip);
+        }
 
         conf.load_remote_servers();
         conf.add_proxy_servers_to_direct_rules();
