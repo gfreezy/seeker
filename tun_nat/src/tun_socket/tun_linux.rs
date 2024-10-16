@@ -35,7 +35,7 @@ pub struct ifreq {
     ifr_ifru: IfrIfru,
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct TunSocket {
     fd: RawFd,
     name: String,

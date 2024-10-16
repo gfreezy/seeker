@@ -312,12 +312,14 @@ mod tests {
     #[test]
     fn test_did_geo_ip_matches_name() {
         let path = default_geo_ip_path();
-        if !path.exists() {
-            download_geoip_database(
-                "https://cdn.jsdelivr.net/gh/Hackl0us/GeoIP2-CN@release/Country.mmdb",
-                &path,
-            );
+        // remove the file if it exists
+        if path.exists() {
+            std::fs::remove_file(&path).unwrap();
         }
+        download_geoip_database(
+            "https://cdn.jsdelivr.net/gh/Hackl0us/GeoIP2-CN@release/Country.mmdb",
+            &path,
+        );
         assert!(path.exists(), "geoip database not found: {:?}", path);
         let reader =
             maxminddb::Reader::open_readfile(&path).expect("failed to open geoip database");

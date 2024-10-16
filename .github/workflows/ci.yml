@@ -142,7 +142,7 @@ jobs:
           [ -d ci/docker/${{ matrix.target }} ] && cd ci/docker/${{ matrix.target }} && ./build || true
 
       - name: Build all crates
-        run: ${{ env.CARGO }} build --verbose --all ${{ env.TARGET_FLAGS }}
+        run: ${{ env.CARGO }} build --all ${{ env.TARGET_FLAGS }}
 
       # This is useful for debugging problems when the expected build artifacts
       # (like shell completions and man pages) aren't generated.
@@ -160,11 +160,11 @@ jobs:
 
       - name: Run tests (without cross)
         if: matrix.target == ''
-        run: ${{ env.CARGO }} test --verbose --all
+        run: ${{ env.CARGO }} test --all
 
       - name: Run tests (with cross)
         if: matrix.target != ''
-        run: ${{ env.CARGO }} test --verbose --all ${{ env.TARGET_FLAGS }}
+        run: ${{ env.CARGO }} test --all ${{ env.TARGET_FLAGS }}
 #      - name: Test for existence of build artifacts (Windows)
 #        if: matrix.os == 'windows-2019'
 #        shell: bash

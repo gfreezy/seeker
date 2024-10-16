@@ -3,12 +3,15 @@ mod connections;
 mod dns;
 
 use parking_lot::ReentrantMutex;
+use std::collections::HashMap;
 use std::net::Ipv4Addr;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicU32;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::Result;
 use once_cell::sync::OnceCell;
+use parking_lot::RwLock;
 use rusqlite::Connection;
 
 #[derive(Debug)]
@@ -16,6 +19,8 @@ pub struct Store {
     conn: ReentrantMutex<Connection>,
     initial_ip: Ipv4Addr,
     db_path: PathBuf,
+    cache_stats: RwLock<HashMap<String, u64>>,
+    last_flush_ts: AtomicU32,
 }
 
 static INSTANCE: OnceCell<Store> = OnceCell::new();
@@ -26,6 +31,8 @@ impl Clone for Store {
             conn: ReentrantMutex::new(Connection::open(&self.db_path).expect("open db")),
             initial_ip: self.initial_ip,
             db_path: self.db_path.clone(),
+            cache_stats: RwLock::new(HashMap::new()),
+            last_flush_ts: AtomicU32::new(0),
         }
     }
 }
@@ -71,6 +78,8 @@ impl Store {
             db_path: path,
             conn: ReentrantMutex::new(conn),
             initial_ip,
+            cache_stats: RwLock::new(HashMap::new()),
+            last_flush_ts: AtomicU32::new(0),
         };
         store.init_tables()?;
         Ok(store)
@@ -87,6 +96,8 @@ impl Store {
             db_path: PathBuf::new(),
             conn: ReentrantMutex::new(conn),
             initial_ip,
+            cache_stats: RwLock::new(HashMap::new()),
+            last_flush_ts: AtomicU32::new(0),
         };
         store.init_tables()?;
         Ok(store)
