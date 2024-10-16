@@ -1,5 +1,5 @@
 use std::sync::atomic::Ordering;
-use std::time::SystemTime;
+use std::time::Instant;
 
 use crate::{now, Store};
 use anyhow::Result;
@@ -96,10 +96,10 @@ impl Store {
     }
 
     fn maybe_flush_stats(&self) -> Result<()> {
-        static INITIAL: LazyLock<SystemTime> = LazyLock::new(SystemTime::now);
+        static INITIAL: LazyLock<Instant> = LazyLock::new(Instant::now);
         const FLUSH_INTERVAL: u64 = 5; // Flush every 5 seconds
         let last_flush = self.last_flush_ts.load(Ordering::SeqCst) as u64;
-        let current_time = SystemTime::now().duration_since(*INITIAL)?.as_secs();
+        let current_time = INITIAL.elapsed().as_secs();
         if current_time - last_flush >= FLUSH_INTERVAL {
             self.flush_stats()?;
             self.last_flush_ts
