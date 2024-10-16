@@ -1,0 +1,11 @@
+version: '3'
+services:
+  large_file_server:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+    environment:
+      - FLASK_ENV=development
+    command: python main.py

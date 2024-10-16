@@ -47,7 +47,7 @@ pub struct IfReq {
 const CTLIOCGINFO: u64 = 0x0000_0000_c064_4e03;
 const SIOCGIFMTU: u64 = 0x0000_0000_c020_6933;
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct TunSocket {
     pub fd: RawFd,
 }

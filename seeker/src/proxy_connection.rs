@@ -78,14 +78,15 @@ impl ProxyConnectionEventListener for StoreListener {
 
     fn on_recv_bytes(&self, conn: &dyn ProxyConnection, bytes: usize) {
         let store = Store::global();
-        let ret = store.incr_connection_recv_bytes(conn.id(), bytes as u64, None);
+        let ret = store.incr_connection_recv_bytes(conn.id(), bytes as u64);
         if let Err(e) = ret {
             tracing::error!("Failed to increment recv bytes: {}", e);
         }
     }
+
     fn on_send_bytes(&self, conn: &dyn ProxyConnection, bytes: usize) {
         let store = Store::global();
-        let ret = store.incr_connection_sent_bytes(conn.id(), bytes as u64, None);
+        let ret = store.incr_connection_sent_bytes(conn.id(), bytes as u64);
         if let Err(e) = ret {
             tracing::error!("Failed to increment sent bytes: {}", e);
         }

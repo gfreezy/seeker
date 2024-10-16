@@ -1727,6 +1727,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "object-pool"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ceffa2e6ccecd71e60a0f06b655df2c66acd1c0c892dafefc96fd49d65f71d53"
+dependencies = [
+ "parking_lot",
+]
+
+[[package]]
 name = "once_cell"
 version = "1.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2786,7 +2795,9 @@ name = "tun_nat"
 version = "20240925.0.0"
 dependencies = [
  "bitvec",
+ "crossbeam-channel",
  "libc",
+ "object-pool",
  "parking_lot",
  "smoltcp",
  "sysconfig",
