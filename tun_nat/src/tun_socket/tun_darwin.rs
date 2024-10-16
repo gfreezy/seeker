@@ -148,6 +148,58 @@ impl TunSocket {
         Ok(String::from_utf8_lossy(&tunnel_name[..(tunnel_name_len - 1) as usize]).to_string())
     }
 
+    // pub fn recvmmsg(&self, buf: &[&mut [u8]]) -> Result<Vec<usize>> {
+    //     let mut hdr = [0u8; 4];
+
+    //     let mut msg_iovs = Vec::with_capacity(buf.len());
+    //     for iov in buf.iter() {
+    //         let msg_iov = [
+    //             iovec {
+    //                 iov_base: hdr.as_mut_ptr() as _,
+    //                 iov_len: hdr.len(),
+    //             },
+    //             iovec {
+    //                 iov_base: iov.as_ptr() as _,
+    //                 iov_len: iov.len(),
+    //             },
+    //         ];
+    //         msg_iovs.push(msg_iov);
+    //     }
+
+    //     let mut msgp = Vec::with_capacity(buf.len());
+    //     for msg_iov in msg_iovs.iter_mut() {
+    //         let msghdr = msghdr_x {
+    //             msg_name: null_mut(),
+    //             msg_namelen: 0,
+    //             msg_iov: msg_iov.as_mut_ptr(),
+    //             msg_iovlen: msg_iov.len() as _,
+    //             msg_control: null_mut(),
+    //             msg_controllen: 0,
+    //             msg_flags: 0,
+    //             msg_datalen: 0,
+    //         };
+
+    //         msgp.push(msghdr);
+    //     }
+    //     let n_packets =
+    //         match unsafe { recvmsg_x(self.fd, msgp.as_ptr(), msgp.len() as u32, MSG_DONTWAIT) } {
+    //             -1 => {
+    //                 let error = io::Error::last_os_error();
+    //                 eprintln!("recvmmsg error: {}, {:?}", error, error.kind());
+    //                 return Err(error);
+    //             }
+    //             n => n as usize,
+    //         };
+    //     let mut sizes = Vec::with_capacity(n_packets);
+    //     for msghdr in &msgp[..n_packets] {
+    //         sizes.push(msghdr.msg_datalen - 4);
+    //     }
+
+    //     eprintln!("recvmmsg: {:?}", &sizes);
+
+    //     Ok(sizes)
+    // }
+
     pub fn set_non_blocking(self) -> Result<TunSocket> {
         match unsafe { fcntl(self.fd, F_GETFL) } {
             -1 => Err(Error::last_os_error()),
