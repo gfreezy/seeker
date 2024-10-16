@@ -1,0 +1,38 @@
+verbose: false
+dns_start_ip: 11.0.0.10
+dns_servers:  # dns 服务器列表，如果不设置，会自动从系统获取。最好指定，否则 Wi-Fi 切换时可能会出现问题。
+  - 223.5.5.5:53
+  - 114.114.114.114:53
+  - tcp://114.114.114.114:53
+dns_timeout: 1s
+# redir 模式使用 iptable 的 redirect 功能： iptables -t nat -A PREROUTING -d 11.0.0.0/16 -p tcp -j REDIRECT --to-ports 1300
+# redir 模式下只支持 tcp 流量。默认使用 tun 模式。特殊设备不支持 tun 的情况，可以使用 redir 模式。
+redir_mode: false
+db_path: bench-seeker.sqlite
+tun_bypass_direct: false  # 直连的域名直接返回真实IP，不走tun
+tun_name: utun10
+tun_ip: 11.0.0.1
+tun_cidr: 11.0.0.0/16
+dns_listens:
+  - 0.0.0.0:53 # 如果只是本机使用（不支持 docker）
+gateway_mode: true  # 是否支持局域网共享
+probe_timeout: 200ms
+ping_timeout: 2s
+connect_timeout: 2s
+read_timeout: 300s
+write_timeout: 300s
+max_connect_errors: 2
+geo_ip: path/to/geoip.mmdb # geoip 数据库路径，如果使用相对路径，相对于可执行文件的路径。默认会搜索可执行文件同级目录下的 geoip.mmdb 文件
+ping_urls:
+  - host: baidu.com
+    port: 80
+    path: /
+servers:
+  - name: server1
+    addr: 192.168.247.2:8388 # 替换成 ss 服务器的地址
+    method: aes-256-gcm
+    password: 9MLSpPmNt
+    protocol: Shadowsocks
+rules:
+  - 'DOMAIN-KEYWORD,192.168.207.2,PROXY'
+  - 'MATCH,DIRECT'

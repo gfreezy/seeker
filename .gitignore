@@ -3,7 +3,7 @@
 config.json
 Procfile
 /dns.db
-config.yml
+/config.yml
 /log
 .idea
 .DS_Store
