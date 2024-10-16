@@ -22,7 +22,8 @@ macro_rules! route_packet {
     ($packet_ty: tt, $ipv4_packet: expr, $session_manager: expr, $relay_addr: expr, $relay_port: expr) => {{
         let src_addr = $ipv4_packet.src_addr().into();
         let dest_addr = $ipv4_packet.dst_addr().into();
-        let mut packet = $packet_ty::new_unchecked($ipv4_packet.payload_mut());
+        let mut packet =
+            $packet_ty::new_checked($ipv4_packet.payload_mut()).expect("invalid packet");
         let src_port = packet.src_port();
         let dest_port = packet.dst_port();
 
@@ -109,7 +110,10 @@ pub fn run_nat(
             let sm = session_manager.clone();
             thread::Builder::new()
                 .name(format!("tun-nat-worker-{}", i))
-                .spawn(move || process_packets(rx, processed_tx, sm, relay_addr, relay_port))
+                .spawn(move || {
+                    process_packets(rx, processed_tx, sm, relay_addr, relay_port);
+                    println!("Exit tun-nat-worker-{} thread", i);
+                })
                 .expect("Failed to spawn worker thread")
         })
         .collect();
@@ -151,6 +155,8 @@ pub fn run_nat(
             }
 
             drop(tx_clone); // 关闭发送端，通知所有工作线程退出
+
+            println!("Exit tun-nat-read thread.");
         })
         .expect("Failed to spawn send thread");
 
@@ -165,6 +171,7 @@ pub fn run_nat(
                 }
             }
             // 通道已关闭，退出循环
+            println!("Exit tun-nat-write thread.");
 
             for worker in workers {
                 worker.join().expect("Failed to join worker thread");
@@ -190,7 +197,10 @@ fn process_packets(
     relay_port: u16,
 ) {
     while let Ok(mut buf) = rx.recv() {
-        let mut ipv4_packet = Ipv4Packet::new_unchecked(&mut *buf);
+        let Ok(mut ipv4_packet) = Ipv4Packet::new_checked(&mut *buf) else {
+            tracing::error!("tun_nat: invalid ipv4 packet");
+            continue;
+        };
 
         let relay_addr_bytes = relay_addr.octets();
         let dst_addr = ipv4_packet.dst_addr();
