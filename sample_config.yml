@@ -12,6 +12,7 @@ tun_bypass_direct: false  # 直连的域名直接返回真实IP，不走tun
 tun_name: utun4
 tun_ip: 11.0.0.1
 tun_cidr: 11.0.0.0/16
+db_path: seeker.sqlite # 数据库路径，如果使用相对路径，相对于可执行文件的路径。默认会搜索可执行文件同级目录下的 seeker.sqlite 文件
 dns_listens:
   - 127.0.0.1:53 # 如果只是本机使用（不支持 docker）
   - 172.17.0.1:53 # 如果需要支持 docker 容器

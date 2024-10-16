@@ -97,6 +97,7 @@ redir_mode: false
 tun_name: utun4
 tun_ip: 10.0.0.1
 tun_cidr: 10.0.0.0/16
+db_path: seeker.sqlite # 数据库路径，如果使用相对路径，相对于可执行文件的路径。默认会搜索可执行文件同级目录下的 seeker.sqlite 文件
 dns_listens:
   # 如果本机没有其他程序监听 53 端口，可以使用 0.0.0.0
   - 0.0.0.0:53
