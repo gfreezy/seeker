@@ -1,3 +1,6 @@
+use std::sync::atomic::Ordering;
+use std::time::SystemTime;
+
 use crate::{now, Store};
 use anyhow::Result;
 use rusqlite::params;
@@ -71,44 +74,60 @@ impl Store {
         )?;
         Ok(())
     }
-
-    pub fn incr_connection_recv_bytes(
-        &self,
-        id: u64,
-        bytes: u64,
-        last_update: Option<u64>,
-    ) -> Result<()> {
-        let conn = self.conn.lock();
-        let _ = conn.execute(
-            &format!(
-                r#"
-            UPDATE {} SET recv_bytes = recv_bytes + ?, last_update = ?
-            WHERE id = ?
-            "#,
-                Self::TABLE_CONNECTIONS,
-            ),
-            params![bytes, last_update.unwrap_or_else(now), id],
-        )?;
+    pub fn incr_connection_recv_bytes(&self, id: u64, bytes: u64) -> Result<()> {
+        {
+            let key = format!("recv_bytes:{}", id);
+            let mut cache = self.cache_stats.write();
+            *cache.entry(key).or_insert(0) += bytes;
+        }
+        self.maybe_flush_stats()?;
         Ok(())
     }
 
-    pub fn incr_connection_sent_bytes(
-        &self,
-        id: u64,
-        bytes: u64,
-        last_update: Option<u64>,
-    ) -> Result<()> {
-        let conn = self.conn.lock();
-        let _ = conn.execute(
-            &format!(
-                r#"
-            UPDATE {} SET sent_bytes = sent_bytes + ?, last_update = ?
-            WHERE id = ?
-            "#,
-                Self::TABLE_CONNECTIONS,
-            ),
-            params![bytes, last_update.unwrap_or_else(now), id],
-        )?;
+    pub fn incr_connection_sent_bytes(&self, id: u64, bytes: u64) -> Result<()> {
+        {
+            let key = format!("sent_bytes:{}", id);
+            let mut cache = self.cache_stats.write();
+            *cache.entry(key).or_insert(0) += bytes;
+        }
+        self.maybe_flush_stats()?;
+        Ok(())
+    }
+
+    fn maybe_flush_stats(&self) -> Result<()> {
+        const FLUSH_INTERVAL: u64 = 5; // Flush every 5 seconds
+        let last_flush = self.last_flush_ts.load(Ordering::SeqCst);
+        let current_time = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)?
+            .as_secs();
+        if current_time - last_flush >= FLUSH_INTERVAL {
+            self.flush_stats()?;
+            self.last_flush_ts.store(current_time, Ordering::SeqCst);
+        }
+        Ok(())
+    }
+
+    fn flush_stats(&self) -> Result<()> {
+        {
+            let cache = self.cache_stats.read();
+            let conn = self.conn.lock();
+            for (key, &value) in cache.iter() {
+                let (column, id) = key.split_once(':').unwrap();
+                conn.execute(
+                    &format!(
+                        r#"
+                UPDATE {} SET {} = {} + ?, last_update = ?
+                WHERE id = ?
+                "#,
+                        Self::TABLE_CONNECTIONS,
+                        column,
+                        column
+                    ),
+                    params![value, now(), id],
+                )?;
+            }
+        }
+        self.cache_stats.write().clear();
         Ok(())
     }
 
