@@ -1,4 +1,14 @@
 services:
+  large_file_server:
+    build: http-server
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./http-server:/app
+    environment:
+      - FLASK_ENV=development
+    command: python main.py
+
   shadowsocks:
     image: shadowsocks/shadowsocks-libev
     container_name: shadowsocks-server
@@ -9,5 +19,8 @@ services:
       - PASSWORD=9MLSpPmNt # 设置你的密码
       - METHOD=aes-256-gcm # 加密方式，例：aes-256-gcm
       - DNS_ADDRS=114.114.114.114 # 可选，多个 DNS 地址用逗号分隔
+      - TIMEOUT=10
     volumes:
-      - ./resolv.conf:/etc/resolv.conf:ro
+      - ./shadowsocks/resolv.conf:/etc/resolv.conf:ro
+    depends_on:
+      - large_file_server

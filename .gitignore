@@ -12,8 +12,8 @@ Procfile
 *.log.*
 trace-*.json
 geoip.mmdb
-seeker.sqlite
-seeker.sqlite-journal
-seeker.sqlite-shm
-seeker.sqlite-wal
+*.sqlite
+*.sqlite-journal
+*.sqlite-shm
+*.sqlite-wal
 bench/http-server/large_file.bin

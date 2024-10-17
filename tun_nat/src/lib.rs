@@ -56,9 +56,6 @@ macro_rules! route_packet {
             $ipv4_packet.set_dst_addr(new_dst_addr);
 
             $ipv4_packet.fill_checksum();
-            Some($ipv4_packet)
-        } else {
-            None
         }
     }};
 }
@@ -209,7 +206,7 @@ fn process_packets(
             continue;
         }
 
-        if let Some(_packet) = match ipv4_packet.protocol() {
+        match ipv4_packet.protocol() {
             IpProtocol::Udp => route_packet!(
                 UdpPacket,
                 ipv4_packet,
@@ -227,10 +224,9 @@ fn process_packets(
             _ => {
                 continue;
             }
-        } {
-            if let Err(e) = processed_tx.send(buf) {
-                eprintln!("Failed to send processed packet back: {:?}", e);
-            }
+        }
+        if let Err(e) = processed_tx.send(buf) {
+            eprintln!("Failed to send processed packet back: {:?}", e);
         }
     }
 }

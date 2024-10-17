@@ -29,10 +29,10 @@ ping_urls:
     path: /
 servers:
   - name: server1
-    addr: 192.168.247.2:8388 # 替换成 ss 服务器的地址
+    addr: localhost:8388 # 替换成 ss 服务器的地址
     method: aes-256-gcm
     password: 9MLSpPmNt
     protocol: Shadowsocks
 rules:
-  - 'DOMAIN-KEYWORD,192.168.207.2,PROXY'
+  # - 'DOMAIN-KEYWORD,allsunday.io,PROXY'
   - 'MATCH,DIRECT'
