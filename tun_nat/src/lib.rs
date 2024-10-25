@@ -66,6 +66,8 @@ pub fn run_nat(
     tun_cidr: Ipv4Cidr,
     relay_port: u16,
     addition_cidrs: &[Ipv4Cidr],
+    queue_number: usize,
+    threads_per_queue: usize,
 ) -> Result<(SessionManager, JoinHandle<()>)> {
     const BUF_SIZE: usize = 2000;
     let tun = TunSocket::new(tun_name)?;
@@ -98,17 +100,19 @@ pub fn run_nat(
     let (tx, rx) = crossbeam_channel::unbounded();
     let (processed_tx, processed_rx) = crossbeam_channel::unbounded();
 
-    #[cfg(target_os = "linux")]
-    const QUEUE_NUM: usize = 4;
-    #[cfg(not(target_os = "linux"))]
-    const QUEUE_NUM: usize = 1;
+    let queue_num = if cfg!(target_os = "linux") {
+        queue_number.max(1)
+    } else {
+        1
+    };
 
-    let tun_queues = (0..QUEUE_NUM)
+    let mut tun_queues = (0..(queue_num - 1))
         .map(|_| tun.new_queue())
         .collect::<Result<Vec<_>>>()?;
+    tun_queues.push(tun);
     // 创建处理线程
-    const NUM_WORKERS: usize = QUEUE_NUM * 2;
-    let workers: Vec<_> = (0..NUM_WORKERS)
+    let num_workers = queue_num * threads_per_queue;
+    let workers: Vec<_> = (0..num_workers)
         .map(|i| {
             let rx = rx.clone();
             let processed_tx = processed_tx.clone();
@@ -124,13 +128,13 @@ pub fn run_nat(
         .collect();
 
     // 从 tun 读取数据
-    let mut read_handles = Vec::with_capacity(QUEUE_NUM);
-    let mut write_handles = Vec::with_capacity(QUEUE_NUM);
+    let mut read_handles = Vec::with_capacity(queue_num);
+    let mut write_handles = Vec::with_capacity(queue_num);
 
-    for i in 0..QUEUE_NUM {
+    for i in 0..queue_num {
         let pool_clone = pool.clone();
         let tx_clone = tx.clone();
-        let tun_queue = tun_queues[i].clone();
+        let tun_queue = &tun_queues[i];
         let mut tun_clone = tun_queue.clone();
 
         // Read thread for each queue
