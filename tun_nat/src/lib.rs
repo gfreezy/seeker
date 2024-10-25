@@ -131,10 +131,9 @@ pub fn run_nat(
     let mut read_handles = Vec::with_capacity(queue_num);
     let mut write_handles = Vec::with_capacity(queue_num);
 
-    for i in 0..queue_num {
+    for (i, tun_queue) in tun_queues.iter().enumerate() {
         let pool_clone = pool.clone();
         let tx_clone = tx.clone();
-        let tun_queue = &tun_queues[i];
         let mut tun_clone = tun_queue.clone();
 
         // Read thread for each queue
