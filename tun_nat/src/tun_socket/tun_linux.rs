@@ -4,7 +4,7 @@
 use libc::*;
 use std::io::{Error, ErrorKind, Read, Result, Write};
 use std::os::unix::io::{AsRawFd, RawFd};
-
+use std::sync::Arc;
 const TUNSETIFF: u64 = 0x4004_54ca;
 
 #[repr(C)]
@@ -37,19 +37,21 @@ pub struct ifreq {
 
 #[derive(Default, Debug, Clone)]
 pub struct TunSocket {
-    fd: RawFd,
+    fd: Arc<RawFd>,
     name: String,
 }
 
 impl Drop for TunSocket {
     fn drop(&mut self) {
-        unsafe { close(self.fd) };
+        if Arc::strong_count(&self.fd) == 1 {
+            unsafe { close(*self.fd) };
+        }
     }
 }
 
 impl AsRawFd for TunSocket {
     fn as_raw_fd(&self) -> RawFd {
-        self.fd
+        *self.fd
     }
 }
 
@@ -80,7 +82,15 @@ impl TunSocket {
 
         let name = name.to_string();
 
-        Ok(TunSocket { fd, name })
+        Ok(TunSocket {
+            fd: Arc::new(fd),
+            name,
+        })
+    }
+
+    pub fn new_queue(&self) -> Result<TunSocket> {
+        let tun = TunSocket::new(&self.name)?;
+        Ok(tun)
     }
 
     pub fn name(&self) -> Result<String> {
@@ -88,9 +98,9 @@ impl TunSocket {
     }
 
     pub fn set_non_blocking(self) -> Result<TunSocket> {
-        match unsafe { fcntl(self.fd, F_GETFL) } {
+        match unsafe { fcntl(*self.fd, F_GETFL) } {
             -1 => Err(Error::last_os_error()),
-            flags => match unsafe { fcntl(self.fd, F_SETFL, flags | O_NONBLOCK) } {
+            flags => match unsafe { fcntl(*self.fd, F_SETFL, flags | O_NONBLOCK) } {
                 -1 => Err(Error::last_os_error()),
                 _ => Ok(self),
             },
@@ -125,7 +135,7 @@ impl TunSocket {
 
 impl Read for TunSocket {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
-        match unsafe { read(self.fd, buf.as_mut_ptr() as _, buf.len()) } {
+        match unsafe { read(*self.fd, buf.as_mut_ptr() as _, buf.len()) } {
             -1 => Err(Error::last_os_error()),
             n => Ok(n as usize),
         }
@@ -134,7 +144,7 @@ impl Read for TunSocket {
 
 impl Write for TunSocket {
     fn write(&mut self, buf: &[u8]) -> Result<usize> {
-        match unsafe { write(self.fd, buf.as_ptr() as _, buf.len() as _) } {
+        match unsafe { write(*self.fd, buf.as_ptr() as _, buf.len() as _) } {
             -1 => Ok(0),
             n => Ok(n as usize),
         }
@@ -147,7 +157,7 @@ impl Write for TunSocket {
 
 impl Read for &TunSocket {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
-        match unsafe { read(self.fd, buf.as_mut_ptr() as _, buf.len()) } {
+        match unsafe { read(*self.fd, buf.as_mut_ptr() as _, buf.len()) } {
             -1 => Err(Error::last_os_error()),
             n => Ok(n as usize),
         }
@@ -156,7 +166,7 @@ impl Read for &TunSocket {
 
 impl Write for &TunSocket {
     fn write(&mut self, buf: &[u8]) -> Result<usize> {
-        match unsafe { write(self.fd, buf.as_ptr() as _, buf.len() as _) } {
+        match unsafe { write(*self.fd, buf.as_ptr() as _, buf.len() as _) } {
             -1 => Ok(0),
             n => Ok(n as usize),
         }
