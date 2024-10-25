@@ -55,7 +55,7 @@ impl Socks5UdpSocket {
     }
 
     pub async fn send_to(&self, buf: &[u8], addr: SocketAddr) -> Result<usize> {
-        let mut buffer = vec![0; 1500];
+        let mut buffer = vec![0; 1600];
         let udp_header = UdpAssociateHeader::new(0, Address::SocketAddress(addr));
         let mut size = 0;
         udp_header.write_to_buf(&mut buffer[size..].as_mut());

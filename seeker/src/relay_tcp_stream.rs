@@ -111,7 +111,7 @@ async fn tunnel_tcp_stream<T1: Read + Write + Unpin + Clone, T2: Read + Write + 
     let mut conn1_clone = conn1.clone();
     let mut conn2_clone = conn2.clone();
     let f1 = async {
-        let mut buf = vec![0; 1500];
+        let mut buf = vec![0; 1600];
         loop {
             if !on_update_activity() {
                 break Err(std::io::ErrorKind::ConnectionAborted.into());
@@ -124,7 +124,7 @@ async fn tunnel_tcp_stream<T1: Read + Write + Unpin + Clone, T2: Read + Write + 
         }
     };
     let f2 = async {
-        let mut buf = vec![0; 1500];
+        let mut buf = vec![0; 1600];
         loop {
             if !on_update_activity() {
                 break Err(std::io::ErrorKind::ConnectionAborted.into());

@@ -64,7 +64,7 @@ impl TunSocket {
         let mut ifr = ifreq {
             ifr_name: [0; IFNAMSIZ],
             ifr_ifru: IfrIfru {
-                ifru_flags: (IFF_TUN | IFF_NO_PI) as _,
+                ifru_flags: (IFF_TUN | IFF_NO_PI | IFF_MULTI_QUEUE) as _,
             },
         };
 

@@ -15,7 +15,7 @@ use async_std::net::UdpSocket;
 use config::Address;
 use crypto::CipherType;
 
-pub const MAXIMUM_UDP_PAYLOAD_SIZE: usize = 1500;
+pub const MAXIMUM_UDP_PAYLOAD_SIZE: usize = 1600;
 
 /// UDP client for communicating with ShadowSocks' server
 pub struct SSUdpSocket {
