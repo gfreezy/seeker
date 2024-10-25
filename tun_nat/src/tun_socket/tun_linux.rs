@@ -90,7 +90,6 @@ impl TunSocket {
 
     pub fn new_queue(&self) -> Result<TunSocket> {
         let tun = TunSocket::new(&self.name)?;
-        println!("new_queue: {}", tun.fd);
         Ok(tun)
     }
 
