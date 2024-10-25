@@ -83,6 +83,11 @@ impl TunSocket {
         Ok(TunSocket { fd, name })
     }
 
+    pub fn new_queue(&self) -> Result<TunSocket> {
+        let tun = TunSocket::new(&self.name)?;
+        Ok(tun)
+    }
+
     pub fn name(&self) -> Result<String> {
         Ok(self.name.clone())
     }

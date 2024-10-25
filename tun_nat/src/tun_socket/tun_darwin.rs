@@ -128,6 +128,13 @@ impl TunSocket {
         Ok(TunSocket { fd })
     }
 
+    pub fn new_queue(&self) -> Result<TunSocket> {
+        Err(io::Error::new(
+            io::ErrorKind::Other,
+            "Not supported on Darwin",
+        ))
+    }
+
     pub fn name(&self) -> Result<String> {
         let mut tunnel_name = [0u8; 256];
         let mut tunnel_name_len: socklen_t = tunnel_name.len() as u32;
