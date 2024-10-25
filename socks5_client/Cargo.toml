@@ -1,6 +1,6 @@
 [package]
 name = "socks5_client"
-version = "20241016.0.0"
+version = "20241025.0.0"
 authors = ["Alex.F <gfreezy@gmail.com>"]
 edition = "2021"
 
