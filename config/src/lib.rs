@@ -45,6 +45,12 @@ pub struct Config {
     pub verbose: bool,
     #[serde(with = "ipv4_cidr")]
     pub tun_cidr: Ipv4Cidr,
+    // linux only, for macos, it's always 1
+    #[serde(default = "default_queue_number")]
+    pub queue_number: usize,
+    // packets processed threads for each queue
+    #[serde(default = "default_threads_per_queue")]
+    pub threads_per_queue: usize,
     #[serde(with = "rules")]
     pub rules: ProxyRules,
     pub dns_listen: Option<String>,
@@ -135,6 +141,12 @@ fn default_connect_timeout() -> Duration {
 }
 fn default_ping_timeout() -> Duration {
     Duration::from_secs(3)
+}
+fn default_queue_number() -> usize {
+    2
+}
+fn default_threads_per_queue() -> usize {
+    3
 }
 
 mod ipv4_cidr {

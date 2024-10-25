@@ -94,6 +94,8 @@ tun_bypass_direct: true  # 直连的域名直接返回真实IP，不走tun
 # redir 模式使用 iptable 的 redirect 功能： iptables -t nat -A PREROUTING -d 11.0.0.0/16 -p tcp -j REDIRECT --to-ports 1300
 # redir 模式下只支持 tcp 流量。默认使用 tun 模式。特殊设备不支持 tun 的情况，可以使用 redir 模式。
 redir_mode: false
+queue_number: 2  # 队列数量，linux 有效。至少为 1，queue_number 越大，性能越好。一般 2 就可以跑满 1Gbps 带宽
+threads_per_queue: 3  # 每个队列的线程数量，主要工作是处理 tun 数据转发时对数据包进行 checksum 计算。一般 2-3 就可以处理一个 queue 的转发。
 tun_name: utun4
 tun_ip: 10.0.0.1
 tun_cidr: 10.0.0.0/16

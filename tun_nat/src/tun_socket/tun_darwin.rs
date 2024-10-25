@@ -7,7 +7,7 @@ use std::mem::size_of;
 use std::mem::size_of_val;
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::ptr::null_mut;
-
+use std::sync::Arc;
 const CTRL_NAME: &[u8] = b"com.apple.net.utun_control";
 
 #[repr(C)]
@@ -49,18 +49,20 @@ const SIOCGIFMTU: u64 = 0x0000_0000_c020_6933;
 
 #[derive(Default, Debug, Clone)]
 pub struct TunSocket {
-    pub fd: RawFd,
+    pub fd: Arc<RawFd>,
 }
 
 impl Drop for TunSocket {
     fn drop(&mut self) {
-        unsafe { close(self.fd) };
+        if Arc::strong_count(&self.fd) == 1 {
+            unsafe { close(*self.fd) };
+        }
     }
 }
 
 impl AsRawFd for TunSocket {
     fn as_raw_fd(&self) -> RawFd {
-        self.fd
+        *self.fd
     }
 }
 
@@ -125,7 +127,7 @@ impl TunSocket {
             return Err(Error::last_os_error());
         }
 
-        Ok(TunSocket { fd })
+        Ok(TunSocket { fd: Arc::new(fd) })
     }
 
     pub fn new_queue(&self) -> Result<TunSocket> {
@@ -140,7 +142,7 @@ impl TunSocket {
         let mut tunnel_name_len: socklen_t = tunnel_name.len() as u32;
         if unsafe {
             getsockopt(
-                self.fd,
+                *self.fd,
                 SYSPROTO_CONTROL,
                 UTUN_OPT_IFNAME,
                 tunnel_name.as_mut_ptr() as _,
@@ -208,9 +210,9 @@ impl TunSocket {
     // }
 
     pub fn set_non_blocking(self) -> Result<TunSocket> {
-        match unsafe { fcntl(self.fd, F_GETFL) } {
+        match unsafe { fcntl(*self.fd, F_GETFL) } {
             -1 => Err(Error::last_os_error()),
-            flags => match unsafe { fcntl(self.fd, F_SETFL, flags | O_NONBLOCK) } {
+            flags => match unsafe { fcntl(*self.fd, F_SETFL, flags | O_NONBLOCK) } {
                 -1 => Err(Error::last_os_error()),
                 _ => Ok(self),
             },
@@ -265,7 +267,7 @@ impl TunSocket {
             msg_flags: 0,
         };
 
-        match unsafe { sendmsg(self.fd, &msg_hdr, 0) } {
+        match unsafe { sendmsg(*self.fd, &msg_hdr, 0) } {
             -1 => Err(io::Error::last_os_error()),
             n => Ok((n - 4) as usize),
         }
@@ -326,7 +328,7 @@ impl Read for &TunSocket {
             }
         }
 
-        read(self.fd, buf)
+        read(*self.fd, buf)
     }
 }
 
