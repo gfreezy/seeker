@@ -54,6 +54,8 @@ impl ProxyClient {
                 config.tun_cidr,
                 REDIR_LISTEN_PORT,
                 &additional_cidrs,
+                config.queue_number,
+                config.threads_per_queue,
             )
             .expect("run nat");
             let nat_join_handle = task::spawn_blocking(move || match blocking_join_handle.join() {

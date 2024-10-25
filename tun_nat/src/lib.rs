@@ -66,9 +66,11 @@ pub fn run_nat(
     tun_cidr: Ipv4Cidr,
     relay_port: u16,
     addition_cidrs: &[Ipv4Cidr],
+    queue_number: usize,
+    threads_per_queue: usize,
 ) -> Result<(SessionManager, JoinHandle<()>)> {
     const BUF_SIZE: usize = 2000;
-    let mut tun = TunSocket::new(tun_name)?;
+    let tun = TunSocket::new(tun_name)?;
     let tun_name = tun.name()?;
     if cfg!(target_os = "macos") {
         setup_ip(
@@ -98,8 +100,18 @@ pub fn run_nat(
     let (tx, rx) = crossbeam_channel::unbounded();
     let (processed_tx, processed_rx) = crossbeam_channel::unbounded();
 
+    let queue_num = if cfg!(target_os = "linux") {
+        queue_number.max(1)
+    } else {
+        1
+    };
+
+    let mut tun_queues = (0..(queue_num - 1))
+        .map(|_| tun.new_queue())
+        .collect::<Result<Vec<_>>>()?;
+    tun_queues.push(tun);
     // 创建处理线程
-    let num_workers = 4;
+    let num_workers = queue_num * threads_per_queue;
     let workers: Vec<_> = (0..num_workers)
         .map(|i| {
             let rx = rx.clone();
@@ -115,68 +127,94 @@ pub fn run_nat(
         })
         .collect();
 
-    // 创建主线程
-    let pool_clone = pool.clone();
-    let tx_clone = tx.clone();
-    let mut tun_clone = tun.clone();
-
     // 从 tun 读取数据
-    let send_handle = thread::Builder::new()
-        .name("tun-nat-read".to_string())
-        .spawn(move || {
-            loop {
-                let mut buf = pool_clone.pull_owned(|| vec![0; BUF_SIZE]);
-                // 从 pool 取出的 buf 不确定是多少，需要重新设置长度。因为 pool 里面的 buf 固定是 2000，所以这里 unsafe 设置长度是 safe 的。
-                unsafe {
-                    buf.set_len(BUF_SIZE);
-                }
-                let size = match tun.read(&mut buf) {
-                    Ok(0) => {
-                        eprintln!("tun read return 0, exit now");
-                        break;
+    let mut read_handles = Vec::with_capacity(queue_num);
+    let mut write_handles = Vec::with_capacity(queue_num);
+
+    for (i, tun_queue) in tun_queues.iter().enumerate() {
+        let pool_clone = pool.clone();
+        let tx_clone = tx.clone();
+        let mut tun_clone = tun_queue.clone();
+
+        // Read thread for each queue
+        let read_handle = thread::Builder::new()
+            .name(format!("tun-nat-read-{}", i))
+            .spawn(move || {
+                loop {
+                    let mut buf = pool_clone.pull_owned(|| vec![0; BUF_SIZE]);
+                    // 从 pool 取出的 buf 不确定是多少，需要重新设置长度。因为 pool 里面的 buf 固定是 2000，所以这里 unsafe 设置长度是 safe 的。
+                    unsafe {
+                        buf.set_len(BUF_SIZE);
                     }
-                    Ok(size) => size,
-                    Err(e) => {
-                        eprintln!("tun read error: {:?}", e);
-                        continue;
+                    let size = match tun_clone.read(&mut buf) {
+                        Ok(0) => {
+                            eprintln!("tun read return 0, exit now");
+                            break;
+                        }
+                        Ok(size) => size,
+                        Err(e) => {
+                            eprintln!("tun read error: {:?}", e);
+                            continue;
+                        }
+                    };
+
+                    // 从 tun 读取到的 buf 长度是确定的，所以这里 unsafe 设置长度是 safe 的。
+                    unsafe {
+                        buf.set_len(size);
                     }
-                };
-
-                // 从 tun 读取到的 buf 长度是确定的，所以这里 unsafe 设置长度是 safe 的。
-                unsafe {
-                    buf.set_len(size);
+                    if let Err(e) = tx_clone.send(buf) {
+                        eprintln!("Failed to send packet to worker: {:?}", e);
+                    }
                 }
-                if let Err(e) = tx_clone.send(buf) {
-                    eprintln!("Failed to send packet to worker: {:?}", e);
+
+                drop(tx_clone); // 关闭发送端，通知所有工作线程退出
+
+                println!("Exit tun-nat-read-{} thread.", i);
+            })
+            .expect("Failed to spawn read thread");
+
+        read_handles.push(read_handle);
+
+        // Write thread for each queue
+        let processed_rx_clone = processed_rx.clone();
+        let mut tun_clone = tun_queue.clone();
+
+        let write_handle = thread::Builder::new()
+            .name(format!("tun-nat-write-{}", i))
+            .spawn(move || {
+                while let Ok(processed_buf) = processed_rx_clone.recv() {
+                    let ret = tun_clone.write(&processed_buf);
+                    if let Err(err) = ret {
+                        eprintln!("tun_nat: write packet error: {:?}", err);
+                    }
                 }
-            }
+                // 通道已关闭，退出循环
+                println!("Exit tun-nat-write-{} thread.", i);
+            })
+            .expect("Failed to spawn write thread");
 
-            drop(tx_clone); // 关闭发送端，通知所有工作线程退出
+        write_handles.push(write_handle);
+    }
 
-            println!("Exit tun-nat-read thread.");
-        })
-        .expect("Failed to spawn send thread");
-
-    // 写入 tun 数据线程
+    // Main thread to join all worker, read, and write threads
     let handle = thread::Builder::new()
-        .name("tun-nat-write".to_string())
+        .name("tun-nat-main".to_string())
         .spawn(move || {
-            while let Ok(processed_buf) = processed_rx.recv() {
-                let ret = tun_clone.write(&processed_buf);
-                if let Err(err) = ret {
-                    eprintln!("tun_nat: write packet error: {:?}", err);
-                }
-            }
-            // 通道已关闭，退出循环
-            println!("Exit tun-nat-write thread.");
-
             for worker in workers {
                 worker.join().expect("Failed to join worker thread");
             }
 
-            send_handle.join().expect("Failed to join send thread");
+            for read_handle in read_handles {
+                read_handle.join().expect("Failed to join read thread");
+            }
+
+            for write_handle in write_handles {
+                write_handle.join().expect("Failed to join write thread");
+            }
+
+            println!("All tun-nat threads have exited.");
         })
-        .expect("Failed to spawn receive thread");
+        .expect("Failed to spawn main thread");
 
     Ok((
         SessionManager {
