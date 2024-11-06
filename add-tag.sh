@@ -18,16 +18,18 @@ minor=0
 patch=0
 
 # 查找是否存在类似的版本号
-existing_tags=$(git tag | grep "^${major}\.${minor}\.[0-9]\+")
+existing_tags=$(git tag | grep "${major}\.${minor}\.[0-9]\+")
+
+echo "Existing tags: $existing_tags"
 
 if [ -z "$existing_tags" ]; then
     # 如果没有类似的版本号，使用 0 作为 patch
-    new_version="${major}.${minor}.${patch}"
+    new_version="v${major}.${minor}.${patch}"
 else
     # 如果有类似的版本号，找到 patch 最大的版本号
     max_patch=$(echo "$existing_tags" | awk -F'.' '{print $3}' | sort -nr | head -n 1)
     new_patch=$((max_patch + 1))
-    new_version="${major}.${minor}.${new_patch}"
+    new_version="v${major}.${minor}.${new_patch}"
 fi
 
 echo "New version: $new_version"
