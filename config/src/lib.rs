@@ -225,7 +225,8 @@ fn parse_cidr(s: &str) -> Result<Ipv4Cidr, &str> {
     let len = segments[1];
     let addr: Ipv4Addr = addr.parse().unwrap();
     let prefix = len.parse().unwrap();
-    Ok(Ipv4Cidr::new(Ipv4Address::from(addr), prefix))
+    let cidr = Ipv4Cidr::new(Ipv4Address::from(addr), prefix);
+    Ok(cidr.network())
 }
 
 impl Config {
