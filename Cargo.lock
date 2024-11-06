@@ -532,7 +532,7 @@ dependencies = [
 
 [[package]]
 name = "config"
-version = "20241106.0.0"
+version = "20241106.0.1"
 dependencies = [
  "base64 0.20.0",
  "bytes",
@@ -602,7 +602,7 @@ checksum = "22ec99545bb0ed0ea7bb9b8e1e9122ea386ff8a48c0922e43f36d45ab09e0e80"
 
 [[package]]
 name = "crypto"
-version = "20241106.0.0"
+version = "20241106.0.1"
 dependencies = [
  "byte_string",
  "byteorder",
@@ -721,7 +721,7 @@ dependencies = [
 
 [[package]]
 name = "dnsserver"
-version = "20241106.0.0"
+version = "20241106.0.1"
 dependencies = [
  "async-std",
  "async-std-resolver",
@@ -1105,7 +1105,7 @@ checksum = "95505c38b4572b2d910cecb0281560f54b440a19336cbbcb27bf6ce6adc6f5a8"
 
 [[package]]
 name = "hermesdns"
-version = "20241106.0.0"
+version = "20241106.0.1"
 dependencies = [
  "async-std",
  "async-trait",
@@ -1216,7 +1216,7 @@ dependencies = [
 
 [[package]]
 name = "http_proxy_client"
-version = "20241106.0.0"
+version = "20241106.0.1"
 dependencies = [
  "async-std",
  "async-tls",
@@ -2293,7 +2293,7 @@ dependencies = [
 
 [[package]]
 name = "seeker"
-version = "20241106.0.0"
+version = "20241106.0.1"
 dependencies = [
  "anyhow",
  "async-std",
@@ -2490,7 +2490,7 @@ dependencies = [
 
 [[package]]
 name = "socks5_client"
-version = "20241106.0.0"
+version = "20241106.0.1"
 dependencies = [
  "async-std",
  "bytes",
@@ -2510,7 +2510,7 @@ checksum = "6980e8d7511241f8acf4aebddbb1ff938df5eebe98691418c4468d0b72a96a67"
 
 [[package]]
 name = "ssclient"
-version = "20241106.0.0"
+version = "20241106.0.1"
 dependencies = [
  "async-std",
  "byteorder",
@@ -2525,7 +2525,7 @@ dependencies = [
 
 [[package]]
 name = "store"
-version = "20241106.0.0"
+version = "20241106.0.1"
 dependencies = [
  "anyhow",
  "cfg-if",
@@ -2571,7 +2571,7 @@ dependencies = [
 
 [[package]]
 name = "sysconfig"
-version = "20241106.0.0"
+version = "20241106.0.1"
 dependencies = [
  "libc",
  "libproc",
@@ -2598,7 +2598,7 @@ dependencies = [
 
 [[package]]
 name = "tcp_connection"
-version = "20241106.0.0"
+version = "20241106.0.1"
 dependencies = [
  "async-std",
  "base64 0.20.0",
@@ -2792,7 +2792,7 @@ dependencies = [
 
 [[package]]
 name = "tun_nat"
-version = "20241106.0.0"
+version = "20241106.0.1"
 dependencies = [
  "bitvec",
  "crossbeam-channel",
