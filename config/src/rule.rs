@@ -317,7 +317,7 @@ mod tests {
             std::fs::remove_file(&path).unwrap();
         }
         download_geoip_database(
-            "https://cdn.jsdelivr.net/gh/Hackl0us/GeoIP2-CN@release/Country.mmdb",
+            "https://pub-a2ec2e74bf2c47428e190f227ec084ef.r2.dev/Country.mmdb",
             &path,
         );
         assert!(path.exists(), "geoip database not found: {:?}", path);
@@ -336,7 +336,7 @@ mod tests {
         let proxy_rule = ProxyRules::new_sync(
             vec![Rule::GeoIp("CN".to_string(), Action::Direct)],
             Some(
-                Path::new("https://cdn.jsdelivr.net/gh/Hackl0us/GeoIP2-CN@release/Country.mmdb")
+                Path::new("https://pub-a2ec2e74bf2c47428e190f227ec084ef.r2.dev/Country.mmdb")
                     .to_path_buf(),
             ),
         );
