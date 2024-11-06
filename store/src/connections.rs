@@ -75,6 +75,7 @@ impl Store {
         )?;
         Ok(())
     }
+
     pub fn incr_connection_recv_bytes(&self, id: u64, bytes: u64) -> Result<()> {
         {
             let key = format!("recv_bytes:{}", id);
