@@ -20,18 +20,48 @@ pub enum Rule {
     Match(Action),
 }
 
-#[derive(Eq, PartialEq, Copy, Clone, Debug, Hash, PartialOrd, Ord, Default)]
+impl Rule {
+    pub fn target_proxy_group_name(&self) -> Option<&str> {
+        match self {
+            Rule::Match(action) => action.target_proxy_group_name(),
+            Rule::Domain(_, action) => action.target_proxy_group_name(),
+            Rule::DomainSuffix(_, action) => action.target_proxy_group_name(),
+            Rule::DomainKeyword(_, action) => action.target_proxy_group_name(),
+            Rule::IpCidr(_, action) => action.target_proxy_group_name(),
+            Rule::GeoIp(_, action) => action.target_proxy_group_name(),
+        }
+    }
+
+    /// Check if the rule has a target proxy group and it's empty.
+    pub fn has_empty_target_proxy_group(&self) -> bool {
+        self.target_proxy_group_name()
+            .map_or(false, |name| name.is_empty())
+    }
+}
+
+#[derive(Eq, PartialEq, Clone, Debug, Hash, PartialOrd, Ord, Default)]
 pub enum Action {
     #[default]
     Reject,
     Direct,
-    Proxy,
-    Probe,
+    Proxy(String),
+    Probe(String),
+}
+
+impl Action {
+    /// Get the target proxy group name if the action is proxy or probe.
+    pub fn target_proxy_group_name(&self) -> Option<&str> {
+        match self {
+            Action::Proxy(name) => Some(name),
+            Action::Probe(name) => Some(name),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct ProxyRules {
-    rules: Arc<RwLock<Vec<Rule>>>,
+    pub(crate) rules: Arc<RwLock<Vec<Rule>>>,
     geo_ip_path: Option<PathBuf>,
     default_download_path: PathBuf,
     geo_ip_db: Arc<Mutex<Option<maxminddb::Reader<Vec<u8>>>>>,
@@ -168,12 +198,12 @@ impl ProxyRules {
         });
         tracing::info!("matched rule: {:?}, {:?}, {:?}", matched_rule, domain, ip);
         matched_rule.map(|rule| match rule {
-            Rule::Match(action) => *action,
-            Rule::Domain(_, action) => *action,
-            Rule::DomainSuffix(_, action) => *action,
-            Rule::DomainKeyword(_, action) => *action,
-            Rule::IpCidr(_, action) => *action,
-            Rule::GeoIp(_, action) => *action,
+            Rule::Match(action) => action.clone(),
+            Rule::Domain(_, action) => action.clone(),
+            Rule::DomainSuffix(_, action) => action.clone(),
+            Rule::DomainKeyword(_, action) => action.clone(),
+            Rule::IpCidr(_, action) => action.clone(),
+            Rule::GeoIp(_, action) => action.clone(),
         })
     }
 
@@ -193,7 +223,7 @@ impl ProxyRules {
         rules
             .iter()
             .filter_map(|rule| match rule {
-                Rule::IpCidr(cidr, Action::Probe | Action::Proxy) => Some(*cidr),
+                Rule::IpCidr(cidr, Action::Probe(_) | Action::Proxy(_)) => Some(*cidr),
                 _ => None,
             })
             .collect()
@@ -203,18 +233,32 @@ impl ProxyRules {
         self.geo_ip_path = path;
         self.init_geo_ip_db();
     }
+
+    /// Check if the rules contain proxy or probe rules with empty target proxy group.
+    pub fn has_empty_proxy_or_probe_rules(&self) -> bool {
+        let rules = self.rules.read();
+        rules.iter().any(|rule| rule.has_empty_target_proxy_group())
+    }
 }
 
 impl FromStr for Action {
     type Err = ();
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(match s {
-            "REJECT" => Action::Reject,
-            "DIRECT" => Action::Direct,
-            "PROXY" => Action::Proxy,
-            "PROBE" => Action::Probe,
-            _ => panic!("Invalid action: {}", s),
+        Ok(if s == "REJECT" {
+            Action::Reject
+        } else if s == "DIRECT" {
+            Action::Direct
+        } else if s == "PROXY" {
+            Action::Proxy(String::new())
+        } else if s == "PROBE" {
+            Action::Probe(String::new())
+        } else if let Some(proxy) = s.strip_prefix("PROXY(").and_then(|s| s.strip_suffix(")")) {
+            Action::Proxy(proxy.to_string())
+        } else if let Some(probe) = s.strip_prefix("PROBE(").and_then(|s| s.strip_suffix(")")) {
+            Action::Probe(probe.to_string())
+        } else {
+            panic!("Invalid action: {}", s)
         })
     }
 }
@@ -342,5 +386,25 @@ mod tests {
         );
         let action = proxy_rule.action_for_domain(Some("x.com"), "110.242.68.66".parse().ok());
         assert_eq!(action, Some(Action::Direct));
+    }
+
+    #[test]
+    fn test_action_from_str() {
+        assert_eq!(
+            Action::from_str("PROXY").unwrap(),
+            Action::Proxy(String::new())
+        );
+        assert_eq!(
+            Action::from_str("PROBE").unwrap(),
+            Action::Probe(String::new())
+        );
+        assert_eq!(
+            Action::from_str("PROXY(http://example.com)").unwrap(),
+            Action::Proxy("http://example.com".to_string())
+        );
+        assert_eq!(
+            Action::from_str("PROBE(https://example.com)").unwrap(),
+            Action::Probe("https://example.com".to_string())
+        );
     }
 }

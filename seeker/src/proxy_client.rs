@@ -72,15 +72,7 @@ impl ProxyClient {
         let (resolver, dns_server_join_handle) =
             run_dns_resolver(&config, dns_client.resolver()).await;
 
-        let ping_urls = config.ping_urls.clone();
-        let chooser = ServerChooser::new(
-            config.servers.clone(),
-            dns_client.clone(),
-            ping_urls,
-            config.ping_timeout,
-            show_stats,
-        )
-        .await;
+        let chooser = ServerChooser::new(config.clone(), dns_client.clone(), show_stats).await;
         let chooser_clone = chooser.clone();
         let chooser_join_handle = spawn(async move {
             chooser_clone
@@ -333,11 +325,14 @@ pub(crate) async fn get_action_for_addr(
             .unwrap_or_else(|| config.rules.default_action())
     };
 
-    if action == Action::Probe {
-        if connectivity.probe_connectivity(real_dest, addr).await {
+    if let Action::Probe(name) = action {
+        if connectivity
+            .probe_connectivity(real_dest, addr, name.clone())
+            .await
+        {
             action = Action::Direct;
         } else {
-            action = Action::Proxy;
+            action = Action::Proxy(name.clone());
         }
     }
 

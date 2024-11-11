@@ -4,6 +4,7 @@ mod macros;
 mod config_encryptor;
 mod config_watcher;
 mod dns_client;
+mod group_servers_chooser;
 mod logger;
 mod probe_connectivity;
 mod proxy_client;
