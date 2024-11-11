@@ -147,6 +147,8 @@ rules:
   - 'DOMAIN-SUFFIX,snssdk.com,DIRECT'
   # 域名后缀匹配，使用代理组 proxy-group-2
   - 'DOMAIN-SUFFIX,toutiao.com,PROBE(proxy-group-2)'
+  # ip 段匹配，使用代理组 proxy-group-1
+  - 'IP-CIDR,183.23.0.0/16,PROXY(proxy-group-1)'
   # geoip 匹配，直接访问
   - 'GEOIP,CN,DIRECT'
   # 默认匹配，使用代理组 proxy-group-2
