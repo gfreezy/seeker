@@ -74,7 +74,7 @@ sudo seeker --config path/to/config.yml --encrypt --key encrypt-key
 * `seeker` 支持 socks5 代理、http 代理和 shadowsocks 代理。优先级为 socks5 代理 > shadowsocks 代理 > http 代理。
 * `redir` 模式下使用 iptables 的 redirect 功能，只支持 tcp 流量。
 
-https://github.com/gfreezy/seeker/blob/6d0d274f17f4bc478729ee2bf3461774248c9026/README.markdown
+[GitHub README.adoc](https://github.com/gfreezy/seeker/blob/232d9062367ad6ffa09b9ddbb58266c12ac40b2a/README.adoc)
 
 ### 支持的 method
 
