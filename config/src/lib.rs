@@ -343,7 +343,7 @@ impl Config {
             let groups = Arc::make_mut(&mut self.proxy_groups);
             groups.push(ProxyGroup {
                 name: "".to_string(),
-                ping_timeout: default_ping_timeout(),
+                ping_timeout: None,
                 proxies: self.servers.iter().map(|s| s.name().to_string()).collect(),
                 ping_urls: self.ping_urls.clone(),
             });
