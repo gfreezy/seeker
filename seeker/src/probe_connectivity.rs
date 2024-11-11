@@ -36,9 +36,11 @@ impl ProbeConnectivity {
         sock_addr: SocketAddr,
         addr: &Address,
         timeout: Duration,
+        proxy_group_name: String,
     ) -> bool {
         let proxy_connectivity_fut = async {
-            let Ok(tcp_stream) = server_chooser.proxy_connect(addr).await else {
+            let proxy_group_name = proxy_group_name.clone();
+            let Ok(tcp_stream) = server_chooser.proxy_connect(addr, &proxy_group_name).await else {
                 // If the proxy connection fails, we return the direct connection.
                 return Action::Direct;
             };
@@ -46,7 +48,7 @@ impl ProbeConnectivity {
             if addr.port() == 443 {
                 if Self::probe_https_connectivity(addr, tcp_stream).await {
                     // If the proxy connection succeeds, we return the proxy connection.
-                    return Action::Proxy;
+                    return Action::Proxy(proxy_group_name);
                 } else {
                     // If the proxy connection fails, we return the direct connection.
                     return Action::Direct;
@@ -54,7 +56,7 @@ impl ProbeConnectivity {
             } else if addr.port() == 80 {
                 if Self::probe_http_connectivity(addr, tcp_stream).await {
                     // If the proxy connection succeeds, we return the proxy connection.
-                    return Action::Proxy;
+                    return Action::Proxy(proxy_group_name);
                 } else {
                     // If the proxy connection fails, we return the direct connection.
                     return Action::Direct;
@@ -62,13 +64,14 @@ impl ProbeConnectivity {
             }
 
             // If the port is not 443 or 80, we return the proxy connection.
-            Action::Proxy
+            Action::Proxy(proxy_group_name)
         };
 
         let direct_connectivity_fut = async {
+            let proxy_group_name = proxy_group_name.clone();
             let Ok(tcp_stream) = TcpStream::connect(sock_addr).await else {
                 // If the direct connection fails, we return the proxy connection.
-                return Action::Proxy;
+                return Action::Proxy(proxy_group_name);
             };
 
             if addr.port() == 443 {
@@ -77,7 +80,7 @@ impl ProbeConnectivity {
                     return Action::Direct;
                 } else {
                     // If the direct connection fails, we return the proxy connection.
-                    return Action::Proxy;
+                    return Action::Proxy(proxy_group_name);
                 }
             } else if addr.port() == 80 {
                 if Self::probe_http_connectivity(addr, tcp_stream).await {
@@ -85,7 +88,7 @@ impl ProbeConnectivity {
                     return Action::Direct;
                 } else {
                     // If the direct connection fails, we return the proxy connection.
-                    return Action::Proxy;
+                    return Action::Proxy(proxy_group_name);
                 }
             }
 
@@ -97,7 +100,7 @@ impl ProbeConnectivity {
             .race(direct_connectivity_fut)
             .timeout(timeout)
             .await
-            .unwrap_or(Action::Proxy);
+            .unwrap_or(Action::Proxy(proxy_group_name));
         result == Action::Direct
     }
 
@@ -150,7 +153,12 @@ impl ProbeConnectivity {
         tcp_stream.read(&mut buf).await.is_ok()
     }
 
-    pub(crate) async fn probe_connectivity(&self, sock_addr: SocketAddr, addr: &Address) -> bool {
+    pub(crate) async fn probe_connectivity(
+        &self,
+        sock_addr: SocketAddr,
+        addr: &Address,
+        proxy_group_name: String,
+    ) -> bool {
         let prev_connectivity = self.map.lock().get(addr).copied();
         let server_chooser = self.server_chooser.clone();
         if let Some(result) = prev_connectivity {
@@ -159,14 +167,26 @@ impl ProbeConnectivity {
             let addr = addr.clone();
 
             spawn(async move {
-                let is_direct =
-                    Self::force_probe_connectivity(server_chooser, sock_addr, &addr, timeout).await;
+                let is_direct = Self::force_probe_connectivity(
+                    server_chooser,
+                    sock_addr,
+                    &addr,
+                    timeout,
+                    proxy_group_name,
+                )
+                .await;
                 map.lock().insert(addr, is_direct);
             });
             result
         } else {
-            let is_direct =
-                Self::force_probe_connectivity(server_chooser, sock_addr, addr, self.timeout).await;
+            let is_direct = Self::force_probe_connectivity(
+                server_chooser,
+                sock_addr,
+                addr,
+                self.timeout,
+                proxy_group_name,
+            )
+            .await;
             self.map.lock().insert(addr.clone(), is_direct);
             is_direct
         }

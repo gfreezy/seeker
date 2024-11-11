@@ -146,7 +146,9 @@ impl ProxyConnection for ProxyUdpSocket {
     fn action(&self) -> config::rule::Action {
         match self.inner {
             ProxyUdpSocketInner::Direct(_) => Action::Direct,
-            ProxyUdpSocketInner::Socks5(_) | ProxyUdpSocketInner::Shadowsocks(_) => Action::Proxy,
+            ProxyUdpSocketInner::Socks5(_) | ProxyUdpSocketInner::Shadowsocks(_) => {
+                Action::Proxy("".to_string())
+            }
         }
     }
 

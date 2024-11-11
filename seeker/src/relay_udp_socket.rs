@@ -112,7 +112,7 @@ async fn choose_proxy_udp_socket(
     retry_timeout!(
         config.connect_timeout,
         config.max_connect_errors,
-        server_chooser.candidate_udp_socket(action)
+        server_chooser.candidate_udp_socket(action.clone())
     )
     .await
 }
