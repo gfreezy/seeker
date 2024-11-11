@@ -167,7 +167,7 @@ impl ProxyConnection for ProxyTcpStream {
             ProxyTcpStreamInner::Socks5(_)
             | ProxyTcpStreamInner::HttpProxy(_)
             | ProxyTcpStreamInner::HttpsProxy(_)
-            | ProxyTcpStreamInner::Shadowsocks(_) => Action::Proxy,
+            | ProxyTcpStreamInner::Shadowsocks(_) => Action::Proxy("".to_string()),
         }
     }
 

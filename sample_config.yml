@@ -1,31 +1,56 @@
 verbose: false
 dns_start_ip: 11.0.0.10
-dns_servers:  # dns 服务器列表，如果不设置，会自动从系统获取。最好指定，否则 Wi-Fi 切换时可能会出现问题。
+# 可以指定多个 DNS 服务器，如果不指定则使用系统默认的 DNS 服务器。一般最好指定，否则 Wi-Fi 切换的时候可能会出现 DNS 服务器无法访问的问题。
+# 一般 DHCP 获取 IP 的时候会自动获取 DNS 服务器，切换 Wi-Fi 的时候，DNS 服务器也会发生变化。
+dns_servers:
   - 223.5.5.5:53
   - 114.114.114.114:53
   - tcp://114.114.114.114:53
 dns_timeout: 1s
+# 直连的域名直接返回真实IP，不走tun
+tun_bypass_direct: true
 # redir 模式使用 iptable 的 redirect 功能： iptables -t nat -A PREROUTING -d 11.0.0.0/16 -p tcp -j REDIRECT --to-ports 1300
 # redir 模式下只支持 tcp 流量。默认使用 tun 模式。特殊设备不支持 tun 的情况，可以使用 redir 模式。
 redir_mode: false
-queue_number: 2  # 队列数量，linux 有效。至少为 1，queue_number 越大，性能越好。一般 2 就可以跑满 1Gbps 带宽
-threads_per_queue: 3  # 每个队列的线程数量，主要工作是处理 tun 数据转发时对数据包进行 checksum 计算。一般 2-3 就可以处理一个 queue 的转发。
-tun_bypass_direct: false  # 直连的域名直接返回真实IP，不走tun
+# 队列数量，linux 有效。至少为 1，queue_number 越大，性能越好。一般 2 就可以跑满 1Gbps 带宽
+queue_number: 2
+# 每个队列的线程数量，主要工作是处理 tun 数据转发时对数据包进行 checksum 计算。一般 2-3 就可以处理一个 queue 的转发。
+threads_per_queue: 3
 tun_name: utun4
 tun_ip: 11.0.0.1
 tun_cidr: 11.0.0.0/16
-db_path: seeker.sqlite # 数据库路径，如果使用相对路径，相对于可执行文件的路径。默认会搜索可执行文件同级目录下的 seeker.sqlite 文件
+# 数据库路径，如果使用相对路径，相对于可执行文件的路径。默认会搜索可执行文件同级目录下的 seeker.sqlite 文件
+db_path: seeker.sqlite
 dns_listens:
-  - 127.0.0.1:53 # 如果只是本机使用（不支持 docker）
-  - 172.17.0.1:53 # 如果需要支持 docker 容器
-gateway_mode: true  # 是否支持局域网共享
+  # 如果本机没有其他程序监听 53 端口，可以使用 0.0.0.0
+  - 0.0.0.0:53
+  # Ubuntu 等新版本的系统默认使用 systemd-resolved，已经监听了 127.0.0.53:53，所以没法直接监听 0.0.0.0:53。
+  # 这种情况下可以监听 127.0.0.1:53。如果使用 docker，再监听 172.17.0.1:53。如果局域网内别的机器需要走代理，可以监听
+  # 192.168.0.xx:53（本机的局域网 IP）
+  - 127.0.0.1:53
+  - 172.17.0.1:53
+  - 192.168.0.3:53
+# 是否支持局域网内其他机器走代理
+gateway_mode: true
+# probe_timeout 时间内如果可以建立 TCP 连接则直连（443端口会额外建立 SSL 连接），否则走代理。不要调的太低，国内有些网站会有很长的 SSL 握手时间。
+# 如果目标端口为 443，TCP 连接的超时时间为 probe_timeout， SSL 连接超时时间也为 probe_timeout，总的超时时间为 probe_timeout * 2;
+# 如果目标端口不为 443，TCP 连接的超时时间为 probe_timeout。
 probe_timeout: 200ms
+# ping 超时时间
 ping_timeout: 2s
+# 连接超时时间
 connect_timeout: 2s
+# 读取超时时间，多久没有数据读取则认为超时
 read_timeout: 300s
+# 写入超时时间，多久没有数据写入则认为超时
 write_timeout: 300s
+# ss 服务器重试次数，到达重试次数后会自动选择下一个最快的服务器
 max_connect_errors: 2
-geo_ip: path/to/geoip.mmdb # geoip 数据库路径，如果使用相对路径，相对于可执行文件的路径。默认会搜索可执行文件同级目录下的 geoip.mmdb 文件
+# geoip 数据库路径，如果使用相对路径，相对于可执行文件的路径。默认会搜索可执行文件同级目录下的 geoip.mmdb 文件
+# 可以从 https://github.com/Hackl0us/GeoIP2-CN 下载 mmdb 格式的文件
+geo_ip: path/to/geoip.mmdb
+# 测试 ping 的默认 URL 列表，用于测试代理的连通性。
+# 连接成功即认为代理可用，不判断 HTTP 返回码。
 ping_urls:
   - host: www.facebook.com
     port: 80
@@ -37,21 +62,26 @@ ping_urls:
     port: 80
     path: /
 
-remote_config_urls:  # ss 订阅地址，启动时自动拉群配置，并将配置的服务器地址自动加入服务器列表
+# ss 订阅地址，启动时自动拉群配置，并将配置的服务器地址自动加入服务器列表
+# 可以通过 `./seeker -c config.yml --encrypt --key password` 命令来生成加密后的配置。
+# 通过 `./seeker --config-url http://addr-to-ss-subscribe-url.com --key password` 命令来读取远程配置启动。
+remote_config_urls:
   - https://addr-to-ss-subscribe-url.com
 
+# 服务器列表
 servers:
-  - name: a
+  - name: server-http
     addr: 127.0.0.1:1087  # 替换成 http 代理的地址
     username:
     password:
+    # 协议，Http 或 Https 或 Socks5 或 Shadowsocks
     protocol: Http
-  - name: server1
+  - name: server-ss1
     addr: domain-to-ss-server.com # 替换成 ss 服务器的地址
     method: chacha20-ietf
     password: password
     protocol: Shadowsocks
-  - name: server2
+  - name: server-ss2
     addr: 128.113.23.12:12312
     method: chacha20-ietf
     password: password
@@ -59,14 +89,65 @@ servers:
     obfs:  # 不设置默认不使用 obfs
       mode: Http  # 目前只支持 Http
       host: c61be5399e.microsoft.com
+
+# 代理组，可以指定多个代理组，每个代理组可以指定多个代理服务器。
+proxy_groups:
+  # 代理组名称，名称不能重复。用来在规则中引用：PROXY(proxy-group-1) PROBE(proxy-group-1)
+  - name: proxy-group-1
+    # 代理组中的代理服务器列表,名称必须是 servers 列表中定义的服务器名称
+    proxies:
+      - server-http
+      - server-ss1
+    # 测试 ping 的 URL 列表，用于测试代理的连通性。连接成功即认为代理可用，不判断 HTTP 返回码。
+    # 如果不设置，默认使用顶层 ping_urls 列表中的 URL 进行测试。
+    ping_urls:
+      - host: github.com
+        port: 443
+        path: /
+    # ping 超时时间，如果不设置，默认使用顶层 ping_timeout 配置。
+    ping_timeout: 1s
+
+  - name: proxy-group-2
+    proxies:
+      - server-ss2
+    ping_urls:
+      - host: google.com
+        port: 443
+        path: /
+    ping_timeout: 3s
+
+# 规则，可以指定多个规则。优先级从上到下依次降低。
+# 规则格式：规则类型,规则值,规则动作
+#
+# 规则类型：
+# DOMAIN: 完整匹配域名
+# DOMAIN-SUFFIX: 域名后缀匹配
+# DOMAIN-KEYWORD: 域名关键字匹配
+# GEOIP: geoip 匹配
+# MATCH: 默认匹配
+#
+# 规则动作：
+# DIRECT: 直接访问
+# REJECT: 直接拒绝
+# PROXY(proxy-group-name): 使用代理组 proxy-group-name 中自动选择最快的代理服务器
+# PROBE(proxy-group-name): 同时发起两个连接，一个使用代理，一个直接连接。哪一个先连接成功则使用哪一个。
+# 并且缓存每一个域名的 PROBE 结果，下次先用缓存的结果连接，同时再重新发起探测。
 rules:
+  # 完整匹配域名，直接访问
   - 'DOMAIN,audio-ssl.itunes.apple.com,DIRECT'
+  # 完整匹配域名，直接拒绝
   - 'DOMAIN,gspe1-ssl.ls.apple.com,REJECT'
+  # 域名后缀匹配，直接访问
   - 'DOMAIN-SUFFIX,aaplimg.com,DIRECT'
   - 'DOMAIN-SUFFIX,apple.co,DIRECT'
-  - 'DOMAIN-KEYWORD,bbcfmt,PROXY'
-  - 'DOMAIN-KEYWORD,uk-live,PROXY'
+  # 域名关键字匹配，使用代理组 proxy-group-1
+  - 'DOMAIN-KEYWORD,bbcfmt,PROXY(proxy-group-1)'
+  - 'DOMAIN-KEYWORD,uk-live,PROXY(proxy-group-1)'
+  # 域名后缀匹配，直接访问
   - 'DOMAIN-SUFFIX,snssdk.com,DIRECT'
-  - 'DOMAIN-SUFFIX,toutiao.com,PROBE'
-  - 'GEOIP,CN,DIRECT'  # geoip
-  - 'MATCH,PROBE'
+  # 域名后缀匹配，使用代理组 proxy-group-2
+  - 'DOMAIN-SUFFIX,toutiao.com,PROBE(proxy-group-2)'
+  # geoip 匹配，直接访问
+  - 'GEOIP,CN,DIRECT'
+  # 默认匹配，使用代理组 proxy-group-2
+  - 'MATCH,PROBE(proxy-group-2)'

@@ -95,7 +95,7 @@ async fn choose_proxy_tcp_stream(
     Ok(retry_timeout!(
         config.connect_timeout,
         config.max_connect_errors,
-        server_chooser.candidate_tcp_stream(remote_addr.clone(), action)
+        server_chooser.candidate_tcp_stream(remote_addr.clone(), action.clone())
     )
     .await?)
 }
