@@ -6,6 +6,7 @@ pub use socks5_client::Address;
 use rule::ProxyRules;
 use serde::Deserialize;
 use smoltcp::wire::{Ipv4Address, Ipv4Cidr};
+use std::collections::HashSet;
 use std::fmt::Debug;
 use std::fs::File;
 use std::io;
@@ -26,9 +27,22 @@ const URL_SAFE_ENGINE: base64::engine::fast_portable::FastPortable =
             .with_decode_padding_mode(base64::engine::DecodePaddingMode::Indifferent),
     );
 
+#[derive(Clone, Debug, Deserialize)]
+pub struct ProxyGroup {
+    pub name: String,
+    pub proxies: Vec<String>,
+    #[serde(default)]
+    pub ping_timeout: Option<Duration>,
+    #[serde(default)]
+    pub ping_urls: Vec<PingURL>,
+}
+
 #[derive(Clone, Deserialize)]
 pub struct Config {
+    #[serde(alias = "proxies")]
     pub servers: Arc<Vec<ServerConfig>>,
+    #[serde(default)]
+    pub proxy_groups: Arc<Vec<ProxyGroup>>,
     #[serde(default)]
     pub remote_config_urls: Vec<String>,
     geo_ip: Option<PathBuf>,
@@ -58,7 +72,7 @@ pub struct Config {
     pub dns_listens: Vec<String>,
     #[serde(default)]
     pub gateway_mode: bool,
-    #[serde(with = "duration", default = "default_connect_timeout")]
+    #[serde(with = "duration", default = "default_ping_timeout")]
     pub ping_timeout: Duration,
     pub ping_urls: Vec<PingURL>,
     #[serde(with = "duration", default = "default_connect_timeout")]
@@ -91,6 +105,7 @@ impl Debug for Config {
             .field("dns_listens", &self.dns_listens)
             .field("gateway_mode", &self.gateway_mode)
             .field("ping_timeout", &self.ping_timeout)
+            .field("proxy_groups", &self.proxy_groups)
             .field("ping_urls", &self.ping_urls)
             .field("dns_timeout", &self.dns_timeout)
             .field("probe_timeout", &self.probe_timeout)
@@ -264,6 +279,8 @@ impl Config {
         conf.load_remote_servers();
         conf.add_proxy_servers_to_direct_rules();
         conf.rules.set_geo_ip_path(conf.geo_ip.clone());
+        conf.add_default_proxy_group();
+        conf.validate_proxy_groups_and_rules();
         Ok(conf)
     }
 
@@ -316,6 +333,89 @@ impl Config {
                 continue;
             };
             servers.extend(extra_servers);
+        }
+    }
+
+    fn add_default_proxy_group(&mut self) {
+        // Check if rules contain PROXY and PROBE rules with no name
+        let has_default_proxy = self.rules.has_empty_proxy_or_probe_rules();
+        if has_default_proxy {
+            let groups = Arc::make_mut(&mut self.proxy_groups);
+            groups.push(ProxyGroup {
+                name: "".to_string(),
+                ping_timeout: None,
+                proxies: self.servers.iter().map(|s| s.name().to_string()).collect(),
+                ping_urls: self.ping_urls.clone(),
+            });
+        }
+    }
+
+    fn validate_proxy_groups_and_rules(&self) {
+        let mut seen_server_names = std::collections::HashSet::new();
+        for server in self.servers.iter() {
+            if !seen_server_names.insert(server.name()) {
+                panic!("Duplicate server name: {}", server.name());
+            }
+        }
+        let mut seen_proxy_group_names: HashSet<&str> = std::collections::HashSet::new();
+        for group in self.proxy_groups.iter() {
+            if !seen_proxy_group_names.insert(&group.name) {
+                panic!("Duplicate proxy group name: {}", group.name);
+            }
+        }
+        // Validate all proxy names in groups reference valid servers
+        for group in self.proxy_groups.iter() {
+            for proxy in group.proxies.iter() {
+                if !seen_server_names.contains(proxy.as_str()) {
+                    panic!(
+                        "Invalid proxy name '{}' in group '{}' - server not found",
+                        proxy, group.name
+                    );
+                }
+            }
+        }
+
+        let rules = self.rules.rules.read();
+        // Validate all PROXY and PROBE rules reference valid proxy groups
+        for rule in rules.iter() {
+            if let Some(name) = rule.target_proxy_group_name() {
+                if !seen_proxy_group_names.contains(&name) {
+                    panic!(
+                        "Invalid proxy group name '{}' referenced in PROXY rule: {:?}",
+                        name, rule
+                    );
+                }
+            }
+            if let Some(name) = rule.target_proxy_group_name() {
+                if !seen_proxy_group_names.contains(name) {
+                    panic!(
+                        "Invalid proxy group name '{}' referenced in PROBE rule: {:?}",
+                        name, rule
+                    );
+                }
+            }
+        }
+    }
+
+    pub fn get_servers_by_name(&self, name: &str) -> Arc<Vec<ServerConfig>> {
+        // find proxy group by name, and get proxy servers
+        let proxy_servers: Option<Vec<_>> = self
+            .proxy_groups
+            .iter()
+            .find(|g| g.name == name)
+            .map(|g| g.proxies.iter().map(|s| s.as_str()).collect());
+        // if no proxy group found, return empty servers
+        if let Some(proxy_servers) = proxy_servers {
+            // find servers by names
+            let servers = self
+                .servers
+                .iter()
+                .filter(|s| proxy_servers.contains(&s.name()))
+                .cloned()
+                .collect();
+            Arc::new(servers)
+        } else {
+            Arc::new(vec![])
         }
     }
 }
