@@ -1,6 +1,6 @@
 [package]
 name = "crypto"
-version = "20241106.0.1"
+version = "20241111.0.0"
 authors = ["gfreezy <gfreezy@gmail.com>"]
 edition = "2021"
 
