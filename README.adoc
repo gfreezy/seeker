@@ -83,6 +83,8 @@ sudo seeker --config path/to/config.yml --encrypt --key encrypt-key
 === Sample Config
 https://github.com/gfreezy/seeker/blob/master/sample_config.yml
 
+里面有详细的配置文件说明。
+
 === 支持的 method
 ```
 Table
