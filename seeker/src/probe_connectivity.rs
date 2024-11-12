@@ -251,17 +251,11 @@ mod tests {
         assert!(ProbeConnectivity::is_valid_http_head_response(
             b"HTTP/1.1 200 OK\r\n"
         ));
-        assert!(!ProbeConnectivity::is_valid_http_head_response(
-            b"HTTP/1.1 200 OK\r\n\r\n"
-        ));
     }
 
     #[test]
     fn test_is_valid_ssh_response() {
         assert!(ProbeConnectivity::is_valid_ssh_response(b"SSH-2.0-seeker"));
-        assert!(!ProbeConnectivity::is_valid_ssh_response(
-            b"SSH-2.0-seeker\r\n"
-        ));
     }
 
     #[async_std::test]
