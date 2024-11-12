@@ -76,7 +76,7 @@ impl ProxyRules {
             default_download_path: default_geo_ip_path(),
         };
         if geo_ip_path.is_some() {
-            s.init_geo_ip_db();
+            s.init_geo_ip_db(false);
         }
         s
     }
@@ -84,14 +84,14 @@ impl ProxyRules {
     /// Create a new ProxyRules with the given rules and geoip database path.
     /// Download the geoip database in the foreground if the path is a http or https url.
     #[cfg(test)]
-    fn new_sync(rules: Vec<Rule>, geo_ip_path: Option<PathBuf>) -> Self {
+    fn new_sync(rules: Vec<Rule>, geo_ip_path: Option<PathBuf>, download_path: PathBuf) -> Self {
         let s = Self {
             rules: Arc::new(RwLock::new(rules)),
             geo_ip_db: Arc::new(Mutex::new(None)),
             geo_ip_path,
-            default_download_path: default_geo_ip_path(),
+            default_download_path: download_path,
         };
-        s.init_geo_ip_db();
+        s.init_geo_ip_db(true);
         s
     }
 
@@ -113,10 +113,6 @@ impl ProxyRules {
             return false;
         };
         let path = &self.default_download_path;
-        if self.default_download_path.exists() {
-            tracing::info!("geoip database already exists, skipping download");
-            return true;
-        }
         let success = download_geoip_database(&url, path);
         if !success {
             tracing::error!("downloaded geoip failed");
@@ -126,14 +122,16 @@ impl ProxyRules {
         success
     }
 
-    fn init_geo_ip_db(&self) {
+    fn init_geo_ip_db(&self, force_download: bool) {
         let default_path = self.default_download_path.clone();
         let path = match &self.geo_ip_path {
             Some(path) => {
                 tracing::info!("geoip path: {:?}", path);
                 // Check if path is a valid http or https url
                 if path.starts_with("http://") || path.starts_with("https://") {
-                    if !default_path.exists() {
+                    if force_download {
+                        let _ = self.download_geoip_database();
+                    } else if !default_path.exists() {
                         static ONCE: std::sync::Once = Once::new();
                         ONCE.call_once(|| {
                             let _ = self.download_geoip_database();
@@ -231,7 +229,7 @@ impl ProxyRules {
 
     pub(crate) fn set_geo_ip_path(&mut self, path: Option<PathBuf>) {
         self.geo_ip_path = path;
-        self.init_geo_ip_db();
+        self.init_geo_ip_db(false);
     }
 
     /// Check if the rules contain proxy or probe rules with empty target proxy group.
@@ -355,7 +353,7 @@ mod tests {
 
     #[test]
     fn test_did_geo_ip_matches_name() {
-        let path = default_geo_ip_path();
+        let path = std::env::temp_dir().join("geoip_download_test.mmdb");
         // remove the file if it exists
         if path.exists() {
             std::fs::remove_file(&path).unwrap();
@@ -376,13 +374,20 @@ mod tests {
 
     #[test]
     fn test_proxy_rule() {
-        tracing_subscriber::fmt::init();
+        tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::DEBUG)
+            .init();
+        let temp_path = std::env::temp_dir().join("geoip_proxy_rule_test.mmdb");
+        if temp_path.exists() {
+            std::fs::remove_file(&temp_path).unwrap();
+        }
         let proxy_rule = ProxyRules::new_sync(
             vec![Rule::GeoIp("CN".to_string(), Action::Direct)],
             Some(
                 Path::new("https://pub-a2ec2e74bf2c47428e190f227ec084ef.r2.dev/Country.mmdb")
                     .to_path_buf(),
             ),
+            temp_path,
         );
         let action = proxy_rule.action_for_domain(Some("x.com"), "110.242.68.66".parse().ok());
         assert_eq!(action, Some(Action::Direct));
