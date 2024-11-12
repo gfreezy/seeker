@@ -1,6 +1,6 @@
 [package]
 name = "ssclient"
-version = "20241111.0.1"
+version = "20241112.0.0"
 authors = ["gfreezy <gfreezy@gmail.com>"]
 edition = "2021"
 
