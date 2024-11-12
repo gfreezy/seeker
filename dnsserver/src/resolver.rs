@@ -225,15 +225,25 @@ mod tests {
     use super::*;
     use crate::tests::new_resolver;
     use async_std::task;
+    use config::rule::Rule;
 
     #[test]
     fn test_inner_resolve_ip_and_lookup_host() {
         store::Store::setup_global_for_test();
+        tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::DEBUG)
+            .init();
         let dns = std::env::var("DNS").unwrap_or_else(|_| "223.5.5.5".to_string());
         task::block_on(async {
             let resolver = RuleBasedDnsResolver::new(
-                true,
-                ProxyRules::new(vec![], None),
+                false,
+                ProxyRules::new(
+                    vec![Rule::Domain(
+                        "baidu.com".to_string(),
+                        Action::Proxy("".to_string()),
+                    )],
+                    None,
+                ),
                 new_resolver(dns, 53).await,
             )
             .await;
@@ -242,7 +252,6 @@ mod tests {
                 .await
                 .unwrap()
                 .get_random_a();
-            assert!(baidu_ip.is_some());
             assert_eq!(
                 resolver.lookup_host(&baidu_ip.unwrap()),
                 Some("baidu.com".to_string())

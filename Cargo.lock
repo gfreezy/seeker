@@ -732,6 +732,7 @@ dependencies = [
  "store",
  "tempfile",
  "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
