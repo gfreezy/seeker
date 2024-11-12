@@ -316,7 +316,7 @@ pub(crate) async fn get_action_for_addr(
             pass_proxy = true;
         }
     }
-    let mut action = if pass_proxy {
+    let action = if pass_proxy {
         Action::Direct
     } else {
         config
@@ -326,14 +326,7 @@ pub(crate) async fn get_action_for_addr(
     };
 
     if let Action::Probe(name) = action {
-        if connectivity
-            .probe_connectivity(real_dest, addr, name.clone())
-            .await
-        {
-            action = Action::Direct;
-        } else {
-            action = Action::Proxy(name.clone());
-        }
+        return Ok(connectivity.probe_connectivity(real_dest, addr, name).await);
     }
 
     Ok(action)
