@@ -38,7 +38,7 @@ url = { workspace = true }
 store = { path = "../store" }
 nix = { workspace = true, features = ["socket"] }
 os_socketaddr = { workspace = true }
-notify-debouncer-mini = "0.4.1"
+notify-debouncer-mini = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
