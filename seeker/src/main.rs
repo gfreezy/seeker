@@ -22,6 +22,7 @@ use std::net::SocketAddrV4;
 use std::path::Path;
 use std::time::Duration;
 
+use crate::config_encryptor::encrypt_config_file;
 use crate::config_watcher::watch_config;
 use crate::logger::setup_logger;
 use crate::proxy_client::ProxyClient;
@@ -88,7 +89,7 @@ fn main() -> anyhow::Result<()> {
     if to_encrypt {
         println!(
             "Encrypted content is as below:\n\n\n{}\n\n",
-            encrypt_config(path, key)?
+            encrypt_config_file(path, key)?
         );
         return Ok(());
     }
@@ -229,13 +230,4 @@ fn load_config(
         }
     }
     Ok(c)
-}
-
-fn encrypt_config(path: Option<&str>, encrypt_key: Option<&str>) -> anyhow::Result<String> {
-    let (Some(path), Some(key)) = (path, encrypt_key) else {
-        return Err(anyhow::anyhow!("path and encrypt_key must be provided"));
-    };
-    let file = File::open(path).context("Open config error")?;
-    config_encryptor::encrypt_config(file, CipherType::ChaCha20Ietf, key)
-        .context("Encrypt config error")
 }

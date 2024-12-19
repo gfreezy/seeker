@@ -2,6 +2,7 @@ use anyhow::Context;
 use bytes::BytesMut;
 use crypto::CipherType;
 use ssclient::{decrypt_payload, encrypt_payload};
+use std::fs::File;
 use std::io::Read;
 
 pub fn decrypt_config<R: Read>(
@@ -44,6 +45,17 @@ pub fn encrypt_config<R: Read>(
     let content = base64::encode(&output[..size]);
 
     Ok(content)
+}
+
+pub fn encrypt_config_file(
+    path: Option<&str>,
+    encrypt_key: Option<&str>,
+) -> anyhow::Result<String> {
+    let (Some(path), Some(key)) = (path, encrypt_key) else {
+        return Err(anyhow::anyhow!("path and encrypt_key must be provided"));
+    };
+    let file = File::open(path).context("Open config error")?;
+    encrypt_config(file, CipherType::ChaCha20Ietf, key).context("Encrypt config error")
 }
 
 #[cfg(test)]

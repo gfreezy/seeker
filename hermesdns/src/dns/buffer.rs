@@ -226,7 +226,7 @@ impl<'a, T> StreamPacketBuffer<'a, T>
 where
     T: Read + 'a,
 {
-    pub fn new(stream: &'a mut T) -> StreamPacketBuffer<'_, T> {
+    pub fn new(stream: &'a mut T) -> StreamPacketBuffer<'a, T> {
         StreamPacketBuffer {
             stream,
             buffer: Vec::new(),
