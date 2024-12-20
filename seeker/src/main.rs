@@ -31,7 +31,6 @@ use async_std::prelude::FutureExt;
 use async_std::task::block_on;
 use config::Config;
 use crypto::CipherType;
-use std::fs::File;
 use sysconfig::{get_current_dns, set_rlimit_no_file, DNSSetup, IpForward, IptablesSetup};
 use tracing::Instrument;
 
