@@ -447,10 +447,8 @@ fn get_original_addr_from_socket(conn: &TcpStream) -> Option<SocketAddr> {
     // When in redir mode, we get the original destination from the socket option.
 
     use std::net::Ipv4Addr;
-    use std::os::fd::AsRawFd;
-    let original_dst =
-        nix::sys::socket::getsockopt(conn.as_raw_fd(), nix::sys::socket::sockopt::OriginalDst)
-            .expect("get original dst");
+    let original_dst = nix::sys::socket::getsockopt(&conn, nix::sys::socket::sockopt::OriginalDst)
+        .expect("get original dst");
     // convert sockaddr_in to SocketAddress
     // sin_addr, sin_port are stored in network edian
     let original_addr = SocketAddr::new(

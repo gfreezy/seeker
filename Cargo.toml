@@ -58,7 +58,7 @@ publish = false
 
 [workspace.dependencies]
 anyhow = "1.0"
-async-std = "1"
+async-std = { version = "1", features = ["default", "io_safety"] }
 async-std-resolver = "0.24"
 async-trait = "0.1"
 bitvec = "1.0"
