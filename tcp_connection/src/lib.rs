@@ -123,7 +123,7 @@ impl Write for TcpConnection {
 /// 127.0.0.1:12345
 /// The server will be stopped when the returned container is dropped.
 #[cfg(test)]
-#[cfg(target_arch = "x86_64", target_env = "gnu")]
+#[cfg(all(target_arch = "x86_64", target_env = "gnu"))]
 fn run_obfs_server(
     mode: &str,
     server_port: usize,

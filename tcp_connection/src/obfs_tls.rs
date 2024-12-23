@@ -336,7 +336,7 @@ mod tests {
         let _ = handle.cancel().await;
     }
 
-    #[cfg(target_arch = "x86_64", target_env = "gnu")]
+    #[cfg(all(target_arch = "x86_64", target_env = "gnu"))]
     #[async_std::test]
     async fn test_obfs_docker_tls_read_write() {
         use crate::run_obfs_server;
