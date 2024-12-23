@@ -341,14 +341,12 @@ mod tests {
     async fn test_obfs_docker_tls_read_write() {
         use crate::run_obfs_server;
         use std::str::FromStr;
-        use testcontainers::clients::Cli;
 
         const HOST: &str = "baidu.com";
         const REQ: &str = "hello";
         const RESP: &str = "world";
 
-        let docker = Cli::default();
-        let _c = run_obfs_server(&docker, "tls", 8389, 12346);
+        let _c = run_obfs_server("tls", 8389, 12346);
 
         let listener = TcpListener::bind("0.0.0.0:12346").await.unwrap();
 

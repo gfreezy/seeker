@@ -124,23 +124,22 @@ impl Write for TcpConnection {
 /// The server will be stopped when the returned container is dropped.
 #[cfg(test)]
 #[cfg(all(target_os = "linux", target_env = "gnu"))]
-fn run_obfs_server<'a>(
-    docker: &'a testcontainers::clients::Cli,
+fn run_obfs_server(
     mode: &str,
     server_port: usize,
     forward_port: usize,
-) -> testcontainers::Container<'a, testcontainers::images::generic::GenericImage> {
+) -> testcontainers::Container<testcontainers::GenericImage> {
     use testcontainers::core::WaitFor;
-    use testcontainers::images::generic::GenericImage;
-    use testcontainers::RunnableImage;
+    use testcontainers::runners::SyncRunner;
+    use testcontainers::{GenericImage, ImageExt};
 
     let wait_for = WaitFor::message_on_stderr(format!("listening at 0.0.0.0:{server_port}"));
-    let image = GenericImage::new("gists/simple-obfs", "latest")
+    GenericImage::new("gists/simple-obfs", "latest")
         .with_wait_for(wait_for)
         .with_env_var("FORWARD", format!("127.0.0.1:{forward_port}"))
         .with_env_var("SERVER_PORT", server_port.to_string())
-        .with_env_var("OBFS_OPTS", mode);
-    let runnable_image: RunnableImage<_> =
-        RunnableImage::<GenericImage>::from(image).with_network("host");
-    docker.run(runnable_image)
+        .with_env_var("OBFS_OPTS", mode)
+        .with_network("host")
+        .start()
+        .unwrap()
 }
