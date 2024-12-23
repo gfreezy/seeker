@@ -281,8 +281,7 @@ mod tests {
         const REQ: &str = "hello";
         const RESP: &str = "world";
 
-        let docker = testcontainers::clients::Cli::default();
-        let _c = run_obfs_server(&docker, "http", 8388, 12345);
+        let _c = run_obfs_server("http", 8388, 12345);
 
         let listener = TcpListener::bind("0.0.0.0:12345").await.unwrap();
 
