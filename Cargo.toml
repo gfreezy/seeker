@@ -94,7 +94,9 @@ serde_yaml = "0.9"
 sha-1 = "0.10"
 smoltcp = { version = "0.12", default-features = false }
 tempfile = "3.3"
-testcontainers = { version = "0.23", features = ["blocking"] }
+testcontainers = { version = "0.23", features = [
+    "blocking",
+], default-features = false }
 tracing = "0.1"
 tracing-chrome = "0.7"
 tracing-futures = { version = "0.2", default-features = false }
