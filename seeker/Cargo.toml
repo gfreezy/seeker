@@ -36,7 +36,7 @@ anyhow = { workspace = true }
 tcp_connection = { path = "../tcp_connection" }
 url = { workspace = true }
 store = { path = "../store" }
-nix = { workspace = true, features = ["socket"] }
+nix = { workspace = true, features = ["socket", "net"] }
 os_socketaddr = { workspace = true }
 notify-debouncer-mini = { workspace = true }
 
