@@ -68,6 +68,7 @@ impl DNSSetup {
                 .write_all(format!("DNS={}\n", d).as_bytes())
                 .unwrap();
         }
+        dns_conf.write_all(b"Domains=~.\n").unwrap();
         // restart systemd-resolved
         let _ = run_cmd("systemctl", &["restart", "systemd-resolved.service"]);
     }
