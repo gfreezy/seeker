@@ -271,7 +271,7 @@ mod tests {
     }
 
     /// This test use docker so it can only be run in linux x86_64
-    #[cfg(target_arch = "x86_64")]
+    #[cfg(target_arch = "x86_64", target_env = "gnu")]
     #[async_std::test]
     async fn test_obfs_docker_http_read_write() {
         use crate::run_obfs_server;
