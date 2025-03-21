@@ -10,7 +10,7 @@ use tun_nat::SessionManager;
 
 use crate::dns_client::DnsClient;
 use crate::probe_connectivity::ProbeConnectivity;
-use crate::proxy_client::{get_action_for_addr, get_real_src_real_dest_and_host, UdpManager};
+use crate::proxy_client::{UdpManager, get_action_for_addr, get_real_src_real_dest_and_host};
 use crate::proxy_connection::ProxyConnection;
 use crate::proxy_udp_socket::ProxyUdpSocket;
 use crate::server_chooser::ServerChooser;

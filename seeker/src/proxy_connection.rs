@@ -2,7 +2,7 @@ use std::sync::atomic::AtomicUsize;
 use std::time::{Duration, Instant};
 
 use crate::traffic::Traffic;
-use config::{rule::Action, Address, ServerConfig};
+use config::{Address, ServerConfig, rule::Action};
 use store::Store;
 
 // id generator for connection

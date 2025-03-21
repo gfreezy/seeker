@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use notify_debouncer_mini::notify::{RecommendedWatcher, RecursiveMode};
-use notify_debouncer_mini::{new_debouncer, DebounceEventHandler, Debouncer};
+use notify_debouncer_mini::{DebounceEventHandler, Debouncer, new_debouncer};
 
 pub fn watch_config<F: DebounceEventHandler + Send>(
     config_path: PathBuf,

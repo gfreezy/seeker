@@ -26,12 +26,12 @@ use crate::config_encryptor::encrypt_config_file;
 use crate::config_watcher::watch_config;
 use crate::logger::setup_logger;
 use crate::proxy_client::ProxyClient;
-use anyhow::{bail, Context};
+use anyhow::{Context, bail};
 use async_std::prelude::FutureExt;
 use async_std::task::block_on;
 use config::Config;
 use crypto::CipherType;
-use sysconfig::{get_current_dns, set_rlimit_no_file, DNSSetup, IpForward, IptablesSetup};
+use sysconfig::{DNSSetup, IpForward, IptablesSetup, get_current_dns, set_rlimit_no_file};
 use tracing::Instrument;
 
 const REDIR_LISTEN_PORT: u16 = 1300;
