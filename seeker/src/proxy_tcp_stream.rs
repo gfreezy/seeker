@@ -14,13 +14,13 @@ use tcp_connection::TcpConnection;
 
 use crate::dns_client::DnsClient;
 use crate::proxy_connection::{
-    next_connection_id, ProxyConnection, ProxyConnectionEventListener, StoreListener,
+    ProxyConnection, ProxyConnectionEventListener, StoreListener, next_connection_id,
 };
 use crate::traffic::Traffic;
 use async_std::task::ready;
 use std::io::{Error, ErrorKind};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 #[derive(Clone)]
 enum ProxyTcpStreamInner {
@@ -60,7 +60,7 @@ impl ProxyTcpStream {
                             return Err(Error::new(
                                 ErrorKind::InvalidData,
                                 "proxy domain must not be empty for https protocol.",
-                            ))
+                            ));
                         }
                         Some(s) => s,
                     };
@@ -94,7 +94,7 @@ impl ProxyTcpStream {
                             return Err(Error::new(
                                 ErrorKind::InvalidData,
                                 "method and password must be set for ss protocol.",
-                            ))
+                            ));
                         }
                     };
                     let stream = if let Some(obfs) = config.obfs() {

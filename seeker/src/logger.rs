@@ -1,4 +1,4 @@
-use file_rotate::{suffix::AppendTimestamp, FileRotate};
+use file_rotate::{FileRotate, suffix::AppendTimestamp};
 use std::io;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -113,19 +113,21 @@ pub(crate) fn setup_logger(log_path: Option<&str>, trace: bool) -> anyhow::Resul
         use std::time::Duration;
 
         // Create a background thread which checks for deadlocks every 10s
-        thread::spawn(move || loop {
-            thread::sleep(Duration::from_secs(10));
-            let deadlocks = deadlock::check_deadlock();
-            if deadlocks.is_empty() {
-                continue;
-            }
+        thread::spawn(move || {
+            loop {
+                thread::sleep(Duration::from_secs(10));
+                let deadlocks = deadlock::check_deadlock();
+                if deadlocks.is_empty() {
+                    continue;
+                }
 
-            eprintln!("{} deadlocks detected", deadlocks.len());
-            for (i, threads) in deadlocks.iter().enumerate() {
-                eprintln!("Deadlock #{i}");
-                for t in threads {
-                    eprintln!("Thread Id {:#?}", t.thread_id());
-                    eprintln!("{:#?}", t.backtrace());
+                eprintln!("{} deadlocks detected", deadlocks.len());
+                for (i, threads) in deadlocks.iter().enumerate() {
+                    eprintln!("Deadlock #{i}");
+                    for t in threads {
+                        eprintln!("Thread Id {:#?}", t.thread_id());
+                        eprintln!("{:#?}", t.backtrace());
+                    }
                 }
             }
         });

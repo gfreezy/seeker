@@ -1,7 +1,7 @@
 use async_std_resolver::config::{
     NameServerConfig, NameServerConfigGroup, Protocol, ResolverConfig, ResolverOpts,
 };
-use async_std_resolver::{resolver, AsyncStdResolver};
+use async_std_resolver::{AsyncStdResolver, resolver};
 use config::{Address, DnsServerAddr};
 use std::io::{Error, ErrorKind, Result};
 use std::net::IpAddr;

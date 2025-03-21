@@ -1,14 +1,14 @@
+use crate::REDIR_LISTEN_PORT;
 use crate::dns_client::DnsClient;
 use crate::probe_connectivity::ProbeConnectivity;
 use crate::proxy_udp_socket::ProxyUdpSocket;
 use crate::relay_tcp_stream::relay_tcp_stream;
 use crate::relay_udp_socket::relay_udp_socket;
 use crate::server_chooser::ServerChooser;
-use crate::REDIR_LISTEN_PORT;
 use async_std::future::pending;
 use async_std::io::timeout;
 use async_std::net::{SocketAddr, TcpListener, TcpStream, UdpSocket};
-use async_std::task::{spawn, JoinHandle};
+use async_std::task::{JoinHandle, spawn};
 use async_std::{prelude::*, task};
 use async_std_resolver::AsyncStdResolver;
 use config::rule::Action;
@@ -24,7 +24,7 @@ use std::net::IpAddr;
 use std::sync::Arc;
 use tracing::{error, instrument, trace, trace_span};
 use tracing_futures::Instrument;
-use tun_nat::{run_nat, SessionManager};
+use tun_nat::{SessionManager, run_nat};
 
 pub(crate) type UdpManager = Arc<RwLock<HashMap<u16, (ProxyUdpSocket, SocketAddr, Address)>>>;
 
@@ -416,7 +416,7 @@ pub(crate) async fn get_real_src_real_dest_and_host(
             return Err(Error::new(
                 std::io::ErrorKind::InvalidData,
                 format!("no host found for tun ip: {ip}"),
-            ))
+            ));
         }
     };
 

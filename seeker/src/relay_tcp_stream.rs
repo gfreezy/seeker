@@ -1,5 +1,5 @@
 use anyhow::Result;
-use async_std::io::{timeout, Read, Write};
+use async_std::io::{Read, Write, timeout};
 use async_std::net::TcpStream;
 use async_std::prelude::*;
 use config::{Address, Config};
