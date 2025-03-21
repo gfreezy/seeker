@@ -314,19 +314,33 @@ async fn ping_server(
     timeout(ping_timeout, async {
         let stream =
             ProxyTcpStream::connect(addr.clone(), Some(&server_config), dns_client).await?;
-        if ping_url.port() == 443 {
+        let resp_buf = if ping_url.port() == 443 {
             let connector = TlsConnector::default();
             let mut conn = connector.connect(ping_url.host(), stream).await?;
             conn.write_all(format!("GET {path} HTTP/1.1\r\n\r\n").as_bytes())
                 .await?;
             let mut buf = vec![0; 1024];
-            let _size = conn.read(&mut buf).await?;
+            let size = conn.read(&mut buf).await?;
+            buf[..size].to_vec()
         } else {
             let mut conn = stream;
             conn.write_all(format!("GET {path} HTTP/1.1\r\n\r\n").as_bytes())
                 .await?;
             let mut buf = vec![0; 1024];
-            let _size = conn.read(&mut buf).await?;
+            let size = conn.read(&mut buf).await?;
+            buf[..size].to_vec()
+        };
+        // Check if HTTP status code starts with 2 or 3
+        let response = String::from_utf8_lossy(&resp_buf);
+        if let Some(status_line) = response.lines().next() {
+            if let Some(status_code) = status_line.split_whitespace().nth(1) {
+                if !status_code.starts_with('2') && !status_code.starts_with('3') {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        format!("HTTP status code not 2xx or 3xx: {}", status_code),
+                    ));
+                }
+            }
         }
         Ok(())
     })
