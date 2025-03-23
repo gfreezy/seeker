@@ -240,8 +240,8 @@ impl GroupServersChooser {
                     let duration = self_clone
                         .ping_server(config_clone.clone())
                         .await
-                        .map_err(|_| config_clone.clone())?;
-                    Ok::<_, ServerConfig>((config_clone, duration))
+                        .map_err(|e| (e, config_clone.clone()))?;
+                    Ok::<_, (std::io::Error, ServerConfig)>((config_clone, duration))
                 })
             })
             .collect();
@@ -253,16 +253,17 @@ impl GroupServersChooser {
                         name = config.name(),
                         server = ?config.addr(),
                         latency = %duration.as_millis(),
-                        "Ping shadowsocks server"
+                        "Successfully ping shadowsocks server"
                     );
                     candidates.push((config, duration));
                 }
-                Err(config) => {
+                Err((err, config)) => {
                     info!(
                         group = self.name,
                         name = config.name(),
                         server = ?config.addr(),
-                        "Ping shadowsocks server error"
+                        ?err,
+                        "Error ping shadowsocks server"
                     );
                 }
             }
@@ -317,15 +318,35 @@ async fn ping_server(
         let resp_buf = if ping_url.port() == 443 {
             let connector = TlsConnector::default();
             let mut conn = connector.connect(ping_url.host(), stream).await?;
-            conn.write_all(format!("GET {path} HTTP/1.1\r\n\r\n").as_bytes())
-                .await?;
+            conn.write_all(
+                format!(
+                    "GET {path} HTTP/1.1\r\n\
+                    Host: {}\r\n\
+                    User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36\r\n\
+                    Accept: */*\r\n\
+                    Connection: close\r\n\r\n",
+                    ping_url.host()
+                )
+                .as_bytes(),
+            )
+            .await?;
             let mut buf = vec![0; 1024];
             let size = conn.read(&mut buf).await?;
             buf[..size].to_vec()
         } else {
             let mut conn = stream;
-            conn.write_all(format!("GET {path} HTTP/1.1\r\n\r\n").as_bytes())
-                .await?;
+            conn.write_all(
+                format!(
+                    "GET {path} HTTP/1.1\r\n\
+                    Host: {}\r\n\
+                    User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36\r\n\
+                    Accept: */*\r\n\
+                    Connection: close\r\n\r\n",
+                    ping_url.host()
+                )
+                .as_bytes(),
+            )
+            .await?;
             let mut buf = vec![0; 1024];
             let size = conn.read(&mut buf).await?;
             buf[..size].to_vec()
@@ -337,7 +358,7 @@ async fn ping_server(
                 if !status_code.starts_with('2') && !status_code.starts_with('3') {
                     return Err(std::io::Error::new(
                         std::io::ErrorKind::Other,
-                        format!("HTTP status code not 2xx or 3xx: {}", status_code),
+                        format!("HTTP status code is: {}", status_code),
                     ));
                 }
             }
