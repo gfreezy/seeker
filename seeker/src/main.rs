@@ -14,6 +14,7 @@ mod proxy_udp_socket;
 mod relay_tcp_stream;
 mod relay_udp_socket;
 mod server_chooser;
+mod server_performance;
 mod traffic;
 
 use clap::Parser;

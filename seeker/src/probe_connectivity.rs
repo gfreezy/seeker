@@ -109,7 +109,7 @@ impl ProbeConnectivity {
             Action::Direct
         };
 
-        let result = proxy_connectivity_fut
+        proxy_connectivity_fut
             .inspect(|ret| {
                 tracing::info!("Probe proxy connectivity result: {:?}", ret);
             })
@@ -121,8 +121,7 @@ impl ProbeConnectivity {
             .unwrap_or_else(|_| {
                 tracing::info!("Probe connectivity timeout");
                 Action::Proxy(proxy_group_name)
-            });
-        result
+            })
     }
 
     async fn probe_https_connectivity<IO: Read + Write + Unpin>(

@@ -394,7 +394,7 @@ impl CipherType {
 
         let mut digest = digest::with_type(DigestType::Md5);
 
-        let total_loop = (key_len + iv_len + digest.digest_len() - 1) / digest.digest_len();
+        let total_loop = (key_len + iv_len).div_ceil(digest.digest_len());
         let m_length = digest.digest_len() + key.len();
 
         let mut result = BytesMut::with_capacity(total_loop * digest.digest_len());

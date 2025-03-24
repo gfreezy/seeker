@@ -5,7 +5,7 @@ pub use socks5_client::Address;
 
 use rule::ProxyRules;
 use serde::Deserialize;
-use smoltcp::wire::{Ipv4Address, Ipv4Cidr};
+use smoltcp::wire::Ipv4Cidr;
 use std::collections::HashSet;
 use std::fmt::Debug;
 use std::fs::File;
@@ -240,7 +240,7 @@ fn parse_cidr(s: &str) -> Result<Ipv4Cidr, &str> {
     let len = segments[1];
     let addr: Ipv4Addr = addr.parse().unwrap();
     let prefix = len.parse().unwrap();
-    let cidr = Ipv4Cidr::new(Ipv4Address::from(addr), prefix);
+    let cidr = Ipv4Cidr::new(addr, prefix);
     Ok(cidr.network())
 }
 

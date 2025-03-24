@@ -397,8 +397,8 @@ pub(crate) async fn get_real_src_real_dest_and_host(
             "only support ipv4",
         ));
     };
-    let is_src_tun_ip = config.tun_cidr.contains_addr(&src_ipv4.into());
-    let is_dest_tun_ip = config.tun_cidr.contains_addr(&dest_ipv4.into());
+    let is_src_tun_ip = config.tun_cidr.contains_addr(&src_ipv4);
+    let is_dest_tun_ip = config.tun_cidr.contains_addr(&dest_ipv4);
 
     let ip = dest_ipv4.to_string();
     let host_optional = resolver

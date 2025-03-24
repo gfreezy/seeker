@@ -2,6 +2,7 @@ use crate::dns_client::DnsClient;
 use crate::proxy_connection::ProxyConnection;
 use crate::proxy_tcp_stream::ProxyTcpStream;
 use crate::proxy_udp_socket::ProxyUdpSocket;
+use crate::server_performance::ServerPerformanceTracker;
 use anyhow::Result;
 use async_std::io::timeout;
 use async_std::prelude::*;
@@ -22,11 +23,11 @@ pub struct GroupServersChooser {
     ping_urls: Vec<PingURL>,
     ping_timeout: Duration,
     servers: Arc<Vec<ServerConfig>>,
-    candidates: Arc<Mutex<Vec<ServerConfig>>>,
     selected_server: Arc<Mutex<ServerConfig>>,
     dns_client: DnsClient,
     live_connections: Arc<RwLock<Vec<Box<dyn ProxyConnection + Send + Sync>>>>,
     show_stats: bool,
+    performance_tracker: ServerPerformanceTracker,
 }
 
 impl GroupServersChooser {
@@ -43,12 +44,12 @@ impl GroupServersChooser {
             name,
             ping_urls,
             ping_timeout,
-            candidates: Arc::new(Mutex::new(servers.iter().cloned().collect())),
             servers,
             dns_client,
             live_connections: Arc::new(RwLock::new(vec![])),
             selected_server: Arc::new(Mutex::new(selected)),
             show_stats,
+            performance_tracker: ServerPerformanceTracker::new(100, Duration::from_secs(300)),
         };
         chooser.ping_servers().await;
         chooser
@@ -147,28 +148,38 @@ impl GroupServersChooser {
     }
 
     pub fn move_to_next_server(&self) {
-        // make sure `candidates` drop after block ends to avoid deadlock.
-        let candidates = self.candidates.lock();
-        if candidates.is_empty() {
+        let now = Instant::now();
+        let mut best_score = f64::NEG_INFINITY;
+        let mut best_server = None;
+
+        // Find the server with the best performance score
+        for server in self.servers.iter() {
+            let score = self.performance_tracker.get_server_score(server, now);
+            if score > best_score {
+                best_score = score;
+                best_server = Some(server.clone());
+            }
+        }
+
+        if let Some(new_server) = best_server {
+            let old = self.selected_server.lock().clone();
+            self.set_server_down(&old);
+            info!(
+                group = self.name,
+                old_name = old.name(),
+                old_server = ?old.addr(),
+                new_name = new_server.name(),
+                new_server = ?new_server.addr(),
+                score = best_score,
+                "Change shadowsocks server"
+            );
+            *self.selected_server.lock() = new_server;
+        } else {
             tracing::error!(
                 group = self.name,
                 "No server available, all servers are down"
             );
-            return;
         }
-        let old = self.selected_server.lock().clone();
-        self.set_server_down(&old);
-        let new = &candidates[0];
-        info!(
-            group = self.name,
-            old_name = old.name(),
-            old_server = ?old.addr(),
-            new_name = new.name(),
-            new_server = ?new.addr(),
-            "Change shadowsocks server"
-        );
-        // use the first server of candidates
-        *self.selected_server.lock() = new.clone();
     }
 
     pub async fn run_background_tasks(&self) -> Result<()> {
@@ -207,7 +218,8 @@ impl GroupServersChooser {
                 entry.max_duration = traffic.duration().max(entry.max_duration);
             }
         }
-        println!("Connections:");
+
+        println!("Group \"{}\", Connections:", self.name);
         let mut v: Vec<_> = map.into_iter().collect();
         v.sort_unstable_by(|(addr1, _), (addr2, _)| addr1.cmp(addr2));
         for (remote_addr, stats) in v {
@@ -221,6 +233,20 @@ impl GroupServersChooser {
                 stats.recv
             );
         }
+
+        println!("\nGroup \"{}\", Server Performance:", self.name);
+        let server_stats = self.performance_tracker.get_all_server_stats();
+        for (addr, stats) in server_stats {
+            println!(
+                "{}: score={:.2} latency={:.1}ms, success_rate={:.2}%, success={}, failure={}",
+                addr,
+                stats.score,
+                stats.latency,
+                stats.success_rate * 100.0,
+                stats.success,
+                stats.failure
+            );
+        }
         println!();
     }
 
@@ -229,7 +255,6 @@ impl GroupServersChooser {
             return;
         }
 
-        let mut candidates = vec![];
         let mut fut: FuturesUnordered<_> = self
             .servers
             .iter()
@@ -237,68 +262,35 @@ impl GroupServersChooser {
                 let self_clone = self.clone();
                 let config_clone = config.clone();
                 spawn(async move {
-                    let duration = self_clone
+                    let result = self_clone
                         .ping_server(config_clone.clone())
                         .await
-                        .map_err(|e| (e, config_clone.clone()))?;
-                    Ok::<_, (std::io::Error, ServerConfig)>((config_clone, duration))
+                        .map_err(|e| (e, config_clone.clone()));
+                    let is_success = result.is_ok();
+                    self_clone.performance_tracker.add_result(
+                        &config_clone,
+                        result.ok(),
+                        is_success,
+                    );
                 })
             })
             .collect();
-        while let Some(ret) = fut.next().await {
-            match ret {
-                Ok((config, duration)) => {
-                    info!(
-                        group = self.name,
-                        name = config.name(),
-                        server = ?config.addr(),
-                        latency = %duration.as_millis(),
-                        "Successfully ping shadowsocks server"
-                    );
-                    candidates.push((config, duration));
-                }
-                Err((err, config)) => {
-                    info!(
-                        group = self.name,
-                        name = config.name(),
-                        server = ?config.addr(),
-                        ?err,
-                        "Error ping shadowsocks server"
-                    );
-                }
-            }
-        }
-        if !candidates.is_empty() {
-            // sort by duration, shorter first.
-            candidates.sort_by_key(|(_, duration)| *duration);
-            *self.candidates.lock() = candidates.into_iter().map(|(config, _)| config).collect();
-        }
 
-        if !self
-            .candidates
-            .lock()
-            .contains(&*self.selected_server.lock())
-        {
-            // current server is down, move to next server.
-            self.move_to_next_server();
-        }
+        while fut.next().await.is_some() {}
+
+        self.move_to_next_server();
     }
 
     async fn ping_server(&self, server_config: ServerConfig) -> std::io::Result<Duration> {
         let instant = Instant::now();
         for ping_url in &self.ping_urls {
-            let ret = ping_server(
+            ping_server(
                 server_config.clone(),
                 ping_url,
                 self.ping_timeout,
                 self.dns_client.clone(),
             )
-            .await;
-
-            if let Err(e) = ret {
-                self.set_server_down(&server_config);
-                return Err(e);
-            }
+            .await?;
         }
         Ok(instant.elapsed())
     }
@@ -358,7 +350,7 @@ async fn ping_server(
                 if !status_code.starts_with('2') && !status_code.starts_with('3') {
                     return Err(std::io::Error::new(
                         std::io::ErrorKind::Other,
-                        format!("HTTP status code is: {}", status_code),
+                        format!("Host: {}, Status code: {}", ping_url.host(), status_code),
                     ));
                 }
             }

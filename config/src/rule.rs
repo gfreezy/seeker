@@ -1,7 +1,7 @@
 use crate::parse_cidr;
 use maxminddb::geoip2::Country;
 use parking_lot::{Mutex, RwLock};
-use smoltcp::wire::{Ipv4Address, Ipv4Cidr};
+use smoltcp::wire::Ipv4Cidr;
 use std::fmt::{self, Formatter};
 use std::fs::File;
 use std::io::{copy, BufWriter};
@@ -35,7 +35,7 @@ impl Rule {
     /// Check if the rule has a target proxy group and it's empty.
     pub fn has_empty_target_proxy_group(&self) -> bool {
         self.target_proxy_group_name()
-            .map_or(false, |name| name.is_empty())
+            .is_some_and(|name| name.is_empty())
     }
 }
 
@@ -179,13 +179,7 @@ impl ProxyRules {
             (Rule::Domain(d, _), Some(domain), _) if d == domain => true,
             (Rule::DomainSuffix(d, _), Some(domain), _) if domain.ends_with(d) => true,
             (Rule::DomainKeyword(d, _), Some(domain), _) if domain.contains(d) => true,
-            (Rule::IpCidr(cidr, _), _, Some(ip)) => {
-                let ip: Ipv4Address = ip.into();
-                if cidr.contains_addr(&ip) {
-                    return true;
-                }
-                false
-            }
+            (Rule::IpCidr(cidr, _), _, Some(ip)) if cidr.contains_addr(&ip) => true,
             (Rule::GeoIp(name, _), _, Some(ip))
                 if self.did_geo_ip_matches_name(ip.into(), name) =>
             {
@@ -301,7 +295,7 @@ fn did_geo_ip_matches_name(reader: &maxminddb::Reader<Vec<u8>>, ip: IpAddr, name
     country
         .country
         .and_then(|c| c.iso_code)
-        .map_or(false, |code| code == name)
+        .is_some_and(|code| code == name)
 }
 
 fn default_geo_ip_path() -> PathBuf {
