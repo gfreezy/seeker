@@ -2,7 +2,7 @@ use crate::dns_client::DnsClient;
 use crate::proxy_connection::ProxyConnection;
 use crate::proxy_tcp_stream::ProxyTcpStream;
 use crate::proxy_udp_socket::ProxyUdpSocket;
-use crate::server_performance::ServerPerformanceTracker;
+use crate::server_performance::{DEFAULT_SCORE, ServerPerformanceTracker};
 use anyhow::Result;
 use async_std::io::timeout;
 use async_std::prelude::*;
@@ -149,13 +149,13 @@ impl GroupServersChooser {
 
     pub fn move_to_next_server(&self) {
         let now = Instant::now();
-        let mut best_score = f64::NEG_INFINITY;
+        let mut best_score = DEFAULT_SCORE;
         let mut best_server = None;
 
         // Find the server with the best performance score
         for server in self.servers.iter() {
             let score = self.performance_tracker.get_server_score(server, now);
-            if score > best_score {
+            if score < best_score {
                 best_score = score;
                 best_server = Some(server.clone());
             }
