@@ -96,8 +96,8 @@ fn get_primary_network() -> String {
     loop {
         if let Some(line) = iter.next() {
             if let Some(next_line) = iter.peek() {
-                if next_line.split(':').last().map(|l| l.contains(device)) == Some(true) {
-                    if let Some(network) = line.split(':').last().map(|s| s.trim()) {
+                if next_line.split(':').next_back().map(|l| l.contains(device)) == Some(true) {
+                    if let Some(network) = line.split(':').next_back().map(|s| s.trim()) {
                         return network.to_string();
                     }
                 }

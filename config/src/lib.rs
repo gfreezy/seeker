@@ -341,11 +341,7 @@ impl Config {
         let has_default_proxy = self.rules.has_empty_proxy_or_probe_rules();
         if has_default_proxy {
             let groups = Arc::make_mut(&mut self.proxy_groups);
-            let servers: Vec<String> = self
-                .servers
-                .iter()
-                .map(|s| s.name().to_string())
-                .collect();
+            let servers: Vec<String> = self.servers.iter().map(|s| s.name().to_string()).collect();
             groups.push(ProxyGroup {
                 name: "".to_string(),
                 ping_timeout: None,
