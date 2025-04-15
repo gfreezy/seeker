@@ -121,7 +121,7 @@ fn main() -> anyhow::Result<()> {
                     tracing::info!("Update rules success.");
                 }
                 Err(e) => {
-                    tracing::info!("Reload config error: {:?}", e);
+                    tracing::error!(?e, "Reload config error");
                 }
             }
         });

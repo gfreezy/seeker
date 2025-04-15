@@ -341,20 +341,15 @@ impl Config {
         let has_default_proxy = self.rules.has_empty_proxy_or_probe_rules();
         if has_default_proxy {
             let groups = Arc::make_mut(&mut self.proxy_groups);
-            let mut used_servers = std::collections::HashSet::new();
-            for group in groups.iter() {
-                used_servers.extend(group.proxies.iter().cloned());
-            }
-            let unused_servers: Vec<String> = self
+            let servers: Vec<String> = self
                 .servers
                 .iter()
                 .map(|s| s.name().to_string())
-                .filter(|name| !used_servers.contains(name))
                 .collect();
             groups.push(ProxyGroup {
                 name: "".to_string(),
                 ping_timeout: None,
-                proxies: unused_servers,
+                proxies: servers,
                 ping_urls: self.ping_urls.clone(),
             });
         }

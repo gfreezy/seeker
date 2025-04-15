@@ -48,6 +48,10 @@ impl RuleBasedDnsResolver {
 
     async fn resolve_real(&self, domain: &str, qtype: QueryType) -> Result<DnsPacket> {
         let mut packet = DnsPacket::new();
+        // AAAA record is not supported yet.
+        if qtype == QueryType::AAAA {
+            return Ok(packet);
+        }
         let lookup = self
             .inner
             .resolver

@@ -58,7 +58,7 @@ pub(crate) async fn relay_tcp_stream(
     if let Err(e) = &ret {
         tracing::error!(?e, ?host, "tunnel tcp stream");
     } else {
-        tracing::info!("tunnel tcp stream: recycle port, host: {host}, error: {ret:?}");
+        tracing::info!("tunnel tcp stream: recycle port, host: {host}");
     }
     remote_conn.shutdown();
     Ok(())
