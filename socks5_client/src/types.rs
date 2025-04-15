@@ -420,7 +420,7 @@ fn write_domain_name_address<B: BufMut>(dnaddr: &str, port: u16, buf: &mut B) {
 
     buf.put_u8(consts::SOCKS5_ADDR_TYPE_DOMAIN_NAME);
     buf.put_u8(dnaddr.len() as u8);
-    buf.put_slice(dnaddr[..].as_bytes());
+    buf.put_slice(dnaddr.as_bytes());
     buf.put_u16(port);
 }
 
