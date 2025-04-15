@@ -162,6 +162,9 @@ impl GroupServersChooser {
         }
 
         if let Some(new_server) = best_server {
+            if new_server.addr() == self.selected_server.lock().addr() {
+                return;
+            }
             let old = self.selected_server.lock().clone();
             self.set_server_down(&old);
             info!(
@@ -187,9 +190,7 @@ impl GroupServersChooser {
         loop {
             if last_updated.elapsed() > Duration::from_secs(10) {
                 self.ping_servers().await;
-                if self.show_stats {
-                    self.print_connection_stats();
-                }
+                self.print_connection_stats(self.show_stats);
                 last_updated = Instant::now();
             }
             self.recycle_live_connections();
@@ -197,7 +198,7 @@ impl GroupServersChooser {
         }
     }
 
-    fn print_connection_stats(&self) {
+    fn print_connection_stats(&self, show_stats: bool) {
         #[derive(Default)]
         struct Stats {
             count: usize,
@@ -219,11 +220,25 @@ impl GroupServersChooser {
             }
         }
 
-        println!("Group \"{}\", Connections:", self.name);
+        info!("Group \"{}\", Connections:", self.name);
+        if show_stats {
+            println!("Group \"{}\", Connections:", self.name);
+        }
         let mut v: Vec<_> = map.into_iter().collect();
         v.sort_unstable_by(|(addr1, _), (addr2, _)| addr1.cmp(addr2));
         for (remote_addr, stats) in v {
-            println!(
+            if show_stats {
+                println!(
+                    "[{}] {}, conns: {}, max_duration: {}, sent_bytes: {}, recv_bytes: {}",
+                    stats.action,
+                    remote_addr,
+                    stats.count,
+                    stats.max_duration.as_secs(),
+                    stats.send,
+                    stats.recv
+                );
+            }
+            info!(
                 "[{}] {}, conns: {}, max_duration: {}, sent_bytes: {}, recv_bytes: {}",
                 stats.action,
                 remote_addr,
@@ -234,10 +249,24 @@ impl GroupServersChooser {
             );
         }
 
-        println!("\nGroup \"{}\", Server Performance:", self.name);
+        if show_stats {
+            println!("\nGroup \"{}\", Server Performance:", self.name);
+        }
+        info!("\nGroup \"{}\", Server Performance:", self.name);
         let server_stats = self.performance_tracker.get_all_server_stats();
         for (addr, stats) in server_stats {
-            println!(
+            if show_stats {
+                println!(
+                    "{}: score={:.2} latency={:.1}ms, success_rate={:.2}%, success={}, failure={}",
+                    addr,
+                    stats.score,
+                    stats.latency,
+                    stats.success_rate * 100.0,
+                    stats.success,
+                    stats.failure
+                );
+            }
+            info!(
                 "{}: score={:.2} latency={:.1}ms, success_rate={:.2}%, success={}, failure={}",
                 addr,
                 stats.score,
@@ -247,7 +276,9 @@ impl GroupServersChooser {
                 stats.failure
             );
         }
-        println!();
+        if show_stats {
+            println!();
+        }
     }
 
     pub async fn ping_servers(&self) {
