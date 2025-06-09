@@ -426,7 +426,7 @@ fn read_data_from_remote_config(url: &str) -> io::Result<Vec<u8>> {
     let _size = ureq::get(url)
         .timeout(Duration::from_secs(5))
         .call()
-        .map_err(|_| io::Error::new(io::ErrorKind::Other, "read remote config"))?
+        .map_err(|_| io::Error::other("read remote config"))?
         .into_reader()
         .read_to_end(&mut data)?;
     Ok(data)
@@ -434,7 +434,7 @@ fn read_data_from_remote_config(url: &str) -> io::Result<Vec<u8>> {
 
 fn parse_remote_config_data(data: &[u8]) -> io::Result<Vec<ServerConfig>> {
     let b64decoded = base64::decode_engine(data, &URL_SAFE_ENGINE)
-        .map_err(|_e| io::Error::new(io::ErrorKind::Other, "b64decode"))?;
+        .map_err(|_e| io::Error::other("b64decode"))?;
     tracing::info!("b64decoded: {:?}", b64decoded);
     let server_urls = b64decoded.split(|&c| c == b'\n');
     let ret: Result<_, _> = server_urls
@@ -443,7 +443,7 @@ fn parse_remote_config_data(data: &[u8]) -> io::Result<Vec<ServerConfig>> {
         .filter(|url| !url.is_empty())
         .map(ServerConfig::from_str)
         .collect();
-    ret.map_err(|_e| io::Error::new(io::ErrorKind::Other, "build server from url"))
+    ret.map_err(|_e| io::Error::other("build server from url"))
 }
 
 #[cfg(test)]

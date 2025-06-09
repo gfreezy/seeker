@@ -12,8 +12,7 @@ use crate::dns_client::DnsClient;
 use crate::probe_connectivity::ProbeConnectivity;
 use crate::proxy_client::{UdpManager, get_action_for_addr, get_real_src_real_dest_and_host};
 use crate::proxy_connection::ProxyConnection;
-use crate::proxy_udp_socket::ProxyUdpSocket;
-use crate::server_chooser::ServerChooser;
+use crate::server_chooser::{CandidateUdpSocket, ServerChooser};
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn relay_udp_socket(
@@ -27,7 +26,7 @@ pub(crate) async fn relay_udp_socket(
     connectivity: ProbeConnectivity,
     user_id: Option<u32>,
     udp_manager: UdpManager,
-) -> std::io::Result<(ProxyUdpSocket, SocketAddr, Address)> {
+) -> std::io::Result<(CandidateUdpSocket, SocketAddr, Address)> {
     let session_port = tun_addr.port();
     let (real_src, real_dest, host) = get_real_src_real_dest_and_host(
         session_port,
@@ -38,7 +37,7 @@ pub(crate) async fn relay_udp_socket(
     )
     .await?;
     tracing::debug!(?real_src, ?real_dest, ?host, "new udp connection");
-    let proxy_socket = choose_proxy_udp_socket(
+    let candidate_udp_socket = choose_proxy_udp_socket(
         real_src,
         real_dest,
         &host,
@@ -50,12 +49,12 @@ pub(crate) async fn relay_udp_socket(
     .await?;
 
     tracing::debug!("new udp connection successfully, {}", host);
-
-    let proxy_client_clone = proxy_socket.clone();
+    let proxy_socket = candidate_udp_socket.socket.clone();
+    let candidate_udp_socket_clone = candidate_udp_socket.clone();
     let host_clone = host.clone();
     let udp_manager_clone = udp_manager.clone();
     spawn(async move {
-        let _: std::io::Result<()> = async {
+        let ret: std::io::Result<()> = async {
             let mut buf = vec![0; 2000];
             loop {
                 if !session_manager.update_activity_for_port(session_port) {
@@ -65,7 +64,7 @@ pub(crate) async fn relay_udp_socket(
                     ));
                 }
                 let (recv_size, _peer) =
-                    timeout(config.read_timeout, proxy_client_clone.recv_from(&mut buf)).await?;
+                    timeout(config.read_timeout, proxy_socket.recv_from(&mut buf)).await?;
                 assert!(recv_size < 2000);
                 let send_size = timeout(
                     config.write_timeout,
@@ -76,17 +75,26 @@ pub(crate) async fn relay_udp_socket(
             }
         }
         .await;
+        if ret.is_err() {
+            if let Some(performance_tracker) =
+                server_chooser.get_performance_tracker(&candidate_udp_socket_clone.proxy_group_name)
+            {
+                if let Some(server_config) = &candidate_udp_socket_clone.server_config {
+                    performance_tracker.add_result(server_config, None, false);
+                }
+            }
+        }
         session_manager.recycle_port(session_port);
         udp_manager_clone.write().remove(&session_port);
-        proxy_client_clone.shutdown();
+        candidate_udp_socket_clone.socket.shutdown();
     });
 
     udp_manager.write().insert(
         session_port,
-        (proxy_socket.clone(), real_dest, host.clone()),
+        (candidate_udp_socket.clone(), real_dest, host.clone()),
     );
 
-    Ok((proxy_socket, real_dest, host))
+    Ok((candidate_udp_socket, real_dest, host))
 }
 
 async fn choose_proxy_udp_socket(
@@ -97,7 +105,7 @@ async fn choose_proxy_udp_socket(
     server_chooser: &ServerChooser,
     connectivity: &ProbeConnectivity,
     user_id: Option<u32>,
-) -> std::io::Result<ProxyUdpSocket> {
+) -> std::io::Result<CandidateUdpSocket> {
     let action = get_action_for_addr(
         real_src,
         real_dest,

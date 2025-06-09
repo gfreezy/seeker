@@ -1,10 +1,9 @@
 use crate::REDIR_LISTEN_PORT;
 use crate::dns_client::DnsClient;
 use crate::probe_connectivity::ProbeConnectivity;
-use crate::proxy_udp_socket::ProxyUdpSocket;
 use crate::relay_tcp_stream::relay_tcp_stream;
 use crate::relay_udp_socket::relay_udp_socket;
-use crate::server_chooser::ServerChooser;
+use crate::server_chooser::{CandidateUdpSocket, ServerChooser};
 use async_std::future::pending;
 use async_std::io::timeout;
 use async_std::net::{SocketAddr, TcpListener, TcpStream, UdpSocket};
@@ -17,7 +16,7 @@ use dnsserver::create_dns_server;
 use dnsserver::resolver::RuleBasedDnsResolver;
 use parking_lot::RwLock;
 use std::collections::HashMap;
-use std::io::{Error, ErrorKind, Result};
+use std::io::{Error, Result};
 
 use std::net::IpAddr;
 
@@ -26,7 +25,7 @@ use tracing::{error, instrument, trace, trace_span};
 use tracing_futures::Instrument;
 use tun_nat::{SessionManager, run_nat};
 
-pub(crate) type UdpManager = Arc<RwLock<HashMap<u16, (ProxyUdpSocket, SocketAddr, Address)>>>;
+pub(crate) type UdpManager = Arc<RwLock<HashMap<u16, (CandidateUdpSocket, SocketAddr, Address)>>>;
 
 pub struct ProxyClient {
     config: Config,
@@ -228,15 +227,14 @@ impl ProxyClient {
         &self,
         tun_socket: Arc<UdpSocket>,
         tun_addr: SocketAddr,
-    ) -> Result<(ProxyUdpSocket, SocketAddr, Address)> {
+    ) -> Result<(CandidateUdpSocket, SocketAddr, Address)> {
         let port = tun_addr.port();
         if let Some(r) = self.udp_manager.read().get(&port) {
             return Ok(r.clone());
         }
 
         let Some(session_manager) = self.session_manager.clone() else {
-            return Err(Error::new(
-                ErrorKind::Other,
+            return Err(Error::other(
                 "session manager not initialized",
             ));
         };
@@ -271,7 +269,7 @@ impl ProxyClient {
             let session_port = peer_addr.port();
 
             let tun_socket = udp_listener.clone();
-            let (proxy_udp_socket, real_dest, host) =
+            let (candidate_udp_socket, real_dest, host) =
                 match self.get_proxy_udp_socket(tun_socket, peer_addr).await {
                     Ok(r) => r,
                     Err(e) => {
@@ -279,6 +277,7 @@ impl ProxyClient {
                         continue;
                     }
                 };
+            let proxy_udp_socket = candidate_udp_socket.socket;
             let ret = timeout(
                 self.config.write_timeout,
                 proxy_udp_socket.send_to(&buf[..size], real_dest),
@@ -286,6 +285,11 @@ impl ProxyClient {
             .await;
             if let Err(e) = ret {
                 error!("send udp packet error {}: {:?}", host, e);
+                if let Some(performance_tracker) = self.server_chooser.get_performance_tracker(&candidate_udp_socket.proxy_group_name) {
+                    if let Some(server_config) = candidate_udp_socket.server_config {
+                        performance_tracker.add_result(&server_config, None, false);
+                    }
+                }
                 if let Some(session_manager) = &self.session_manager {
                     session_manager.recycle_port(session_port);
                 }
@@ -377,8 +381,7 @@ pub(crate) async fn get_real_src_real_dest_and_host(
         Some(s) => s,
         None => {
             error!("session manager not found port");
-            return Err(Error::new(
-                std::io::ErrorKind::Other,
+            return Err(Error::other(
                 "session manager not found port",
             ));
         }
@@ -430,8 +433,7 @@ pub(crate) async fn get_real_src_real_dest_and_host(
         Ok(a) => a,
         Err(e) => {
             error!(?e, ?host, "error resolve dns");
-            return Err(Error::new(
-                std::io::ErrorKind::Other,
+            return Err(Error::other(
                 format!("resolve dns error: {host}"),
             ));
         }

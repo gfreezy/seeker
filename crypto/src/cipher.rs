@@ -58,12 +58,12 @@ impl Display for Error {
 impl From<Error> for io::Error {
     fn from(e: Error) -> io::Error {
         match e {
-            Error::UnknownCipherType => io::Error::new(io::ErrorKind::Other, "unknown cipher type"),
+            Error::UnknownCipherType => io::Error::other("unknown cipher type"),
             #[cfg(feature = "openssl")]
             Error::OpenSSLError(err) => From::from(err),
             Error::IoError(err) => err,
-            Error::AeadDecryptFailed => io::Error::new(io::ErrorKind::Other, "AEAD decrypt error"),
-            Error::SodiumError => io::Error::new(io::ErrorKind::Other, "sodium error"),
+            Error::AeadDecryptFailed => io::Error::other("AEAD decrypt error"),
+            Error::SodiumError => io::Error::other("sodium error"),
         }
     }
 }

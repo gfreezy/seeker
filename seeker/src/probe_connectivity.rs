@@ -13,7 +13,7 @@ use async_std::prelude::{FutureExt as _, *};
 use config::Address;
 use tracing::instrument;
 
-use crate::server_chooser::ServerChooser;
+use crate::server_chooser::{CandidateTcpStream, ServerChooser};
 
 #[derive(Clone)]
 pub(crate) struct ProbeConnectivity {
@@ -41,7 +41,7 @@ impl ProbeConnectivity {
     ) -> Action {
         let proxy_connectivity_fut = async {
             let proxy_group_name = proxy_group_name.clone();
-            let Ok(tcp_stream) = server_chooser.proxy_connect(addr, &proxy_group_name).await else {
+            let Ok(CandidateTcpStream { stream: tcp_stream, .. }) = server_chooser.proxy_connect(addr, &proxy_group_name).await else {
                 // If the proxy connection fails, we return the direct connection.
                 return Action::Direct;
             };

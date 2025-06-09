@@ -4,7 +4,7 @@ use chrono::{DateTime, Local, TimeDelta};
 use std::clone::Clone;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::hash::{Hash, Hasher};
-use std::io::{Error, ErrorKind, Result};
+use std::io::{Error, Result};
 use std::sync::{Arc, RwLock};
 
 use crate::dns::protocol::{DnsPacket, DnsRecord, QueryType, ResultCode};
@@ -283,7 +283,7 @@ impl SynchronizedCache {
     pub fn list(&self) -> Result<Vec<Arc<DomainEntry>>> {
         let cache = match self.cache.read() {
             Ok(x) => x,
-            Err(_) => return Err(Error::new(ErrorKind::Other, "Failed to acquire lock")),
+            Err(_) => return Err(Error::other("Failed to acquire lock")),
         };
 
         let mut list = Vec::new();
@@ -308,7 +308,7 @@ impl SynchronizedCache {
     pub fn store(&self, records: &[DnsRecord]) -> Result<()> {
         let mut cache = match self.cache.write() {
             Ok(x) => x,
-            Err(_) => return Err(Error::new(ErrorKind::Other, "Failed to acquire lock")),
+            Err(_) => return Err(Error::other("Failed to acquire lock")),
         };
 
         cache.store(records);
@@ -319,7 +319,7 @@ impl SynchronizedCache {
     pub fn store_nxdomain(&self, qname: &str, qtype: QueryType, ttl: u32) -> Result<()> {
         let mut cache = match self.cache.write() {
             Ok(x) => x,
-            Err(_) => return Err(Error::new(ErrorKind::Other, "Failed to acquire lock")),
+            Err(_) => return Err(Error::other("Failed to acquire lock")),
         };
 
         cache.store_nxdomain(qname, qtype, ttl);

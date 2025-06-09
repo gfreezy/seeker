@@ -12,8 +12,7 @@ use tracing::{error, instrument, trace};
 use crate::probe_connectivity::ProbeConnectivity;
 use crate::proxy_client::get_action_for_addr;
 use crate::proxy_connection::ProxyConnection;
-use crate::proxy_tcp_stream::ProxyTcpStream;
-use crate::server_chooser::ServerChooser;
+use crate::server_chooser::{CandidateTcpStream, ServerChooser};
 
 #[allow(clippy::too_many_arguments)]
 #[instrument(skip_all)]
@@ -28,7 +27,7 @@ pub(crate) async fn relay_tcp_stream(
     user_id: Option<u32>,
     on_update_activity: impl Fn() -> bool,
 ) -> Result<()> {
-    let remote_conn = match choose_proxy_tcp_stream(
+    let candidate_tcp_stream = choose_proxy_tcp_stream(
         real_src,
         real_dest,
         &host,
@@ -37,15 +36,15 @@ pub(crate) async fn relay_tcp_stream(
         &connectivity,
         user_id,
     )
-    .await
-    {
-        Ok(remote_conn) => remote_conn,
+    .await;
+    let candidate_tcp_stream = match candidate_tcp_stream {
+        Ok(candidate_tcp_stream) => candidate_tcp_stream,
         Err(e) => {
             error!(?host, ?e, "connect remote error");
             return Err(e);
         }
     };
-
+    let remote_conn = &candidate_tcp_stream.stream;
     let ret = tunnel_tcp_stream(
         &host,
         conn,
@@ -55,8 +54,17 @@ pub(crate) async fn relay_tcp_stream(
         on_update_activity,
     )
     .await;
+
+    let performance_tracker =
+        server_chooser.get_performance_tracker(&candidate_tcp_stream.proxy_group_name);
+
     if let Err(e) = &ret {
         tracing::error!(?e, ?host, "tunnel tcp stream");
+        if let Some(performance_tracker) = performance_tracker {
+            if let Some(server_config) = candidate_tcp_stream.server_config {
+                performance_tracker.add_result(&server_config, None, false);
+            }
+        }
     } else {
         tracing::info!("tunnel tcp stream: recycle port, host: {host}");
     }
@@ -80,7 +88,7 @@ async fn choose_proxy_tcp_stream(
     server_chooser: &ServerChooser,
     connectivity: &ProbeConnectivity,
     user_id: Option<u32>,
-) -> Result<ProxyTcpStream> {
+) -> Result<CandidateTcpStream> {
     let action = get_action_for_addr(
         original_addr,
         sock_addr,

@@ -195,7 +195,7 @@ impl From<io::Error> for Error {
 
 impl From<Error> for io::Error {
     fn from(err: Error) -> io::Error {
-        io::Error::new(io::ErrorKind::Other, err.message)
+        io::Error::other(err.message)
     }
 }
 

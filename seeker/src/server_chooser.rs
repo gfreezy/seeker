@@ -2,10 +2,11 @@ use crate::dns_client::DnsClient;
 use crate::group_servers_chooser::GroupServersChooser;
 use crate::proxy_tcp_stream::ProxyTcpStream;
 use crate::proxy_udp_socket::ProxyUdpSocket;
+use crate::server_performance::ServerPerformanceTracker;
 use anyhow::Result;
 use async_std::task::spawn;
 use config::rule::Action;
-use config::{Address, Config};
+use config::{Address, Config, ServerConfig};
 use futures_util::future::join_all;
 use std::collections::HashMap;
 
@@ -13,6 +14,20 @@ use std::collections::HashMap;
 pub struct ServerChooser {
     dns_client: DnsClient,
     group_servers_chooser: HashMap<String, GroupServersChooser>,
+}
+
+#[derive(Clone)]
+pub(crate) struct CandidateTcpStream {
+    pub stream: ProxyTcpStream,
+    pub proxy_group_name: String,
+    pub server_config: Option<ServerConfig>,
+}
+
+#[derive(Clone)]
+pub(crate) struct CandidateUdpSocket {
+    pub socket: ProxyUdpSocket,
+    pub proxy_group_name: String,
+    pub server_config: Option<ServerConfig>,
 }
 
 impl ServerChooser {
@@ -54,8 +69,8 @@ impl ServerChooser {
         &self,
         remote_addr: Address,
         action: Action,
-    ) -> std::io::Result<ProxyTcpStream> {
-        let stream = match action {
+    ) -> std::io::Result<CandidateTcpStream> {
+        let candidate_tcp_stream = match action {
             Action::Proxy(proxy_group_name) => {
                 self.proxy_connect(&remote_addr, &proxy_group_name).await?
             }
@@ -63,14 +78,14 @@ impl ServerChooser {
             _ => unreachable!(),
         };
 
-        Ok(stream)
+        Ok(candidate_tcp_stream)
     }
 
     pub async fn proxy_connect(
         &self,
         remote_addr: &Address,
         proxy_group_name: &str,
-    ) -> std::io::Result<ProxyTcpStream> {
+    ) -> std::io::Result<CandidateTcpStream> {
         let Some(chooser) = self.group_servers_chooser.get(proxy_group_name) else {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::NotFound,
@@ -80,17 +95,28 @@ impl ServerChooser {
         chooser.proxy_connect(remote_addr).await
     }
 
-    async fn direct_connect(&self, remote_addr: &Address) -> std::io::Result<ProxyTcpStream> {
+    async fn direct_connect(&self, remote_addr: &Address) -> std::io::Result<CandidateTcpStream> {
         let ret = ProxyTcpStream::connect(remote_addr.clone(), None, self.dns_client.clone()).await;
         if ret.is_err() {
             tracing::error!(?remote_addr, action = ?Action::Direct, "Failed to connect to server");
         }
-        ret
+        Ok(CandidateTcpStream {
+            stream: ret?,
+            proxy_group_name: "".to_string(),
+            server_config: None,
+        })
     }
 
-    pub async fn candidate_udp_socket(&self, action: Action) -> std::io::Result<ProxyUdpSocket> {
+    pub async fn candidate_udp_socket(&self, action: Action) -> std::io::Result<CandidateUdpSocket> {
         let socket = match &action {
-            Action::Direct => ProxyUdpSocket::new(None, self.dns_client.clone()).await?,
+            Action::Direct => {
+                let udp_socket = ProxyUdpSocket::new(None, self.dns_client.clone()).await?;
+                CandidateUdpSocket {
+                    socket: udp_socket,
+                    proxy_group_name: "".to_string(),
+                    server_config: None,
+                }
+            }
             Action::Proxy(proxy_group_name) => {
                 let Some(chooser) = self.group_servers_chooser.get(proxy_group_name) else {
                     return Err(std::io::Error::new(
@@ -98,7 +124,8 @@ impl ServerChooser {
                         format!("proxy group {} not found", proxy_group_name),
                     ));
                 };
-                chooser.candidate_udp_socket(action).await?
+                
+                chooser.candidate_udp_socket(action.clone()).await?
             }
             _ => unreachable!(),
         };
@@ -112,5 +139,9 @@ impl ServerChooser {
             handles.push(spawn(async move { chooser.run_background_tasks().await }));
         }
         join_all(handles).await.into_iter().collect()
+    }
+
+    pub fn get_performance_tracker(&self, proxy_group_name: &str) -> Option<ServerPerformanceTracker> {
+        self.group_servers_chooser.get(proxy_group_name).map(|chooser| chooser.get_performance_tracker())
     }
 }
