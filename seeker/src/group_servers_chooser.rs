@@ -2,6 +2,7 @@ use crate::dns_client::DnsClient;
 use crate::proxy_connection::ProxyConnection;
 use crate::proxy_tcp_stream::ProxyTcpStream;
 use crate::proxy_udp_socket::ProxyUdpSocket;
+use crate::server_chooser::{CandidateTcpStream, CandidateUdpSocket};
 use crate::server_performance::{DEFAULT_SCORE, ServerPerformanceTracker};
 use anyhow::Result;
 use async_std::io::timeout;
@@ -78,7 +79,7 @@ impl GroupServersChooser {
         &self,
         remote_addr: Address,
         action: Action,
-    ) -> std::io::Result<ProxyTcpStream> {
+    ) -> std::io::Result<CandidateTcpStream> {
         let stream = match action {
             Action::Proxy(_) => self.proxy_connect(&remote_addr).await?,
             Action::Direct => self.direct_connect(&remote_addr).await?,
@@ -87,12 +88,12 @@ impl GroupServersChooser {
 
         // store all on-fly connections
         let stream_clone = stream.clone();
-        self.insert_live_connections(Box::new(stream_clone));
+        self.insert_live_connections(Box::new(stream_clone.stream));
 
         Ok(stream)
     }
 
-    pub async fn proxy_connect(&self, remote_addr: &Address) -> std::io::Result<ProxyTcpStream> {
+    pub async fn proxy_connect(&self, remote_addr: &Address) -> std::io::Result<CandidateTcpStream> {
         let config = self.selected_server.lock().clone();
         let stream =
             ProxyTcpStream::connect(remote_addr.clone(), Some(&config), self.dns_client.clone())
@@ -107,10 +108,14 @@ impl GroupServersChooser {
             );
             self.move_to_next_server();
         }
-        stream
+        Ok(CandidateTcpStream {
+            stream: stream?,
+            proxy_group_name: self.name.clone(),
+            server_config: Some(config),
+        })
     }
 
-    pub async fn direct_connect(&self, remote_addr: &Address) -> std::io::Result<ProxyTcpStream> {
+    pub async fn direct_connect(&self, remote_addr: &Address) -> std::io::Result<CandidateTcpStream> {
         let ret = ProxyTcpStream::connect(remote_addr.clone(), None, self.dns_client.clone()).await;
         if ret.is_err() {
             tracing::error!(
@@ -120,12 +125,16 @@ impl GroupServersChooser {
                 "Failed to connect to server"
             );
         }
-        ret
+        Ok(CandidateTcpStream {
+            stream: ret?,
+            proxy_group_name: self.name.clone(),
+            server_config: None,
+        })
     }
 
-    pub async fn candidate_udp_socket(&self, action: Action) -> std::io::Result<ProxyUdpSocket> {
-        let socket = match action {
-            Action::Direct => ProxyUdpSocket::new(None, self.dns_client.clone()).await?,
+    pub async fn candidate_udp_socket(&self, action: Action) -> std::io::Result<CandidateUdpSocket> {
+        let (socket, proxy_group_name, server_config) = match action {
+            Action::Direct => (ProxyUdpSocket::new(None, self.dns_client.clone()).await?, "".to_string(), None),
             Action::Proxy(_) => {
                 let config = self.selected_server.lock().clone();
                 tracing::info!(group = self.name, "Using server: {}", config.addr());
@@ -138,13 +147,17 @@ impl GroupServersChooser {
                     );
                     self.move_to_next_server();
                 }
-                socket?
+                (socket?, self.name.clone(), Some(config))
             }
             _ => unreachable!(),
         };
         let socket_clone = socket.clone();
         self.insert_live_connections(Box::new(socket_clone));
-        Ok(socket)
+        Ok(CandidateUdpSocket {
+            socket,
+            proxy_group_name,
+            server_config,
+        })
     }
 
     pub fn move_to_next_server(&self) {
@@ -325,6 +338,10 @@ impl GroupServersChooser {
         }
         Ok(instant.elapsed())
     }
+
+    pub fn get_performance_tracker(&self) -> ServerPerformanceTracker {
+        self.performance_tracker.clone()
+    }
 }
 
 async fn ping_server(
@@ -379,8 +396,7 @@ async fn ping_server(
         if let Some(status_line) = response.lines().next() {
             if let Some(status_code) = status_line.split_whitespace().nth(1) {
                 if !status_code.starts_with('2') && !status_code.starts_with('3') {
-                    return Err(std::io::Error::new(
-                        std::io::ErrorKind::Other,
+                    return Err(std::io::Error::other(
                         format!("Host: {}, Status code: {}", ping_url.host(), status_code),
                     ));
                 }

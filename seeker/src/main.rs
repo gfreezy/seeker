@@ -190,7 +190,7 @@ fn main() -> anyhow::Result<()> {
             .await;
     });
 
-    println!("Stop server. Bye bye...");
+    println!("Stop server. Bye bye....");
     Ok(())
 }
 
