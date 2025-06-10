@@ -93,7 +93,10 @@ impl GroupServersChooser {
         Ok(stream)
     }
 
-    pub async fn proxy_connect(&self, remote_addr: &Address) -> std::io::Result<CandidateTcpStream> {
+    pub async fn proxy_connect(
+        &self,
+        remote_addr: &Address,
+    ) -> std::io::Result<CandidateTcpStream> {
         let config = self.selected_server.lock().clone();
         let stream =
             ProxyTcpStream::connect(remote_addr.clone(), Some(&config), self.dns_client.clone())
@@ -115,7 +118,10 @@ impl GroupServersChooser {
         })
     }
 
-    pub async fn direct_connect(&self, remote_addr: &Address) -> std::io::Result<CandidateTcpStream> {
+    pub async fn direct_connect(
+        &self,
+        remote_addr: &Address,
+    ) -> std::io::Result<CandidateTcpStream> {
         let ret = ProxyTcpStream::connect(remote_addr.clone(), None, self.dns_client.clone()).await;
         if ret.is_err() {
             tracing::error!(
@@ -132,9 +138,16 @@ impl GroupServersChooser {
         })
     }
 
-    pub async fn candidate_udp_socket(&self, action: Action) -> std::io::Result<CandidateUdpSocket> {
+    pub async fn candidate_udp_socket(
+        &self,
+        action: Action,
+    ) -> std::io::Result<CandidateUdpSocket> {
         let (socket, proxy_group_name, server_config) = match action {
-            Action::Direct => (ProxyUdpSocket::new(None, self.dns_client.clone()).await?, "".to_string(), None),
+            Action::Direct => (
+                ProxyUdpSocket::new(None, self.dns_client.clone()).await?,
+                "".to_string(),
+                None,
+            ),
             Action::Proxy(_) => {
                 let config = self.selected_server.lock().clone();
                 tracing::info!(group = self.name, "Using server: {}", config.addr());

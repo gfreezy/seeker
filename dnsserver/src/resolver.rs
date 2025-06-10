@@ -161,9 +161,7 @@ impl RuleBasedDnsResolver {
 
         // direct traffic bypass tun.
         let bypass_direct = self.inner.bypass_direct;
-        let mut real_packet: Result<DnsPacket> = Err(io::Error::other(
-            "real packet not found",
-        ));
+        let mut real_packet: Result<DnsPacket> = Err(io::Error::other("real packet not found"));
         // lookup real ip
         let ip = if bypass_direct {
             // resolve real ip only when `bypass_direct` is false.

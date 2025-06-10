@@ -131,9 +131,7 @@ impl TunSocket {
     }
 
     pub fn new_queue(&self) -> Result<TunSocket> {
-        Err(io::Error::other(
-            "Not supported on Darwin",
-        ))
+        Err(io::Error::other("Not supported on Darwin"))
     }
 
     pub fn name(&self) -> Result<String> {

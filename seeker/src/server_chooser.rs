@@ -107,7 +107,10 @@ impl ServerChooser {
         })
     }
 
-    pub async fn candidate_udp_socket(&self, action: Action) -> std::io::Result<CandidateUdpSocket> {
+    pub async fn candidate_udp_socket(
+        &self,
+        action: Action,
+    ) -> std::io::Result<CandidateUdpSocket> {
         let socket = match &action {
             Action::Direct => {
                 let udp_socket = ProxyUdpSocket::new(None, self.dns_client.clone()).await?;
@@ -124,7 +127,7 @@ impl ServerChooser {
                         format!("proxy group {} not found", proxy_group_name),
                     ));
                 };
-                
+
                 chooser.candidate_udp_socket(action.clone()).await?
             }
             _ => unreachable!(),
@@ -141,7 +144,12 @@ impl ServerChooser {
         join_all(handles).await.into_iter().collect()
     }
 
-    pub fn get_performance_tracker(&self, proxy_group_name: &str) -> Option<ServerPerformanceTracker> {
-        self.group_servers_chooser.get(proxy_group_name).map(|chooser| chooser.get_performance_tracker())
+    pub fn get_performance_tracker(
+        &self,
+        proxy_group_name: &str,
+    ) -> Option<ServerPerformanceTracker> {
+        self.group_servers_chooser
+            .get(proxy_group_name)
+            .map(|chooser| chooser.get_performance_tracker())
     }
 }

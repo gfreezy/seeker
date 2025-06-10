@@ -234,9 +234,7 @@ impl ProxyClient {
         }
 
         let Some(session_manager) = self.session_manager.clone() else {
-            return Err(Error::other(
-                "session manager not initialized",
-            ));
+            return Err(Error::other("session manager not initialized"));
         };
         relay_udp_socket(
             tun_socket,
@@ -285,7 +283,10 @@ impl ProxyClient {
             .await;
             if let Err(e) = ret {
                 error!("send udp packet error {}: {:?}", host, e);
-                if let Some(performance_tracker) = self.server_chooser.get_performance_tracker(&candidate_udp_socket.proxy_group_name) {
+                if let Some(performance_tracker) = self
+                    .server_chooser
+                    .get_performance_tracker(&candidate_udp_socket.proxy_group_name)
+                {
                     if let Some(server_config) = candidate_udp_socket.server_config {
                         performance_tracker.add_result(&server_config, None, false);
                     }
@@ -381,9 +382,7 @@ pub(crate) async fn get_real_src_real_dest_and_host(
         Some(s) => s,
         None => {
             error!("session manager not found port");
-            return Err(Error::other(
-                "session manager not found port",
-            ));
+            return Err(Error::other("session manager not found port"));
         }
     };
 
@@ -433,9 +432,7 @@ pub(crate) async fn get_real_src_real_dest_and_host(
         Ok(a) => a,
         Err(e) => {
             error!(?e, ?host, "error resolve dns");
-            return Err(Error::other(
-                format!("resolve dns error: {host}"),
-            ));
+            return Err(Error::other(format!("resolve dns error: {host}")));
         }
     };
 
