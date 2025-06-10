@@ -41,7 +41,10 @@ impl ProbeConnectivity {
     ) -> Action {
         let proxy_connectivity_fut = async {
             let proxy_group_name = proxy_group_name.clone();
-            let Ok(CandidateTcpStream { stream: tcp_stream, .. }) = server_chooser.proxy_connect(addr, &proxy_group_name).await else {
+            let Ok(CandidateTcpStream {
+                stream: tcp_stream, ..
+            }) = server_chooser.proxy_connect(addr, &proxy_group_name).await
+            else {
                 // If the proxy connection fails, we return the direct connection.
                 return Action::Direct;
             };
