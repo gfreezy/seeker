@@ -103,9 +103,8 @@ impl ProxyTcpStream {
                     } else {
                         TcpConnection::connect_tcp(proxy_socket_addr).await?
                     };
-                    ProxyTcpStreamInner::Shadowsocks(
-                        SSTcpStream::connect(stream, remote_addr, method, key).await?,
-                    )
+                    let stream = SSTcpStream::connect(stream, remote_addr, method, key).await?;
+                    ProxyTcpStreamInner::Shadowsocks(stream)
                 }
             }
         } else {
