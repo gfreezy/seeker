@@ -74,25 +74,6 @@ impl GroupServersChooser {
         self.live_connections.write().push(conn);
     }
 
-    #[tracing::instrument(skip(self))]
-    pub async fn candidate_tcp_stream(
-        &self,
-        remote_addr: Address,
-        action: Action,
-    ) -> std::io::Result<CandidateTcpStream> {
-        let stream = match action {
-            Action::Proxy(_) => self.proxy_connect(&remote_addr).await?,
-            Action::Direct => self.direct_connect(&remote_addr).await?,
-            _ => unreachable!(),
-        };
-
-        // store all on-fly connections
-        let stream_clone = stream.clone();
-        self.insert_live_connections(Box::new(stream_clone.stream));
-
-        Ok(stream)
-    }
-
     pub async fn proxy_connect(
         &self,
         remote_addr: &Address,
@@ -115,26 +96,6 @@ impl GroupServersChooser {
             stream: stream?,
             proxy_group_name: self.name.clone(),
             server_config: Some(config),
-        })
-    }
-
-    pub async fn direct_connect(
-        &self,
-        remote_addr: &Address,
-    ) -> std::io::Result<CandidateTcpStream> {
-        let ret = ProxyTcpStream::connect(remote_addr.clone(), None, self.dns_client.clone()).await;
-        if ret.is_err() {
-            tracing::error!(
-                group = self.name,
-                ?remote_addr,
-                action = ?Action::Direct,
-                "Failed to connect to server"
-            );
-        }
-        Ok(CandidateTcpStream {
-            stream: ret?,
-            proxy_group_name: self.name.clone(),
-            server_config: None,
         })
     }
 
@@ -364,42 +325,45 @@ async fn ping_server(
     dns_client: DnsClient,
 ) -> std::io::Result<()> {
     let addr = ping_url.address();
-    let path = ping_url.path();
+    let path: &str = ping_url.path();
     timeout(ping_timeout, async {
         let stream =
-            ProxyTcpStream::connect(addr.clone(), Some(&server_config), dns_client).await?;
+            ProxyTcpStream::connect(addr.clone(), Some(&server_config), dns_client).await.map_err(|e| {
+                tracing::error!("Failed to connect to proxy server: {}, error: {:?}", server_config.addr(), e);
+                e
+            })?;
+        let req = format!(
+                "GET {path} HTTP/1.1\r\n\
+                Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7\r\n\
+                Accept-Encoding: gzip, deflate, br, zstd\r\n\
+                Accept-Language: en-US,en;q=0.9\r\n\
+                Cache-Control: no-cache\r\n\
+                Connection: keep-alive\r\n\
+                DNT: 1\r\n\
+                Host: {}\r\n\
+                Pragma: no-cache\r\n\
+                Sec-Fetch-Dest: document\r\n\
+                Sec-Fetch-Mode: navigate\r\n\
+                Sec-Fetch-Site: none\r\n\
+                Sec-Fetch-User: ?1\r\n\
+                Upgrade-Insecure-Requests: 1\r\n\
+                User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36\r\n\
+                sec-ch-ua: \"Google Chrome\";v=\"137\", \"Chromium\";v=\"137\", \"Not/A)Brand\";v=\"24\"\r\n\
+                sec-ch-ua-mobile: ?0\r\n\
+                sec-ch-ua-platform: \"macOS\"\r\n\
+                \r\n",
+                ping_url.host()
+            );
         let resp_buf = if ping_url.port() == 443 {
             let connector = TlsConnector::default();
             let mut conn = connector.connect(ping_url.host(), stream).await?;
-            conn.write_all(
-                format!(
-                    "GET {path} HTTP/1.1\r\n\
-                    Host: {}\r\n\
-                    User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36\r\n\
-                    Accept: */*\r\n\
-                    Connection: close\r\n\r\n",
-                    ping_url.host()
-                )
-                .as_bytes(),
-            )
-            .await?;
+            conn.write_all(req.as_bytes()).await?;
             let mut buf = vec![0; 1024];
             let size = conn.read(&mut buf).await?;
             buf[..size].to_vec()
         } else {
             let mut conn = stream;
-            conn.write_all(
-                format!(
-                    "GET {path} HTTP/1.1\r\n\
-                    Host: {}\r\n\
-                    User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36\r\n\
-                    Accept: */*\r\n\
-                    Connection: close\r\n\r\n",
-                    ping_url.host()
-                )
-                .as_bytes(),
-            )
-            .await?;
+            conn.write_all(req.as_bytes()).await?;
             let mut buf = vec![0; 1024];
             let size = conn.read(&mut buf).await?;
             buf[..size].to_vec()
@@ -422,7 +386,9 @@ async fn ping_server(
 
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
+    use config::ServerProtocol;
+    use crypto::CipherType;
+    use tracing::Level;
 
     use super::*;
 
@@ -430,8 +396,18 @@ mod tests {
     #[ignore]
     async fn test_ping_server() -> Result<()> {
         store::Store::setup_global_for_test();
-        let url = "ss://YWVzLTI1Ni1nY206MTE0NTE0@1eae257e44aa9d5b.jijifun.com:30002/?plugin=obfs-local%3Bobfs%3Dhttp%3Bobfs-host%3Dc61be5399e.microsoft.com#%E9%A6%99%E6%B8%AF-ByWave+01";
-        let server_config = ServerConfig::from_str(url)?;
+        tracing_subscriber::fmt::Subscriber::builder()
+            .with_max_level(Level::INFO)
+            .init();
+        let server_config = ServerConfig::new(
+            "HK".to_string(),
+            "xxx:2232".parse().unwrap(),
+            ServerProtocol::Shadowsocks,
+            None,
+            Some("sssss".to_string()),
+            Some(CipherType::Aes256Gcm),
+            None,
+        );
         let dns_client = DnsClient::new(
             &[config::DnsServerAddr::UdpSocketAddr(
                 "114.114.114.114:53".parse().unwrap(),

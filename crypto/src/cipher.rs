@@ -571,7 +571,7 @@ impl CipherType {
             iv.set_len(len);
         }
 
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         rng.fill_bytes(&mut iv);
         iv.freeze()
     }

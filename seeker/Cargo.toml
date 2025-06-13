@@ -9,7 +9,7 @@ repository = "https://github.com/gfreezy/seeker"
 
 [dependencies]
 tracing = { workspace = true, features = ["attributes"] }
-tracing-subscriber = { workspace = true, features = ["env-filter"] }
+tracing-subscriber = { workspace = true, features = ["env-filter", "local-time"] }
 tracing-futures = { workspace = true, features = ["std-future"] }
 tracing-chrome = { workspace = true, optional = true }
 config = { path = "../config" }

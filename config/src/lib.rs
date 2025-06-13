@@ -1,13 +1,14 @@
 pub mod rule;
 mod server_config;
-pub use server_config::{DnsServerAddr, ServerConfig, ServerProtocol};
+pub use server_config::{DnsServerAddr, Obfs, ServerConfig, ServerProtocol};
 pub use socks5_client::Address;
+pub use tcp_connection::ObfsMode;
 
 use rule::ProxyRules;
 use serde::Deserialize;
 use smoltcp::wire::Ipv4Cidr;
 use std::collections::HashSet;
-use std::fmt::Debug;
+use std::fmt::{Debug, Display};
 use std::fs::File;
 use std::io;
 use std::io::{ErrorKind, Read};
@@ -142,6 +143,12 @@ impl PingURL {
 
     pub fn port(&self) -> u16 {
         self.port
+    }
+}
+
+impl Display for PingURL {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}:{}", self.host, self.port)
     }
 }
 
@@ -355,22 +362,29 @@ impl Config {
         let mut seen_server_names = std::collections::HashSet::new();
         for server in self.servers.iter() {
             if !seen_server_names.insert(server.name()) {
-                panic!("Duplicate server name: {}", server.name());
+                eprintln!("Duplicate server name: {}", server.name());
+                tracing::error!("Duplicate server name: {}", server.name());
             }
         }
         let mut seen_proxy_group_names: HashSet<&str> = std::collections::HashSet::new();
         for group in self.proxy_groups.iter() {
             if !seen_proxy_group_names.insert(&group.name) {
-                panic!("Duplicate proxy group name: {}", group.name);
+                eprintln!("Duplicate proxy group name: {}", group.name);
+                tracing::error!("Duplicate proxy group name: {}", group.name);
             }
         }
         // Validate all proxy names in groups reference valid servers
         for group in self.proxy_groups.iter() {
             for proxy in group.proxies.iter() {
                 if !seen_server_names.contains(proxy.as_str()) {
-                    panic!(
+                    eprintln!(
                         "Invalid proxy name '{}' in group '{}' - server not found",
                         proxy, group.name
+                    );
+                    tracing::error!(
+                        "Invalid proxy name '{}' in group '{}' - server not found",
+                        proxy,
+                        group.name
                     );
                 }
             }
@@ -381,17 +395,27 @@ impl Config {
         for rule in rules.iter() {
             if let Some(name) = rule.target_proxy_group_name() {
                 if !seen_proxy_group_names.contains(&name) {
-                    panic!(
+                    eprintln!(
                         "Invalid proxy group name '{}' referenced in PROXY rule: {:?}",
                         name, rule
+                    );
+                    tracing::error!(
+                        "Invalid proxy group name '{}' referenced in PROXY rule: {:?}",
+                        name,
+                        rule
                     );
                 }
             }
             if let Some(name) = rule.target_proxy_group_name() {
                 if !seen_proxy_group_names.contains(name) {
-                    panic!(
+                    eprintln!(
                         "Invalid proxy group name '{}' referenced in PROBE rule: {:?}",
                         name, rule
+                    );
+                    tracing::error!(
+                        "Invalid proxy group name '{}' referenced in PROBE rule: {:?}",
+                        name,
+                        rule
                     );
                 }
             }

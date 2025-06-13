@@ -1,4 +1,5 @@
 use file_rotate::{FileRotate, suffix::AppendTimestamp};
+use tracing_subscriber::fmt::time::LocalTime;
 use std::io;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -58,6 +59,8 @@ pub(crate) fn setup_logger(log_path: Option<&str>, trace: bool) -> anyhow::Resul
         if trace {
             let fmt_layer = tracing_subscriber::fmt::layer()
                 .with_ansi(false)
+                .with_target(false)
+                .with_timer(LocalTime::rfc_3339())
                 .with_writer(move || TracingWriter::new(logger.clone()))
                 .and_then(env_filter);
 
@@ -86,7 +89,9 @@ pub(crate) fn setup_logger(log_path: Option<&str>, trace: bool) -> anyhow::Resul
         } else {
             let fmt_layer = tracing_subscriber::fmt::layer()
                 .with_ansi(false)
+                .with_target(false)
                 .with_file(true)
+                .with_timer(LocalTime::rfc_3339())
                 .with_line_number(true)
                 .with_writer(move || TracingWriter::new(logger.clone()))
                 .and_then(env_filter);
@@ -105,7 +110,7 @@ pub(crate) fn setup_logger(log_path: Option<&str>, trace: bool) -> anyhow::Resul
         _chrome_layer_guard: _chrome_layer_guard,
     };
 
-    // #[cfg(debug_assertions)]
+    #[cfg(debug_assertions)]
     {
         // only for #[cfg]
         use parking_lot::deadlock;

@@ -7,8 +7,6 @@ use std::hash::{Hash, Hasher};
 use std::io::Result;
 use std::net::{Ipv4Addr, Ipv6Addr};
 
-use rand::random;
-
 use crate::dns::buffer::{PacketBuffer, VectorPacketBuffer};
 
 /// `QueryType` represents the requested Record Type of a query
@@ -881,7 +879,7 @@ impl DnsPacket {
 
     pub fn get_random_a(&self) -> Option<String> {
         if !self.answers.is_empty() {
-            let idx = random::<usize>() % self.answers.len();
+            let idx = rand::random_range(0..self.answers.len());
             let a_record = &self.answers[idx];
             if let DnsRecord::A { ref addr, .. } = *a_record {
                 return Some(addr.to_string());
@@ -979,7 +977,7 @@ impl DnsPacket {
         }
 
         if !new_authorities.is_empty() {
-            let idx = random::<usize>() % new_authorities.len();
+            let idx = rand::random_range(0..new_authorities.len());
             if let DnsRecord::A { addr, .. } = new_authorities[idx] {
                 return Some(addr.to_string());
             }
@@ -1006,7 +1004,7 @@ impl DnsPacket {
         }
 
         if !new_authorities.is_empty() {
-            let idx = random::<usize>() % new_authorities.len();
+            let idx = rand::random_range(0..new_authorities.len());
             return Some(new_authorities[idx].clone());
         }
 
