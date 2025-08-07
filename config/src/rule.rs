@@ -250,7 +250,7 @@ impl FromStr for Action {
         } else if let Some(probe) = s.strip_prefix("PROBE(").and_then(|s| s.strip_suffix(")")) {
             Action::Probe(probe.to_string())
         } else {
-            panic!("Invalid action: {}", s)
+            panic!("Invalid action: {s}")
         })
     }
 }
@@ -356,7 +356,7 @@ mod tests {
             "https://pub-a2ec2e74bf2c47428e190f227ec084ef.r2.dev/Country.mmdb",
             &path,
         );
-        assert!(path.exists(), "geoip database not found: {:?}", path);
+        assert!(path.exists(), "geoip database not found: {path:?}");
         let reader =
             maxminddb::Reader::open_readfile(&path).expect("failed to open geoip database");
         assert!(did_geo_ip_matches_name(
