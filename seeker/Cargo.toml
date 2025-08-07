@@ -1,6 +1,6 @@
 [package]
 name = "seeker"
-version = "20250331.0.0"
+version = "20250807.0.0"
 authors = ["gfreezy <gfreezy@gmail.com>"]
 edition = "2024"
 repository = "https://github.com/gfreezy/seeker"
