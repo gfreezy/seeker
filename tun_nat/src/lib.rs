@@ -80,9 +80,8 @@ pub fn run_nat(
 
     // Handle additional CIDRs routing using route_manager
     if !addition_cidrs.is_empty() {
-        let mut route_manager = RouteManager::new().map_err(|e| {
-            std::io::Error::other(format!("Failed to create route manager: {e}"))
-        })?;
+        let mut route_manager = RouteManager::new()
+            .map_err(|e| std::io::Error::other(format!("Failed to create route manager: {e}")))?;
 
         let device_name = tun.name()?;
 
@@ -99,7 +98,12 @@ pub fn run_nat(
             if let Err(e) = route_manager.add(&route) {
                 tracing::warn!("Failed to add route for CIDR {}: {}", additional_cidr, e);
             } else {
-                tracing::info!("Added route for CIDR {} via {} on {}", additional_cidr, tun_ip, device_name);
+                tracing::info!(
+                    "Added route for CIDR {} via {} on {}",
+                    additional_cidr,
+                    tun_ip,
+                    device_name
+                );
             }
         }
     }

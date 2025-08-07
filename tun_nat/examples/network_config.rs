@@ -18,23 +18,15 @@ fn main() -> std::io::Result<()> {
 
     // Example 2: Create TUN device with IPv4 configuration in one step
     println!("\n=== Example 2: TUN device with pre-configured IPv4 ===");
-    let tun_ipv4 = TunDevice::new_with_ipv4(
-        "tun_ipv4",
-        Ipv4Addr::new(192, 168, 1, 1),
-        24,
-        None
-    )?;
+    let tun_ipv4 = TunDevice::new_with_ipv4("tun_ipv4", Ipv4Addr::new(192, 168, 1, 1), 24, None)?;
 
     println!("Created IPv4 TUN device: {}", tun_ipv4.name()?);
     println!("Addresses: {:?}", tun_ipv4.addresses()?);
 
     // Example 3: Create TUN device with IPv6 configuration
     println!("\n=== Example 3: TUN device with IPv6 configuration ===");
-    let tun_ipv6 = TunDevice::new_with_ipv6(
-        "tun_ipv6",
-        Ipv6Addr::new(0xfd00, 0, 0, 0, 0, 0, 0, 1),
-        64
-    )?;
+    let tun_ipv6 =
+        TunDevice::new_with_ipv6("tun_ipv6", Ipv6Addr::new(0xfd00, 0, 0, 0, 0, 0, 0, 1), 64)?;
 
     println!("Created IPv6 TUN device: {}", tun_ipv6.name()?);
     println!("Addresses: {:?}", tun_ipv6.addresses()?);
@@ -55,10 +47,7 @@ fn main() -> std::io::Result<()> {
     println!("Set MTU to: {}", tun_runtime.mtu()?);
 
     // Add IPv6 address
-    tun_runtime.add_ipv6_address(
-        Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 1),
-        64
-    )?;
+    tun_runtime.add_ipv6_address(Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 1), 64)?;
 
     // Enable the device
     tun_runtime.set_enabled(true)?;
