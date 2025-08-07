@@ -1,18 +1,18 @@
-mod tun_socket;
+pub mod tun_device;
 
-use crate::tun_socket::TunSocket;
+use crate::tun_device::TunDevice;
 use bitvec::vec::BitVec;
 use object_pool::{Pool, ReusableOwned};
 use parking_lot::RwLock;
+use route_manager::{Route, RouteManager};
 use smoltcp::wire::{IpAddress, IpProtocol, Ipv4Cidr, Ipv4Packet, TcpPacket, UdpPacket};
 use std::collections::HashMap;
 use std::io::Result;
 use std::io::{Read, Write};
-use std::net::{Ipv4Addr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::SystemTime;
-use sysconfig::setup_ip;
 
 const BEGIN_PORT: u16 = 50000;
 const END_PORT: u16 = 60000;
@@ -70,22 +70,42 @@ pub fn run_nat(
     threads_per_queue: usize,
 ) -> Result<(SessionManager, JoinHandle<()>)> {
     const BUF_SIZE: usize = 2000;
-    let tun = TunSocket::new(tun_name)?;
-    let tun_name = tun.name()?;
-    if cfg!(target_os = "macos") {
-        setup_ip(
-            &tun_name,
-            tun_ip.to_string().as_str(),
-            tun_cidr.to_string().as_str(),
-            addition_cidrs.iter().map(|cidr| cidr.to_string()).collect(),
-        );
-    } else {
-        setup_ip(
-            &tun_name,
-            tun_ip.to_string().as_str(),
-            tun_cidr.to_string().as_str(),
-            addition_cidrs.iter().map(|cidr| cidr.to_string()).collect(),
-        );
+
+    // Create TUN device with IPv4 configuration using tun-rs
+    let netmask = tun_cidr.prefix_len();
+    let tun = TunDevice::new_with_ipv4(tun_name, tun_ip, netmask, None)?;
+
+    // Enable the device
+    tun.set_enabled(true)?;
+
+    // Handle additional CIDRs routing using route_manager
+    if !addition_cidrs.is_empty() {
+        let mut route_manager = RouteManager::new()
+            .map_err(|e| std::io::Error::other(format!("Failed to create route manager: {e}")))?;
+
+        let device_name = tun.name()?;
+
+        for additional_cidr in addition_cidrs {
+            // Convert Ipv4Cidr to IpAddr for route_manager
+            // Get the network address from CIDR
+            let network_addr = IpAddr::V4(additional_cidr.address());
+            let gateway_addr = IpAddr::V4(tun_ip);
+
+            let route = Route::new(network_addr, additional_cidr.prefix_len())
+                .with_if_name(device_name.clone())
+                .with_gateway(gateway_addr);
+
+            if let Err(e) = route_manager.add(&route) {
+                tracing::warn!("Failed to add route for CIDR {}: {}", additional_cidr, e);
+            } else {
+                tracing::info!(
+                    "Added route for CIDR {} via {} on {}",
+                    additional_cidr,
+                    tun_ip,
+                    device_name
+                );
+            }
+        }
     }
 
     let relay_addr = tun_ip;
@@ -118,10 +138,10 @@ pub fn run_nat(
             let processed_tx = processed_tx.clone();
             let sm = session_manager.clone();
             thread::Builder::new()
-                .name(format!("tun-nat-worker-{}", i))
+                .name(format!("tun-nat-worker-{i}"))
                 .spawn(move || {
                     process_packets(rx, processed_tx, sm, relay_addr, relay_port);
-                    println!("Exit tun-nat-worker-{} thread", i);
+                    println!("Exit tun-nat-worker-{i} thread");
                 })
                 .expect("Failed to spawn worker thread")
         })
@@ -138,7 +158,7 @@ pub fn run_nat(
 
         // Read thread for each queue
         let read_handle = thread::Builder::new()
-            .name(format!("tun-nat-read-{}", i))
+            .name(format!("tun-nat-read-{i}"))
             .spawn(move || {
                 loop {
                     let mut buf = pool_clone.pull_owned(|| vec![0; BUF_SIZE]);
@@ -153,7 +173,7 @@ pub fn run_nat(
                         }
                         Ok(size) => size,
                         Err(e) => {
-                            eprintln!("tun read error: {:?}", e);
+                            eprintln!("tun read error: {e:?}");
                             continue;
                         }
                     };
@@ -163,13 +183,13 @@ pub fn run_nat(
                         buf.set_len(size);
                     }
                     if let Err(e) = tx_clone.send(buf) {
-                        eprintln!("Failed to send packet to worker: {:?}", e);
+                        eprintln!("Failed to send packet to worker: {e:?}");
                     }
                 }
 
                 drop(tx_clone); // 关闭发送端，通知所有工作线程退出
 
-                println!("Exit tun-nat-read-{} thread.", i);
+                println!("Exit tun-nat-read-{i} thread.");
             })
             .expect("Failed to spawn read thread");
 
@@ -180,16 +200,16 @@ pub fn run_nat(
         let mut tun_clone = tun_queue.clone();
 
         let write_handle = thread::Builder::new()
-            .name(format!("tun-nat-write-{}", i))
+            .name(format!("tun-nat-write-{i}"))
             .spawn(move || {
                 while let Ok(processed_buf) = processed_rx_clone.recv() {
                     let ret = tun_clone.write(&processed_buf);
                     if let Err(err) = ret {
-                        eprintln!("tun_nat: write packet error: {:?}", err);
+                        eprintln!("tun_nat: write packet error: {err:?}");
                     }
                 }
                 // 通道已关闭，退出循环
-                println!("Exit tun-nat-write-{} thread.", i);
+                println!("Exit tun-nat-write-{i} thread.");
             })
             .expect("Failed to spawn write thread");
 
@@ -264,7 +284,7 @@ fn process_packets(
             }
         }
         if let Err(e) = processed_tx.send(buf) {
-            eprintln!("Failed to send processed packet back: {:?}", e);
+            eprintln!("Failed to send processed packet back: {e:?}");
         }
     }
 }
@@ -372,7 +392,7 @@ impl InnerSessionManager {
                 return true;
             }
         } else {
-            eprintln!("update_activity_or_port: port {} not exists", port);
+            eprintln!("update_activity_or_port: port {port} not exists");
         }
         self.clear_expired();
         false

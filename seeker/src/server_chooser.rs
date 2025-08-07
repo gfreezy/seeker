@@ -89,7 +89,7 @@ impl ServerChooser {
         let Some(chooser) = self.group_servers_chooser.get(proxy_group_name) else {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::NotFound,
-                format!("proxy group {} not found", proxy_group_name),
+                format!("proxy group {proxy_group_name} not found"),
             ));
         };
         chooser.proxy_connect(remote_addr).await
@@ -124,7 +124,7 @@ impl ServerChooser {
                 let Some(chooser) = self.group_servers_chooser.get(proxy_group_name) else {
                     return Err(std::io::Error::new(
                         std::io::ErrorKind::NotFound,
-                        format!("proxy group {} not found", proxy_group_name),
+                        format!("proxy group {proxy_group_name} not found"),
                     ));
                 };
 
