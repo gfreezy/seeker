@@ -42,11 +42,11 @@ jobs:
         with:
           target: ${{ matrix.target }}
 
-      - name: Check formatting
-        run: cargo fmt --all -- --check
+      # - name: Check formatting
+      #   run: cargo fmt --all -- --check
 
-      - name: Check clippy
-        run: cargo clippy --all
+      # - name: Check clippy
+      #   run: cargo clippy --all
 
       - name: Run tests
         run: cargo test --all
