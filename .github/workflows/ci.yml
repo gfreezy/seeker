@@ -57,27 +57,21 @@ jobs:
           - build: stable
             os: ubuntu-latest
             rust: stable
-          - build: nightly
+          - build: stable-musl
             os: ubuntu-latest
-            rust: nightly
-          - build: nightly-musl
-            os: ubuntu-latest
-            rust: nightly
+            rust: stable
             target: x86_64-unknown-linux-musl
           - build: macos
             os: macos-latest
-            rust: nightly
-          - build: nightly-armv7
+            rust: stable
+          - build: stable-armv7
             os: ubuntu-latest
-            rust: nightly
+            rust: stable
             target: armv7-unknown-linux-musleabi
-          - build: nightly-armv5
+          - build: stable-armv5
             os: ubuntu-latest
-            rust: nightly
+            rust: stable
             target: armv5te-unknown-linux-musleabi
-          # - build: beta
-          #   os: ubuntu-latest
-          #   rust: beta
           # - build: nightly-32
           #   os: ubuntu-latest
           #   rust: nightly
@@ -86,12 +80,12 @@ jobs:
           #   os: ubuntu-latest
           #   rust: nightly
           #   target: mips64-unknown-linux-gnuabi64
-          # - build: win-msvc
-          #   os: windows-2019
-          #   rust: nightly
-          # - build: win-gnu
-          #   os: windows-2019
-          #   rust: nightly-x86_64-gnu
+          - build: win-msvc
+            os: windows-latest
+            rust: stable
+          - build: win-gnu
+            os: windows-latest
+            rust: stable-x86_64-gnu
     steps:
       - name: Checkout repository
         uses: actions/checkout@v2
