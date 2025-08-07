@@ -1,4 +1,4 @@
-name: ci
+name: ci copy
 on:
   pull_request:
   push:
@@ -12,172 +12,41 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  rustfmt:
-    name: rustfmt
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v2
-
-      - name: Install Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          override: true
-          profile: minimal
-          components: rustfmt
-
-      - name: Check formatting
-        run: |
-          cargo fmt --all -- --check
-
-      - name: Check clippy
-        run: |
-          cargo clippy
-
   test:
-    name: test
-    needs: ["rustfmt"]
     env:
-      # For some builds, we use cross to test on 32-bit and big-endian
-      # systems.
-      CARGO: cargo
-      # When CARGO is set to CROSS, this is set to `--target matrix.target`.
-      TARGET_FLAGS:
-      # When CARGO is set to CROSS, TARGET_DIR includes matrix.target.
-      TARGET_DIR: ./target
-      # Emit backtraces on panics.
-      RUST_BACKTRACE: 1
-      OPENSSL_STATIC: yes
       DNS: 8.8.8.8
-    runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         include:
-          - build: stable
+          - target: aarch64-unknown-linux-musl
             os: ubuntu-latest
-            rust: stable
-          - build: stable-musl
+          - target: x86_64-unknown-linux-musl
             os: ubuntu-latest
-            rust: stable
-            target: x86_64-unknown-linux-musl
-          - build: macos
+          - target: armv5te-unknown-linux-musleabi
+            os: ubuntu-latest
+          - target: armv7-unknown-linux-musleabi
+            os: ubuntu-latest
+          # - target: x86_64-unknown-freebsd
+          #   os: ubuntu-latest
+          - target: x86_64-apple-darwin
             os: macos-latest
-            rust: stable
-          - build: stable-armv7
-            os: ubuntu-latest
-            rust: stable
-            target: armv7-unknown-linux-musleabi
-          - build: stable-armv5
-            os: ubuntu-latest
-            rust: stable
-            target: armv5te-unknown-linux-musleabi
-          # - build: stable-freebsd
-          #   os: ubuntu-latest
-          #   rust: stable
-          #   target: x86_64-unknown-freebsd
-          # - build: nightly-32
-          #   os: ubuntu-latest
-          #   rust: nightly
-          #   target: i686-unknown-linux-gnu
-          # - build: nightly-mips
-          #   os: ubuntu-latest
-          #   rust: nightly
-          #   target: mips64-unknown-linux-gnuabi64
-          # - build: win-msvc
-          #   os: windows-latest
-          #   rust: stable
-          # - build: win-gnu
-          #   os: windows-latest
-          #   rust: stable-x86_64-gnu
+          - target: aarch64-apple-darwin
+            os: macos-latest
+    runs-on: ${{ matrix.os }}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v2
-
-      # - name: Setup upterm session
-      # uses: lhotari/action-upterm@v1
-
-      - name: Install packages (Ubuntu)
-        if: matrix.os == 'ubuntu-latest'
-        run: |
-          # Disable TCP/UDP offload
-          sudo ethtool -K eth0 tx off rx off
-
-          sudo ci/ubuntu-install-packages
-
-      - name: Install packages (macOS)
-        if: matrix.os == 'macos-latest'
-        run: |
-          # Disable TCP/UDP offload
-          sudo sysctl -w net.link.generic.system.hwcksum_tx=0
-          sudo sysctl -w net.link.generic.system.hwcksum_rx=0
-
-          sudo ci/macos-install-packages
-
+      - uses: actions/checkout@v4
       - name: Install Rust
-        uses: actions-rs/toolchain@v1
+        run: rustup update stable
+      - name: Install cross-compilation tools
+        uses: taiki-e/setup-cross-toolchain-action@v1
         with:
-          toolchain: ${{ matrix.rust }}
-          profile: minimal
-          override: true
+          target: ${{ matrix.target }}
 
-      - name: Use Cross
-        if: matrix.target != ''
-        run: |
-          cargo install cross --git https://github.com/cross-rs/cross
-          echo "CARGO=cross" >> $GITHUB_ENV
-          echo "TARGET_FLAGS=--target ${{ matrix.target }}" >> $GITHUB_ENV
-          echo "TARGET_DIR=./target/${{ matrix.target }}" >> $GITHUB_ENV
+      - name: Check formatting
+        run: cargo fmt --all -- --check
 
-      - name: Show command used for Cargo
-        run: |
-          echo "cargo command is: ${{ env.CARGO }}"
-          echo "target flag is: ${{ env.TARGET_FLAGS }}"
+      - name: Check clippy
+        run: cargo clippy --all
 
-      - name: Build cross docker images
-        if: matrix.target != ''
-        run: |
-          [ -d ci/docker/${{ matrix.target }} ] && cd ci/docker/${{ matrix.target }} && ./build || true
-
-      - name: Build all crates
-        run: ${{ env.CARGO }} build --all ${{ env.TARGET_FLAGS }}
-
-      # This is useful for debugging problems when the expected build artifacts
-      # (like shell completions and man pages) aren't generated.
-      #      - name: Show build.rs stderr
-      #        shell: bash
-      #        run: |
-      #          set +x
-      #          stderr="$(find "${{ env.TARGET_DIR }}/debug" -name stderr -print0 | xargs -0 ls -t | head -n1)"
-      #          if [ -s "$stderr" ]; then
-      #            echo "===== $stderr ===== "
-      #            cat "$stderr"
-      #            echo "====="
-      #          fi
-      #          set -x
-
-      - name: Run tests (without cross)
-        if: matrix.target == ''
-        run: ${{ env.CARGO }} test --all
-
-      - name: Run tests (with cross)
-        if: matrix.target != ''
-        run: ${{ env.CARGO }} test --all ${{ env.TARGET_FLAGS }}
-#      - name: Test for existence of build artifacts (Windows)
-#        if: matrix.os == 'windows-2019'
-#        shell: bash
-#        run: |
-#          outdir="$(ci/cargo-out-dir "${{ env.TARGET_DIR }}")"
-#          ls "$outdir/_rg.ps1" && file "$outdir/_rg.ps1"
-#      - name: Test for existence of build artifacts (Unix)
-#        if: matrix.os != 'windows-2019'
-#        shell: bash
-#        run: |
-#          outdir="$(ci/cargo-out-dir "${{ env.TARGET_DIR }}")"
-#          # TODO: Check for the man page generation here. For whatever reason,
-#          # it seems to be intermittently failing in CI. No idea why.
-#          # for f in rg.bash rg.fish rg.1; do
-#          for f in rg.bash rg.fish; do
-#            # We could use file -E here, but it isn't supported on macOS.
-#            ls "$outdir/$f" && file "$outdir/$f"
-#          done
+      - name: Run tests
+        run: cargo test --all
