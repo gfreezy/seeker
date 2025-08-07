@@ -3,3 +3,9 @@ pre-build = "ci/ubuntu-install-packages"
 
 [build.env]
 passthrough = ["RUST_BACKTRACE", "RUST_LOG", "DNS"]
+
+[target.x86_64-unknown-linux-gnu]
+runner = 'sudo -E'
+
+[target.x86_64-apple-darwin]
+runner = 'sudo -E'
