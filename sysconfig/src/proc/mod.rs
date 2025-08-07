@@ -13,3 +13,9 @@ pub mod sys;
 #[cfg(target_os = "linux")]
 #[path = "linux.rs"]
 pub mod sys;
+
+#[cfg(any(target_os = "freebsd", target_os = "netbsd", target_os = "openbsd"))]
+#[path = "bsd.rs"]
+pub mod sys;
+
+pub use sys::{list_system_proc_socks, list_user_proc_socks};

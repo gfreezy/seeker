@@ -4,7 +4,8 @@ use crate::command::run_cmd;
     target_os = "macos",
     target_os = "ios",
     target_os = "freebsd",
-    target_os = "openbsd"
+    target_os = "openbsd",
+    target_os = "netbsd"
 ))]
 const IP_FORWARDING_KEY: &str = "net.inet.ip.forwarding";
 #[cfg(target_os = "linux")]
@@ -44,6 +45,10 @@ pub mod sys;
 
 #[cfg(target_os = "linux")]
 #[path = "linux.rs"]
+pub mod sys;
+
+#[cfg(any(target_os = "freebsd", target_os = "netbsd", target_os = "openbsd"))]
+#[path = "bsd.rs"]
 pub mod sys;
 
 pub use sys::{get_current_dns, setup_ip, DNSSetup};

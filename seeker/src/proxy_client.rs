@@ -457,7 +457,7 @@ fn get_original_addr_from_socket(conn: &TcpStream) -> Option<SocketAddr> {
     Some(original_addr)
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "freebsd", target_os = "netbsd", target_os = "openbsd"))]
 fn get_original_addr_from_socket(_conn: &TcpStream) -> Option<SocketAddr> {
     None
 }

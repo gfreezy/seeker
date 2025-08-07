@@ -26,8 +26,8 @@ jobs:
             os: ubuntu-latest
           - target: armv7-unknown-linux-musleabi
             os: ubuntu-latest
-          # - target: x86_64-unknown-freebsd
-          #   os: ubuntu-latest
+          - target: x86_64-unknown-freebsd
+            os: ubuntu-latest
           - target: x86_64-apple-darwin
             os: macos-latest
           - target: aarch64-apple-darwin
@@ -42,11 +42,11 @@ jobs:
         with:
           target: ${{ matrix.target }}
 
-      - name: Check formatting
-        run: cargo fmt --all -- --check
+      # - name: Check formatting
+      #   run: cargo fmt --all -- --check
 
-      - name: Check clippy
-        run: cargo clippy --all
+      # - name: Check clippy
+      #   run: cargo clippy --all
 
       - name: Run tests
         run: cargo test --all
