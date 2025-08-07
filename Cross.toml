@@ -5,7 +5,7 @@ pre-build = "ci/ubuntu-install-packages"
 passthrough = ["RUST_BACKTRACE", "RUST_LOG", "DNS"]
 
 [target.x86_64-unknown-linux-gnu]
-runner = 'sudo -E'
+runner = "qemu-system"
 
 [target.x86_64-apple-darwin]
-runner = 'sudo -E'
+runner = "qemu-system"
