@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - master
-      - ci
   # schedule:
   #   - cron: '00 01 * * *'
 
