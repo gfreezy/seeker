@@ -72,10 +72,10 @@ jobs:
             os: ubuntu-latest
             rust: stable
             target: armv5te-unknown-linux-musleabi
-          - build: stable-freebsd
-            os: ubuntu-latest
-            rust: stable
-            target: x86_64-unknown-freebsd
+          # - build: stable-freebsd
+          #   os: ubuntu-latest
+          #   rust: stable
+          #   target: x86_64-unknown-freebsd
           # - build: nightly-32
           #   os: ubuntu-latest
           #   rust: nightly
