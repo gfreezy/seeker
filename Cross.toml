@@ -4,8 +4,11 @@ pre-build = "ci/ubuntu-install-packages"
 [build.env]
 passthrough = ["RUST_BACKTRACE", "RUST_LOG", "DNS"]
 
-[target.x86_64-unknown-linux-gnu]
+[target.x86_64-unknown-linux-musl]
 runner = "qemu-system"
 
-[target.x86_64-apple-darwin]
+[target.armv7-unknown-linux-musleabi]
+runner = "qemu-system"
+
+[target.armv5te-unknown-linux-musleabi]
 runner = "qemu-system"
