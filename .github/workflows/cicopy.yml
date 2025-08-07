@@ -1,4 +1,4 @@
-name: ci
+name: ci copy
 on:
   pull_request:
   push:
@@ -26,6 +26,8 @@ jobs:
             os: ubuntu-latest
           - target: armv7-unknown-linux-musleabi
             os: ubuntu-latest
+          - target: x86_64-unknown-freebsd
+            os: ubuntu-latest
           - target: x86_64-apple-darwin
             os: macos-latest
           - target: aarch64-apple-darwin
@@ -40,26 +42,3 @@ jobs:
         with:
           target: ${{ matrix.target }}
       - run: cargo test
-
-  rustfmt:
-    name: rustfmt
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v2
-
-      - name: Install Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          override: true
-          profile: minimal
-          components: rustfmt
-
-      - name: Check formatting
-        run: |
-          cargo fmt --all -- --check
-
-      - name: Check clippy
-        run: |
-          cargo clippy
