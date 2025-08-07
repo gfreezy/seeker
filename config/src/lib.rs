@@ -396,8 +396,7 @@ impl Config {
             if let Some(name) = rule.target_proxy_group_name() {
                 if !seen_proxy_group_names.contains(&name) {
                     eprintln!(
-                        "Invalid proxy group name '{}' referenced in PROXY rule: {:?}",
-                        name, rule
+                        "Invalid proxy group name '{name}' referenced in PROXY rule: {rule:?}"
                     );
                     tracing::error!(
                         "Invalid proxy group name '{}' referenced in PROXY rule: {:?}",
@@ -409,8 +408,7 @@ impl Config {
             if let Some(name) = rule.target_proxy_group_name() {
                 if !seen_proxy_group_names.contains(name) {
                     eprintln!(
-                        "Invalid proxy group name '{}' referenced in PROBE rule: {:?}",
-                        name, rule
+                        "Invalid proxy group name '{name}' referenced in PROBE rule: {rule:?}"
                     );
                     tracing::error!(
                         "Invalid proxy group name '{}' referenced in PROBE rule: {:?}",
