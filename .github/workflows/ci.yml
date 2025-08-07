@@ -72,6 +72,10 @@ jobs:
             os: ubuntu-latest
             rust: stable
             target: armv5te-unknown-linux-musleabi
+          - build: stable-freebsd
+            os: ubuntu-latest
+            rust: stable
+            target: x86_64-unknown-freebsd
           # - build: nightly-32
           #   os: ubuntu-latest
           #   rust: nightly
@@ -80,9 +84,9 @@ jobs:
           #   os: ubuntu-latest
           #   rust: nightly
           #   target: mips64-unknown-linux-gnuabi64
-          - build: win-msvc
-            os: windows-latest
-            rust: stable
+          # - build: win-msvc
+          #   os: windows-latest
+          #   rust: stable
           # - build: win-gnu
           #   os: windows-latest
           #   rust: stable-x86_64-gnu
