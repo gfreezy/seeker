@@ -1,6 +1,6 @@
 [package]
 name = "tun_nat"
-version = "20250331.0.0"
+version = "20250807.0.0"
 authors = ["gfreezy <gfreezy@gmail.com>"]
 edition = "2021"
 
