@@ -26,8 +26,8 @@ jobs:
             os: ubuntu-latest
           - target: armv7-unknown-linux-musleabi
             os: ubuntu-latest
-          # - target: x86_64-unknown-freebsd
-          #   os: ubuntu-latest
+          - target: x86_64-unknown-freebsd
+            os: ubuntu-latest
           - target: x86_64-apple-darwin
             os: macos-latest
           - target: aarch64-apple-darwin
