@@ -78,7 +78,7 @@ impl Store {
 
     pub fn incr_connection_recv_bytes(&self, id: u64, bytes: u64) -> Result<()> {
         {
-            let key = format!("recv_bytes:{}", id);
+            let key = format!("recv_bytes:{id}");
             let mut cache = self.cache_stats.write();
             *cache.entry(key).or_insert(0) += bytes;
         }
@@ -88,7 +88,7 @@ impl Store {
 
     pub fn incr_connection_sent_bytes(&self, id: u64, bytes: u64) -> Result<()> {
         {
-            let key = format!("sent_bytes:{}", id);
+            let key = format!("sent_bytes:{id}");
             let mut cache = self.cache_stats.write();
             *cache.entry(key).or_insert(0) += bytes;
         }

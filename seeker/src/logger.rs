@@ -1,10 +1,10 @@
 use file_rotate::{FileRotate, suffix::AppendTimestamp};
-use tracing_subscriber::fmt::time::LocalTime;
 use std::io;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 #[cfg(feature = "tracing-chrome")]
 use tracing_chrome::{ChromeLayerBuilder, FlushGuard};
+use tracing_subscriber::fmt::time::LocalTime;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::{EnvFilter, Layer, Registry};
 
