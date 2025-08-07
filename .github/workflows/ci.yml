@@ -1,4 +1,4 @@
-name: ci copy
+name: ci
 on:
   pull_request:
   push:
