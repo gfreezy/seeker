@@ -9,7 +9,7 @@ use tun_nat::{run_nat, SessionManager};
 
 /// 数据包收发集成测试
 #[test]
-#[cfg(any(target_arch = "x86_64", target_os = "macos"))]
+#[cfg(any(all(target_arch = "x86_64", target_env = "gnu"), target_os = "macos"))]
 fn test_run_nat_packet_processing() {
     println!("开始 NAT 数据包处理测试...");
 
@@ -85,7 +85,7 @@ fn test_session_management(session_manager: &SessionManager) {
 
 /// 测试 NAT 多线程配置
 #[test]
-#[cfg(any(target_arch = "x86_64", target_os = "macos"))]
+#[cfg(any(all(target_arch = "x86_64", target_env = "gnu"), target_os = "macos"))]
 fn test_run_nat_multi_threading() {
     println!("开始 NAT 多线程配置测试...");
 
@@ -139,7 +139,7 @@ fn test_run_nat_multi_threading() {
 
 /// 测试带额外 CIDR 路由的 NAT
 #[test]
-#[cfg(any(target_arch = "x86_64", target_os = "macos"))]
+#[cfg(any(all(target_arch = "x86_64", target_env = "gnu"), target_os = "macos"))]
 fn test_run_nat_with_additional_cidrs() {
     println!("开始 NAT 额外路由测试...");
 
@@ -189,7 +189,7 @@ fn test_run_nat_with_additional_cidrs() {
 
 /// 模拟数据包构造和验证 (简化版本，不需要实际的网络权限)
 #[test]
-#[cfg(any(target_arch = "x86_64", target_os = "macos"))]
+#[cfg(any(all(target_arch = "x86_64", target_env = "gnu"), target_os = "macos"))]
 fn test_session_manager_functionality() {
     println!("开始 SessionManager 功能测试...");
 
@@ -202,7 +202,7 @@ fn test_session_manager_functionality() {
 
 /// 测试错误处理和边界条件
 #[test]
-#[cfg(any(target_arch = "x86_64", target_os = "macos"))]
+#[cfg(any(all(target_arch = "x86_64", target_env = "gnu"), target_os = "macos"))]
 fn test_run_nat_error_conditions() {
     println!("开始 NAT 错误条件测试...");
 
@@ -256,7 +256,7 @@ fn test_run_nat_error_conditions() {
 
 /// 真实网络环境端到端测试
 #[test]
-#[cfg(any(target_arch = "x86_64", target_os = "macos"))]
+#[cfg(any(all(target_arch = "x86_64", target_env = "gnu"), target_os = "macos"))]
 fn test_real_network_packet_flow() {
     println!("开始真实网络数据包流测试...");
 
@@ -289,7 +289,7 @@ fn test_real_network_packet_flow() {
 
 /// UDP 数据包真实传输测试
 #[test]
-#[cfg(any(target_arch = "x86_64", target_os = "macos"))]
+#[cfg(any(all(target_arch = "x86_64", target_env = "gnu"), target_os = "macos"))]
 fn test_udp_packet_real_transmission() {
     println!("开始 UDP 数据包真实传输测试...");
 
@@ -350,7 +350,7 @@ fn test_udp_packet_real_transmission() {
 
 /// TCP 连接真实测试
 #[test]
-#[cfg(any(target_arch = "x86_64", target_os = "macos"))]
+#[cfg(any(all(target_arch = "x86_64", target_env = "gnu"), target_os = "macos"))]
 fn test_tcp_connection_real_flow() {
     println!("开始 TCP 连接真实流测试...");
 
@@ -409,7 +409,7 @@ fn test_tcp_connection_real_flow() {
 
 /// 并发会话测试
 #[test]
-#[cfg(any(target_arch = "x86_64", target_os = "macos"))]
+#[cfg(any(all(target_arch = "x86_64", target_env = "gnu"), target_os = "macos"))]
 fn test_concurrent_sessions_real_network() {
     println!("开始并发会话真实网络测试...");
 
