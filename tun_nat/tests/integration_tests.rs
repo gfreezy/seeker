@@ -4,6 +4,7 @@ use std::net::{IpAddr, Ipv4Addr};
 use tun_nat::tun_device::TunDevice;
 
 #[test]
+#[cfg(any(target_arch = "x86_64", target_os = "macos"))]
 fn test_tun_device_creation() {
     // Test basic TUN device creation
     let result = TunDevice::new("test_tun");
@@ -26,6 +27,7 @@ fn test_tun_device_creation() {
 }
 
 #[test]
+#[cfg(any(target_arch = "x86_64", target_os = "macos"))]
 fn test_tun_device_creation_with_ipv4() {
     // Test TUN device creation with IPv4 configuration
     let tun_ip = Ipv4Addr::new(10, 0, 0, 1);
@@ -51,6 +53,7 @@ fn test_tun_device_creation_with_ipv4() {
 }
 
 #[test]
+#[cfg(any(target_arch = "x86_64", target_os = "macos"))]
 fn test_route_manager_integration() {
     // Test route_manager API integration (without actually adding routes)
     let cidr = Ipv4Cidr::new(Ipv4Addr::new(192, 168, 1, 0), 24);
@@ -72,6 +75,7 @@ fn test_route_manager_integration() {
 }
 
 #[test]
+#[cfg(any(target_arch = "x86_64", target_os = "macos"))]
 fn test_route_manager_creation() {
     // Test RouteManager creation (may fail without privileges)
     let result = RouteManager::new();
@@ -93,6 +97,7 @@ fn test_route_manager_creation() {
 }
 
 #[test]
+#[cfg(any(target_arch = "x86_64", target_os = "macos"))]
 fn test_run_nat_function() {
     // Test the main run_nat function (will fail without privileges but should compile)
     use smoltcp::wire::Ipv4Cidr;

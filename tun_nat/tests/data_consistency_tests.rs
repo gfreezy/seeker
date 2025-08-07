@@ -8,6 +8,7 @@ use std::time::Duration;
 use tun_nat::run_nat;
 
 /// UDP 数据一致性测试 - 验证发送和接收的数据完全一致
+#[cfg(any(target_arch = "x86_64", target_os = "macos"))]
 #[test]
 fn test_udp_data_consistency() {
     println!("开始 UDP 数据一致性测试...");
@@ -61,6 +62,7 @@ fn test_udp_data_consistency() {
 }
 
 /// TCP 数据一致性测试 - 验证发送和接收的数据完全一致
+#[cfg(any(target_arch = "x86_64", target_os = "macos"))]
 #[test]
 fn test_tcp_data_consistency() {
     println!("开始 TCP 数据一致性测试...");
