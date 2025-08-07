@@ -1,7 +1,7 @@
-use tun_nat::tun_device::TunDevice;
 use route_manager::{Route, RouteManager};
 use smoltcp::wire::Ipv4Cidr;
 use std::net::{IpAddr, Ipv4Addr};
+use tun_nat::tun_device::TunDevice;
 
 #[test]
 fn test_tun_device_creation() {
@@ -9,13 +9,18 @@ fn test_tun_device_creation() {
     let result = TunDevice::new("test_tun");
     match result {
         Ok(tun) => {
-            println!("TUN device created successfully: {}", tun.name().unwrap_or_default());
+            println!(
+                "TUN device created successfully: {}",
+                tun.name().unwrap_or_default()
+            );
         }
         Err(e) => {
             // Expected if we don't have sufficient privileges
             println!("TUN device creation failed (expected without privileges): {e}");
-            assert!(e.kind() == std::io::ErrorKind::PermissionDenied ||
-                   e.kind() == std::io::ErrorKind::Other);
+            assert!(
+                e.kind() == std::io::ErrorKind::PermissionDenied
+                    || e.kind() == std::io::ErrorKind::Other
+            );
         }
     }
 }
@@ -29,13 +34,18 @@ fn test_tun_device_creation_with_ipv4() {
     // This test might fail without root privileges, which is expected
     match result {
         Ok(tun) => {
-            println!("TUN device created successfully: {}", tun.name().unwrap_or_default());
+            println!(
+                "TUN device created successfully: {}",
+                tun.name().unwrap_or_default()
+            );
         }
         Err(e) => {
             // Expected if we don't have sufficient privileges
             println!("TUN device creation failed (expected without privileges): {e}");
-            assert!(e.kind() == std::io::ErrorKind::PermissionDenied ||
-                   e.kind() == std::io::ErrorKind::Other);
+            assert!(
+                e.kind() == std::io::ErrorKind::PermissionDenied
+                    || e.kind() == std::io::ErrorKind::Other
+            );
         }
     }
 }
@@ -74,8 +84,10 @@ fn test_route_manager_creation() {
         Err(e) => {
             // Expected if we don't have sufficient privileges
             println!("RouteManager creation failed (expected without privileges): {e}");
-            assert!(e.kind() == std::io::ErrorKind::PermissionDenied ||
-                   e.kind() == std::io::ErrorKind::Other);
+            assert!(
+                e.kind() == std::io::ErrorKind::PermissionDenied
+                    || e.kind() == std::io::ErrorKind::Other
+            );
         }
     }
 }
@@ -83,9 +95,9 @@ fn test_route_manager_creation() {
 #[test]
 fn test_run_nat_function() {
     // Test the main run_nat function (will fail without privileges but should compile)
-    use tun_nat::run_nat;
     use smoltcp::wire::Ipv4Cidr;
     use std::net::Ipv4Addr;
+    use tun_nat::run_nat;
 
     let tun_ip = Ipv4Addr::new(10, 0, 0, 1);
     let tun_cidr = Ipv4Cidr::new(Ipv4Addr::new(10, 0, 0, 0), 24);
@@ -112,8 +124,10 @@ fn test_run_nat_function() {
         Err(e) => {
             // Expected if we don't have sufficient privileges
             println!("NAT startup failed (expected without privileges): {e}");
-            assert!(e.kind() == std::io::ErrorKind::PermissionDenied ||
-                   e.kind() == std::io::ErrorKind::Other);
+            assert!(
+                e.kind() == std::io::ErrorKind::PermissionDenied
+                    || e.kind() == std::io::ErrorKind::Other
+            );
         }
     }
 }

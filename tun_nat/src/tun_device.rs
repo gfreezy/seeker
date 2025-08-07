@@ -37,7 +37,12 @@ impl TunDevice {
     }
 
     /// Create a new TUN device with IPv4 configuration
-    pub fn new_with_ipv4(name: &str, address: Ipv4Addr, netmask: u8, destination: Option<Ipv4Addr>) -> Result<Self> {
+    pub fn new_with_ipv4(
+        name: &str,
+        address: Ipv4Addr,
+        netmask: u8,
+        destination: Option<Ipv4Addr>,
+    ) -> Result<Self> {
         let device = DeviceBuilder::new()
             .name(name)
             .ipv4(address, netmask, destination)
@@ -118,8 +123,14 @@ impl TunDevice {
     }
 
     /// Configure IPv4 address for the device
-    pub fn set_ipv4_address(&self, address: Ipv4Addr, netmask: u8, destination: Option<Ipv4Addr>) -> Result<()> {
-        self.device.set_network_address(address, netmask, destination)?;
+    pub fn set_ipv4_address(
+        &self,
+        address: Ipv4Addr,
+        netmask: u8,
+        destination: Option<Ipv4Addr>,
+    ) -> Result<()> {
+        self.device
+            .set_network_address(address, netmask, destination)?;
         Ok(())
     }
 

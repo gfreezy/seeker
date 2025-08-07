@@ -1,11 +1,11 @@
-use tun_nat::run_nat;
 use smoltcp::wire::Ipv4Cidr;
-use std::net::{Ipv4Addr, UdpSocket, SocketAddr};
+use std::io::{Read, Write};
+use std::net::{Ipv4Addr, SocketAddr, UdpSocket};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
-use std::io::{Write, Read};
-use std::sync::{Arc, Mutex};
-use std::sync::atomic::{AtomicBool, Ordering};
+use tun_nat::run_nat;
 
 /// UDP 数据一致性测试 - 验证发送和接收的数据完全一致
 #[test]
@@ -35,9 +35,15 @@ fn test_udp_data_consistency() {
 
             // 在测试环境中，UDP可能会因为网络限制而失败，所以放宽要求
             if result.consistency_rate >= 0.8 {
-                println!("✓ 优秀的UDP数据一致性: {:.1}%", result.consistency_rate * 100.0);
+                println!(
+                    "✓ 优秀的UDP数据一致性: {:.1}%",
+                    result.consistency_rate * 100.0
+                );
             } else if result.consistency_rate > 0.0 {
-                println!("⚠ 部分UDP数据传输成功: {:.1}%", result.consistency_rate * 100.0);
+                println!(
+                    "⚠ 部分UDP数据传输成功: {:.1}%",
+                    result.consistency_rate * 100.0
+                );
             } else {
                 println!("ℹ UDP测试在当前环境中无法建立连接，但NAT基础设施正常启动");
                 // 在无法建立UDP连接的环境中，这是可以接受的
@@ -45,9 +51,11 @@ fn test_udp_data_consistency() {
         }
         Err(e) => {
             println!("UDP 数据一致性测试失败 (权限不足是预期的): {e}");
-            assert!(e.contains("Permission denied") ||
-                   e.contains("Operation not permitted") ||
-                   e.contains("device name must start with utun"));
+            assert!(
+                e.contains("Permission denied")
+                    || e.contains("Operation not permitted")
+                    || e.contains("device name must start with utun")
+            );
         }
     }
 }
@@ -79,8 +87,11 @@ fn test_tcp_data_consistency() {
             println!("数据一致性: {:.1}%", result.consistency_rate * 100.0);
 
             // TCP 应该有更高的数据一致性保证
-            assert!(result.consistency_rate >= 0.9,
-                "TCP 数据一致性应该 >= 90%，实际: {:.1}%", result.consistency_rate * 100.0);
+            assert!(
+                result.consistency_rate >= 0.9,
+                "TCP 数据一致性应该 >= 90%，实际: {:.1}%",
+                result.consistency_rate * 100.0
+            );
 
             if result.consistency_rate == 1.0 {
                 println!("✓ 完美数据一致性：所有 TCP 数据都正确传输");
@@ -90,9 +101,11 @@ fn test_tcp_data_consistency() {
         }
         Err(e) => {
             println!("TCP 数据一致性测试失败 (权限不足是预期的): {e}");
-            assert!(e.contains("Permission denied") ||
-                   e.contains("Operation not permitted") ||
-                   e.contains("device name must start with utun"));
+            assert!(
+                e.contains("Permission denied")
+                    || e.contains("Operation not permitted")
+                    || e.contains("device name must start with utun")
+            );
         }
     }
 }
@@ -139,7 +152,8 @@ fn run_udp_consistency_test(config: UdpTestConfig) -> Result<DataConsistencyResu
         &[],
         1,
         1,
-    ).map_err(|e| format!("NAT 启动失败: {e}"))?;
+    )
+    .map_err(|e| format!("NAT 启动失败: {e}"))?;
 
     // 用于收集发送和接收的消息
     let sent_messages = Arc::new(Mutex::new(Vec::new()));
@@ -151,7 +165,11 @@ fn run_udp_consistency_test(config: UdpTestConfig) -> Result<DataConsistencyResu
     let received_messages_clone = received_messages.clone();
 
     let server_handle = thread::spawn(move || {
-        run_udp_echo_server(config.test_server_port, server_running_clone, received_messages_clone)
+        run_udp_echo_server(
+            config.test_server_port,
+            server_running_clone,
+            received_messages_clone,
+        )
     });
 
     thread::sleep(Duration::from_millis(200)); // 等待服务器启动
@@ -234,7 +252,8 @@ fn run_tcp_consistency_test(config: TcpTestConfig) -> Result<DataConsistencyResu
         &[],
         1,
         1,
-    ).map_err(|e| format!("NAT 启动失败: {e}"))?;
+    )
+    .map_err(|e| format!("NAT 启动失败: {e}"))?;
 
     // 用于收集发送和接收的消息
     let sent_messages = Arc::new(Mutex::new(Vec::new()));
@@ -246,7 +265,11 @@ fn run_tcp_consistency_test(config: TcpTestConfig) -> Result<DataConsistencyResu
     let received_messages_clone = received_messages.clone();
 
     let server_handle = thread::spawn(move || {
-        run_tcp_echo_server(config.test_server_port, server_running_clone, received_messages_clone)
+        run_tcp_echo_server(
+            config.test_server_port,
+            server_running_clone,
+            received_messages_clone,
+        )
     });
 
     thread::sleep(Duration::from_millis(300)); // 等待服务器启动
@@ -317,11 +340,15 @@ fn run_tcp_consistency_test(config: TcpTestConfig) -> Result<DataConsistencyResu
 
 // ==== 辅助函数 ====
 
-fn send_and_receive_udp_message(message: &str, target_ip: &str, target_port: u16) -> Result<String, String> {
-    let socket = UdpSocket::bind("0.0.0.0:0")
-        .map_err(|e| format!("无法绑定 UDP socket: {e}"))?;
+fn send_and_receive_udp_message(
+    message: &str,
+    target_ip: &str,
+    target_port: u16,
+) -> Result<String, String> {
+    let socket = UdpSocket::bind("0.0.0.0:0").map_err(|e| format!("无法绑定 UDP socket: {e}"))?;
 
-    socket.set_read_timeout(Some(Duration::from_millis(1000)))
+    socket
+        .set_read_timeout(Some(Duration::from_millis(1000)))
         .map_err(|e| format!("设置超时失败: {e}"))?;
 
     let target_addr: SocketAddr = format!("{target_ip}:{target_port}")
@@ -329,7 +356,8 @@ fn send_and_receive_udp_message(message: &str, target_ip: &str, target_port: u16
         .map_err(|e| format!("地址解析失败: {e}"))?;
 
     // 发送消息
-    socket.send_to(message.as_bytes(), target_addr)
+    socket
+        .send_to(message.as_bytes(), target_addr)
         .map_err(|e| format!("UDP 发送失败: {e}"))?;
 
     // 接收回显
@@ -339,45 +367,61 @@ fn send_and_receive_udp_message(message: &str, target_ip: &str, target_port: u16
             let received = String::from_utf8_lossy(&buffer[..size]).to_string();
             Ok(received)
         }
-        Err(e) => Err(format!("UDP 接收失败: {e}"))
+        Err(e) => Err(format!("UDP 接收失败: {e}")),
     }
 }
 
-fn send_and_receive_tcp_message(message: &str, target_ip: &str, target_port: u16) -> Result<String, String> {
+fn send_and_receive_tcp_message(
+    message: &str,
+    target_ip: &str,
+    target_port: u16,
+) -> Result<String, String> {
     use std::net::TcpStream;
 
     let target_addr = format!("{target_ip}:{target_port}");
     let mut stream = TcpStream::connect_timeout(
-        &target_addr.parse().map_err(|e| format!("地址解析失败: {e}"))?,
-        Duration::from_secs(2)
-    ).map_err(|e| format!("TCP 连接失败: {e}"))?;
+        &target_addr
+            .parse()
+            .map_err(|e| format!("地址解析失败: {e}"))?,
+        Duration::from_secs(2),
+    )
+    .map_err(|e| format!("TCP 连接失败: {e}"))?;
 
     // 设置读取超时
-    stream.set_read_timeout(Some(Duration::from_millis(1000)))
+    stream
+        .set_read_timeout(Some(Duration::from_millis(1000)))
         .map_err(|e| format!("设置读取超时失败: {e}"))?;
 
     // 发送数据
-    stream.write_all(message.as_bytes())
+    stream
+        .write_all(message.as_bytes())
         .map_err(|e| format!("TCP 写入失败: {e}"))?;
 
     // 关闭写入端，告诉服务器数据发送完毕
-    stream.shutdown(std::net::Shutdown::Write)
+    stream
+        .shutdown(std::net::Shutdown::Write)
         .map_err(|e| format!("TCP 关闭写入失败: {e}"))?;
 
     // 读取回显数据
     let mut buffer = Vec::new();
-    stream.read_to_end(&mut buffer)
+    stream
+        .read_to_end(&mut buffer)
         .map_err(|e| format!("TCP 读取失败: {e}"))?;
 
     let echoed_data = String::from_utf8_lossy(&buffer).to_string();
     Ok(echoed_data)
 }
 
-fn run_udp_echo_server(port: u16, running: Arc<AtomicBool>, received_messages: Arc<Mutex<Vec<String>>>) -> Result<(), String> {
+fn run_udp_echo_server(
+    port: u16,
+    running: Arc<AtomicBool>,
+    received_messages: Arc<Mutex<Vec<String>>>,
+) -> Result<(), String> {
     let socket = UdpSocket::bind(format!("127.0.0.1:{port}"))
         .map_err(|e| format!("UDP 回显服务器绑定失败: {e}"))?;
 
-    socket.set_read_timeout(Some(Duration::from_millis(50)))
+    socket
+        .set_read_timeout(Some(Duration::from_millis(50)))
         .map_err(|e| format!("设置超时失败: {e}"))?;
 
     let mut buffer = [0u8; 2048];
@@ -424,13 +468,18 @@ fn run_udp_echo_server(port: u16, running: Arc<AtomicBool>, received_messages: A
     Ok(())
 }
 
-fn run_tcp_echo_server(port: u16, running: Arc<AtomicBool>, received_messages: Arc<Mutex<Vec<String>>>) -> Result<(), String> {
+fn run_tcp_echo_server(
+    port: u16,
+    running: Arc<AtomicBool>,
+    received_messages: Arc<Mutex<Vec<String>>>,
+) -> Result<(), String> {
     use std::net::TcpListener;
 
     let listener = TcpListener::bind(format!("127.0.0.1:{port}"))
         .map_err(|e| format!("TCP 回显服务器绑定失败: {e}"))?;
 
-    listener.set_nonblocking(true)
+    listener
+        .set_nonblocking(true)
         .map_err(|e| format!("设置非阻塞失败: {e}"))?;
 
     println!("TCP 回显服务器启动在端口 {port}");

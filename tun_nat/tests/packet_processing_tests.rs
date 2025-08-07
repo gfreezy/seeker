@@ -1,11 +1,11 @@
-use tun_nat::{run_nat, SessionManager};
 use smoltcp::wire::Ipv4Cidr;
-use std::net::{Ipv4Addr, UdpSocket, SocketAddr};
+use std::io::{Read, Write};
+use std::net::{Ipv4Addr, SocketAddr, UdpSocket};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
-use std::io::{Write, Read};
-use std::sync::{Arc, Mutex};
-use std::sync::atomic::{AtomicBool, Ordering};
+use tun_nat::{run_nat, SessionManager};
 
 /// 数据包收发集成测试
 #[test]
@@ -55,9 +55,10 @@ fn test_run_nat_packet_processing() {
             println!("NAT 启动失败 (在测试环境中是预期的): {e}");
             // 验证这是预期的错误类型
             assert!(
-                e.kind() == std::io::ErrorKind::PermissionDenied ||
-                e.kind() == std::io::ErrorKind::Other,
-                "意外的错误类型: {:?}", e.kind()
+                e.kind() == std::io::ErrorKind::PermissionDenied
+                    || e.kind() == std::io::ErrorKind::Other,
+                "意外的错误类型: {:?}",
+                e.kind()
             );
         }
     }
@@ -124,8 +125,8 @@ fn test_run_nat_multi_threading() {
             Err(e) => {
                 println!("配置 ({queue_num}, {threads_per_queue}) 启动失败 (预期): {e}");
                 assert!(
-                    e.kind() == std::io::ErrorKind::PermissionDenied ||
-                    e.kind() == std::io::ErrorKind::Other
+                    e.kind() == std::io::ErrorKind::PermissionDenied
+                        || e.kind() == std::io::ErrorKind::Other
                 );
             }
         }
@@ -174,8 +175,8 @@ fn test_run_nat_with_additional_cidrs() {
         Err(e) => {
             println!("带额外路由的 NAT 启动失败 (预期): {e}");
             assert!(
-                e.kind() == std::io::ErrorKind::PermissionDenied ||
-                e.kind() == std::io::ErrorKind::Other
+                e.kind() == std::io::ErrorKind::PermissionDenied
+                    || e.kind() == std::io::ErrorKind::Other
             );
         }
     }
@@ -237,9 +238,9 @@ fn test_run_nat_error_conditions() {
                 println!("配置 '{desc}' 失败如预期: {e}");
                 // 验证是预期的错误类型
                 assert!(
-                    e.kind() == std::io::ErrorKind::PermissionDenied ||
-                    e.kind() == std::io::ErrorKind::InvalidInput ||
-                    e.kind() == std::io::ErrorKind::Other
+                    e.kind() == std::io::ErrorKind::PermissionDenied
+                        || e.kind() == std::io::ErrorKind::InvalidInput
+                        || e.kind() == std::io::ErrorKind::Other
                 );
             }
         }
@@ -270,11 +271,11 @@ fn test_real_network_packet_flow() {
             println!("真实网络测试失败 (在无权限环境中是预期的): {e}");
             // 在 CI 或无权限环境中，这是预期的
             assert!(
-                e.contains("Permission denied") ||
-                e.contains("Operation not permitted") ||
-                e.contains("Network is unreachable") ||
-                e.contains("device name must start with utun") ||
-                e.contains("device name too long")
+                e.contains("Permission denied")
+                    || e.contains("Operation not permitted")
+                    || e.contains("Network is unreachable")
+                    || e.contains("device name must start with utun")
+                    || e.contains("device name too long")
             );
         }
     }
@@ -299,16 +300,28 @@ fn test_udp_packet_real_transmission() {
         Ok(stats) => {
             println!("✓ UDP 传输测试成功");
             // 在测试环境中，数据包可能无法真正发送，所以调整断言
-            println!("发送: {} 包, 接收: {} 包, 创建会话: {}, 成功率: {:.1}%",
-                stats.packets_sent, stats.packets_received, stats.sessions_created, stats.success_rate * 100.0);
-            println!("数据一致性: {:.1}%, 发送字节: {}, 接收字节: {}",
-                stats.data_consistency_rate * 100.0, stats.total_bytes_sent, stats.total_bytes_received);
+            println!(
+                "发送: {} 包, 接收: {} 包, 创建会话: {}, 成功率: {:.1}%",
+                stats.packets_sent,
+                stats.packets_received,
+                stats.sessions_created,
+                stats.success_rate * 100.0
+            );
+            println!(
+                "数据一致性: {:.1}%, 发送字节: {}, 接收字节: {}",
+                stats.data_consistency_rate * 100.0,
+                stats.total_bytes_sent,
+                stats.total_bytes_received
+            );
 
             // 验证测试基础设施正常运行
             if stats.packets_received > 0 {
                 println!("✓ 数据包成功收发");
                 if stats.data_consistency_rate > 0.0 {
-                    println!("✓ 数据一致性验证通过: {:.1}%", stats.data_consistency_rate * 100.0);
+                    println!(
+                        "✓ 数据一致性验证通过: {:.1}%",
+                        stats.data_consistency_rate * 100.0
+                    );
                 } else {
                     println!("⚠ 数据一致性验证：未检测到一致的数据");
                 }
@@ -318,10 +331,12 @@ fn test_udp_packet_real_transmission() {
         }
         Err(e) => {
             println!("UDP 传输测试失败 (权限不足是预期的): {e}");
-            assert!(e.contains("Permission denied") ||
-                   e.contains("Operation not permitted") ||
-                   e.contains("device name must start with utun") ||
-                   e.contains("device name too long"));
+            assert!(
+                e.contains("Permission denied")
+                    || e.contains("Operation not permitted")
+                    || e.contains("device name must start with utun")
+                    || e.contains("device name too long")
+            );
         }
     }
 }
@@ -345,15 +360,26 @@ fn test_tcp_connection_real_flow() {
         Ok(stats) => {
             println!("✓ TCP 连接测试成功");
             // 在测试环境中，连接可能超时，所以调整断言
-            println!("建立连接: {}, 传输字节: {}, 成功连接: {}",
-                stats.connections_established, stats.bytes_transferred, stats.connections_successful);
-            println!("数据一致性: {:.1}%, 发送字节: {}, 接收字节: {}",
-                stats.data_consistency_rate * 100.0, stats.total_bytes_sent, stats.total_bytes_received);
+            println!(
+                "建立连接: {}, 传输字节: {}, 成功连接: {}",
+                stats.connections_established,
+                stats.bytes_transferred,
+                stats.connections_successful
+            );
+            println!(
+                "数据一致性: {:.1}%, 发送字节: {}, 接收字节: {}",
+                stats.data_consistency_rate * 100.0,
+                stats.total_bytes_sent,
+                stats.total_bytes_received
+            );
 
             if stats.connections_established > 0 {
                 println!("✓ 成功建立了TCP连接");
                 if stats.data_consistency_rate > 0.0 {
-                    println!("✓ TCP 数据一致性验证通过: {:.1}%", stats.data_consistency_rate * 100.0);
+                    println!(
+                        "✓ TCP 数据一致性验证通过: {:.1}%",
+                        stats.data_consistency_rate * 100.0
+                    );
                 } else {
                     println!("⚠ TCP 数据一致性验证：未检测到一致的数据");
                 }
@@ -363,10 +389,12 @@ fn test_tcp_connection_real_flow() {
         }
         Err(e) => {
             println!("TCP 连接测试失败 (权限不足是预期的): {e}");
-            assert!(e.contains("Permission denied") ||
-                   e.contains("Operation not permitted") ||
-                   e.contains("device name must start with utun") ||
-                   e.contains("device name too long"));
+            assert!(
+                e.contains("Permission denied")
+                    || e.contains("Operation not permitted")
+                    || e.contains("device name must start with utun")
+                    || e.contains("device name too long")
+            );
         }
     }
 }
@@ -389,8 +417,10 @@ fn test_concurrent_sessions_real_network() {
         Ok(stats) => {
             println!("✓ 并发会话测试成功");
             // 在测试环境中调整期望，因为可能无法创建真正的会话
-            println!("最大并发会话: {}, 总处理包: {}",
-                stats.max_concurrent_sessions, stats.total_packets_processed);
+            println!(
+                "最大并发会话: {}, 总处理包: {}",
+                stats.max_concurrent_sessions, stats.total_packets_processed
+            );
 
             if stats.max_concurrent_sessions > 0 {
                 println!("✓ 成功检测到并发会话");
@@ -405,10 +435,12 @@ fn test_concurrent_sessions_real_network() {
         }
         Err(e) => {
             println!("并发会话测试失败 (权限不足是预期的): {e}");
-            assert!(e.contains("Permission denied") ||
-                   e.contains("Operation not permitted") ||
-                   e.contains("device name must start with utun") ||
-                   e.contains("device name too long"));
+            assert!(
+                e.contains("Permission denied")
+                    || e.contains("Operation not permitted")
+                    || e.contains("device name must start with utun")
+                    || e.contains("device name too long")
+            );
         }
     }
 }
@@ -500,7 +532,8 @@ fn run_real_network_test(config: RealNetworkTestConfig) -> Result<NetworkTestRes
         &[], // 无额外路由
         1,   // 单队列
         2,   // 双线程
-    ).map_err(|e| format!("NAT 启动失败: {e}"))?;
+    )
+    .map_err(|e| format!("NAT 启动失败: {e}"))?;
 
     let (session_manager, _join_handle) = nat_result;
     println!("✓ NAT 成功启动");
@@ -542,7 +575,8 @@ fn run_udp_transmission_test(config: UdpTestConfig) -> Result<UdpTestStats, Stri
         &[],
         1,
         1,
-    ).map_err(|e| format!("NAT 启动失败: {e}"))?;
+    )
+    .map_err(|e| format!("NAT 启动失败: {e}"))?;
 
     let mut packets_sent = 0;
     let mut sessions_created = 0;
@@ -557,7 +591,11 @@ fn run_udp_transmission_test(config: UdpTestConfig) -> Result<UdpTestStats, Stri
     let received_messages_clone = received_messages.clone();
 
     let server_handle = thread::spawn(move || {
-        run_udp_echo_server(config.test_server_port, server_running_clone, received_messages_clone)
+        run_udp_echo_server(
+            config.test_server_port,
+            server_running_clone,
+            received_messages_clone,
+        )
     });
 
     thread::sleep(Duration::from_millis(100)); // 等待服务器启动
@@ -565,7 +603,10 @@ fn run_udp_transmission_test(config: UdpTestConfig) -> Result<UdpTestStats, Stri
     // 模拟多个客户端发送 UDP 数据包并验证回显
     for client_id in 0..config.client_count {
         for msg_id in 0..config.messages_per_client {
-            let message = format!("Client-{}-Message-{}-Data:{}", client_id, msg_id, "TestPayload123");
+            let message = format!(
+                "Client-{}-Message-{}-Data:{}",
+                client_id, msg_id, "TestPayload123"
+            );
 
             // 记录发送的消息
             {
@@ -585,7 +626,10 @@ fn run_udp_transmission_test(config: UdpTestConfig) -> Result<UdpTestStats, Stri
                     }
 
                     // 检查是否创建了新会话
-                    if session_manager.get_by_port(50000 + client_id as u16).is_some() {
+                    if session_manager
+                        .get_by_port(50000 + client_id as u16)
+                        .is_some()
+                    {
                         sessions_created += 1;
                     }
                 }
@@ -630,8 +674,12 @@ fn run_udp_transmission_test(config: UdpTestConfig) -> Result<UdpTestStats, Stri
         0.0
     };
 
-    println!("发送消息总数: {}, 服务器接收总数: {}, 数据一致性: {:.1}%",
-        sent_count, received_count, data_consistency_rate * 100.0);
+    println!(
+        "发送消息总数: {}, 服务器接收总数: {}, 数据一致性: {:.1}%",
+        sent_count,
+        received_count,
+        data_consistency_rate * 100.0
+    );
 
     let success_rate = if config.client_count * config.messages_per_client > 0 {
         packets_sent as f64 / (config.client_count * config.messages_per_client) as f64
@@ -664,7 +712,8 @@ fn run_tcp_connection_test(config: TcpTestConfig) -> Result<TcpTestStats, String
         &[],
         1,
         1,
-    ).map_err(|e| format!("NAT 启动失败: {e}"))?;
+    )
+    .map_err(|e| format!("NAT 启动失败: {e}"))?;
 
     let mut connections_established = 0;
     let mut connections_successful = 0;
@@ -679,16 +728,28 @@ fn run_tcp_connection_test(config: TcpTestConfig) -> Result<TcpTestStats, String
     let consistency_checks_clone = data_consistency_checks.clone();
 
     let server_handle = thread::spawn(move || {
-        run_tcp_echo_server(config.test_server_port, server_running_clone, consistency_checks_clone)
+        run_tcp_echo_server(
+            config.test_server_port,
+            server_running_clone,
+            consistency_checks_clone,
+        )
     });
 
     thread::sleep(Duration::from_millis(200)); // 等待服务器启动
 
     // 模拟多个 TCP 连接并验证数据一致性
     for conn_id in 0..config.connection_count {
-        let test_data = format!("TCP-Connection-{}-Data:{}", conn_id, String::from_utf8_lossy(&config.data_per_connection));
+        let test_data = format!(
+            "TCP-Connection-{}-Data:{}",
+            conn_id,
+            String::from_utf8_lossy(&config.data_per_connection)
+        );
 
-        match establish_and_verify_tcp_connection(config.tun_ip, config.test_server_port, test_data.as_bytes()) {
+        match establish_and_verify_tcp_connection(
+            config.tun_ip,
+            config.test_server_port,
+            test_data.as_bytes(),
+        ) {
             Ok((transferred, echoed_data)) => {
                 connections_established += 1;
                 connections_successful += 1;
@@ -725,7 +786,12 @@ fn run_tcp_connection_test(config: TcpTestConfig) -> Result<TcpTestStats, String
         0.0
     };
 
-    println!("TCP 数据一致性检查: {}/{} 通过 ({:.1}%)", passed_checks, total_checks, data_consistency_rate * 100.0);
+    println!(
+        "TCP 数据一致性检查: {}/{} 通过 ({:.1}%)",
+        passed_checks,
+        total_checks,
+        data_consistency_rate * 100.0
+    );
 
     drop(session_manager);
 
@@ -739,7 +805,9 @@ fn run_tcp_connection_test(config: TcpTestConfig) -> Result<TcpTestStats, String
     })
 }
 
-fn run_concurrent_sessions_test(config: ConcurrentTestConfig) -> Result<ConcurrentTestStats, String> {
+fn run_concurrent_sessions_test(
+    config: ConcurrentTestConfig,
+) -> Result<ConcurrentTestStats, String> {
     println!("启动并发会话测试...");
 
     // 启动 NAT
@@ -751,7 +819,8 @@ fn run_concurrent_sessions_test(config: ConcurrentTestConfig) -> Result<Concurre
         &[],
         1,
         2, // 多线程处理
-    ).map_err(|e| format!("NAT 启动失败: {e}"))?;
+    )
+    .map_err(|e| format!("NAT 启动失败: {e}"))?;
 
     let mut total_packets = 0;
 
@@ -817,17 +886,22 @@ fn count_active_sessions(session_manager: &SessionManager) -> usize {
     count
 }
 
-fn send_and_verify_udp_message(message: &str, target_ip: Ipv4Addr, target_port: u16) -> Result<String, String> {
-    let socket = UdpSocket::bind("0.0.0.0:0")
-        .map_err(|e| format!("无法绑定 UDP socket: {e}"))?;
+fn send_and_verify_udp_message(
+    message: &str,
+    target_ip: Ipv4Addr,
+    target_port: u16,
+) -> Result<String, String> {
+    let socket = UdpSocket::bind("0.0.0.0:0").map_err(|e| format!("无法绑定 UDP socket: {e}"))?;
 
-    socket.set_read_timeout(Some(Duration::from_millis(500)))
+    socket
+        .set_read_timeout(Some(Duration::from_millis(500)))
         .map_err(|e| format!("设置超时失败: {e}"))?;
 
     let target_addr = SocketAddr::new(target_ip.into(), target_port);
 
     // 发送消息
-    socket.send_to(message.as_bytes(), target_addr)
+    socket
+        .send_to(message.as_bytes(), target_addr)
         .map_err(|e| format!("UDP 发送失败: {e}"))?;
 
     // 接收回显
@@ -837,11 +911,15 @@ fn send_and_verify_udp_message(message: &str, target_ip: Ipv4Addr, target_port: 
             let received = String::from_utf8_lossy(&buffer[..size]).to_string();
             Ok(received)
         }
-        Err(e) => Err(format!("UDP 接收失败: {e}"))
+        Err(e) => Err(format!("UDP 接收失败: {e}")),
     }
 }
 
-fn establish_and_verify_tcp_connection(target_ip: Ipv4Addr, target_port: u16, data: &[u8]) -> Result<(usize, String), String> {
+fn establish_and_verify_tcp_connection(
+    target_ip: Ipv4Addr,
+    target_port: u16,
+    data: &[u8],
+) -> Result<(usize, String), String> {
     use std::net::TcpStream;
 
     let target_addr = SocketAddr::new(target_ip.into(), target_port);
@@ -849,16 +927,19 @@ fn establish_and_verify_tcp_connection(target_ip: Ipv4Addr, target_port: u16, da
         .map_err(|e| format!("TCP 连接失败: {e}"))?;
 
     // 设置读取超时
-    stream.set_read_timeout(Some(Duration::from_millis(500)))
+    stream
+        .set_read_timeout(Some(Duration::from_millis(500)))
         .map_err(|e| format!("设置读取超时失败: {e}"))?;
 
     // 发送数据
-    stream.write_all(data)
+    stream
+        .write_all(data)
         .map_err(|e| format!("TCP 写入失败: {e}"))?;
 
     // 读取回显数据
     let mut buffer = [0u8; 1024];
-    let bytes_read = stream.read(&mut buffer)
+    let bytes_read = stream
+        .read(&mut buffer)
         .map_err(|e| format!("TCP 读取失败: {e}"))?;
 
     let echoed_data = String::from_utf8_lossy(&buffer[..bytes_read]).to_string();
@@ -866,11 +947,16 @@ fn establish_and_verify_tcp_connection(target_ip: Ipv4Addr, target_port: u16, da
     Ok((data.len(), echoed_data))
 }
 
-fn run_udp_echo_server(port: u16, running: Arc<AtomicBool>, received_messages: Arc<Mutex<Vec<String>>>) -> Result<(), String> {
+fn run_udp_echo_server(
+    port: u16,
+    running: Arc<AtomicBool>,
+    received_messages: Arc<Mutex<Vec<String>>>,
+) -> Result<(), String> {
     let socket = UdpSocket::bind(format!("127.0.0.1:{port}"))
         .map_err(|e| format!("回显服务器绑定失败: {e}"))?;
 
-    socket.set_read_timeout(Some(Duration::from_millis(100)))
+    socket
+        .set_read_timeout(Some(Duration::from_millis(100)))
         .map_err(|e| format!("设置超时失败: {e}"))?;
 
     let mut buffer = [0u8; 1024];
@@ -905,14 +991,18 @@ fn run_udp_echo_server(port: u16, running: Arc<AtomicBool>, received_messages: A
     Ok(())
 }
 
-fn run_tcp_echo_server(port: u16, running: Arc<AtomicBool>, consistency_checks: Arc<Mutex<Vec<bool>>>) -> Result<(), String> {
+fn run_tcp_echo_server(
+    port: u16,
+    running: Arc<AtomicBool>,
+    consistency_checks: Arc<Mutex<Vec<bool>>>,
+) -> Result<(), String> {
     use std::net::TcpListener;
-
 
     let listener = TcpListener::bind(format!("127.0.0.1:{port}"))
         .map_err(|e| format!("TCP 回显服务器绑定失败: {e}"))?;
 
-    listener.set_nonblocking(true)
+    listener
+        .set_nonblocking(true)
         .map_err(|e| format!("设置非阻塞失败: {e}"))?;
 
     while running.load(Ordering::Relaxed) {
@@ -936,7 +1026,10 @@ fn run_tcp_echo_server(port: u16, running: Arc<AtomicBool>, consistency_checks: 
     Ok(())
 }
 
-fn handle_tcp_echo_client(mut stream: std::net::TcpStream, consistency_checks: Arc<Mutex<Vec<bool>>>) {
+fn handle_tcp_echo_client(
+    mut stream: std::net::TcpStream,
+    consistency_checks: Arc<Mutex<Vec<bool>>>,
+) {
     let mut buffer = [0u8; 1024];
     match stream.read(&mut buffer) {
         Ok(size) => {
@@ -966,7 +1059,11 @@ fn handle_tcp_echo_client(mut stream: std::net::TcpStream, consistency_checks: A
     }
 }
 
-fn run_concurrent_client(client_id: usize, duration: Duration, session_manager: Arc<SessionManager>) -> usize {
+fn run_concurrent_client(
+    client_id: usize,
+    duration: Duration,
+    session_manager: Arc<SessionManager>,
+) -> usize {
     let mut packets_sent = 0;
     let end_time = std::time::Instant::now() + duration;
 
@@ -985,8 +1082,22 @@ fn run_concurrent_client(client_id: usize, duration: Duration, session_manager: 
 fn print_test_results(results: NetworkTestResults) {
     println!("=== 网络测试结果 ===");
     println!("NAT 启动: {}", if results.nat_started { "✓" } else { "✗" });
-    println!("TUN 设备创建: {}", if results.tun_device_created { "✓" } else { "✗" });
-    println!("路由配置: {}", if results.routing_configured { "✓" } else { "✗" });
+    println!(
+        "TUN 设备创建: {}",
+        if results.tun_device_created {
+            "✓"
+        } else {
+            "✗"
+        }
+    );
+    println!(
+        "路由配置: {}",
+        if results.routing_configured {
+            "✓"
+        } else {
+            "✗"
+        }
+    );
     println!("线程数量: {}", results.threads_spawned);
     println!("测试持续时间: {:?}", results.test_duration);
 }
