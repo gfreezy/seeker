@@ -38,7 +38,10 @@ pub fn list_user_proc_socks(uid: u32) -> Result<HashMap<i32, Vec<SocketInfo>>> {
         // A real implementation would need to map these to actual processes
         for (local, remote) in tcp_sockets {
             let socket_info = SocketInfo { local, remote };
-            result.entry(uid as i32).or_insert_with(Vec::new).push(socket_info);
+            result
+                .entry(uid as i32)
+                .or_insert_with(Vec::new)
+                .push(socket_info);
         }
     }
 
@@ -68,7 +71,8 @@ fn read_tcp_sockets() -> Result<Vec<(SocketAddr, SocketAddr)>> {
 fn parse_tcp_proc(content: &str, is_ipv6: bool) -> Result<Vec<(SocketAddr, SocketAddr)>> {
     let mut sockets = Vec::new();
 
-    for line in content.lines().skip(1) { // Skip header
+    for line in content.lines().skip(1) {
+        // Skip header
         let fields: Vec<&str> = line.split_whitespace().collect();
         if fields.len() < 3 {
             continue;
@@ -103,7 +107,7 @@ fn parse_socket_addr(addr_str: &str, is_ipv6: bool) -> Result<SocketAddr> {
 
         let mut addr_bytes = [0u8; 16];
         for i in 0..16 {
-            addr_bytes[i] = u8::from_str_radix(&ip_hex[i*2..i*2+2], 16)
+            addr_bytes[i] = u8::from_str_radix(&ip_hex[i * 2..i * 2 + 2], 16)
                 .map_err(|_| Error::new(ErrorKind::InvalidData, "Invalid IPv6 hex"))?;
         }
 
@@ -128,10 +132,7 @@ fn read_tcp_sockets_netstat() -> Result<Vec<(SocketAddr, SocketAddr)>> {
         .map_err(|e| Error::new(ErrorKind::Other, format!("Failed to run netstat: {}", e)))?;
 
     if !output.status.success() {
-        return Err(Error::new(
-            ErrorKind::Other,
-            "netstat command failed",
-        ));
+        return Err(Error::new(ErrorKind::Other, "netstat command failed"));
     }
 
     let content = String::from_utf8_lossy(&output.stdout);

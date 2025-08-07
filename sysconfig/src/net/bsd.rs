@@ -70,10 +70,7 @@ pub fn setup_ip(tun_name: &str, ip: &str, cidr: &str, additional_cidrs: Vec<Stri
 }
 
 pub fn get_current_dns() -> Vec<String> {
-    let mut resolv = OpenOptions::new()
-        .read(true)
-        .open(RESOLV_PATH)
-        .unwrap();
+    let mut resolv = OpenOptions::new().read(true).open(RESOLV_PATH).unwrap();
     let mut buf = vec![];
     let _ = resolv.read_to_end(&mut buf).unwrap();
     let content = std::str::from_utf8(&buf).unwrap();
