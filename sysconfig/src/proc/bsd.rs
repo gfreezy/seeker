@@ -3,7 +3,6 @@ use std::collections::HashMap;
 use std::fs;
 use std::io::{Error, ErrorKind, Result};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
-use std::str::FromStr;
 
 pub fn list_system_proc_socks() -> Result<HashMap<i32, Vec<SocketInfo>>> {
     let mut result = HashMap::new();

@@ -1,6 +1,6 @@
 use std::io;
 
-pub fn set_rlimit_no_file(no: u64) -> io::Result<()> {
+pub fn set_rlimit_no_file(no: libc::rlim_t) -> io::Result<()> {
     // #[cfg(target_pointer_width = "32")]
     // let rlim = libc::rlimit {
     //     rlim_cur: no as u32,
