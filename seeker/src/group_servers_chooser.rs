@@ -370,15 +370,13 @@ async fn ping_server(
         };
         // Check if HTTP status code starts with 2 or 3
         let response = String::from_utf8_lossy(&resp_buf);
-        if let Some(status_line) = response.lines().next() {
-            if let Some(status_code) = status_line.split_whitespace().nth(1) {
-                if !status_code.starts_with('2') && !status_code.starts_with('3') {
+        if let Some(status_line) = response.lines().next()
+            && let Some(status_code) = status_line.split_whitespace().nth(1)
+                && !status_code.starts_with('2') && !status_code.starts_with('3') {
                     return Err(std::io::Error::other(
                         format!("Host: {}, Status code: {}", ping_url.host(), status_code),
                     ));
                 }
-            }
-        }
         Ok(())
     })
     .await

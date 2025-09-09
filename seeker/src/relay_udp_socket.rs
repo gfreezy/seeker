@@ -75,15 +75,12 @@ pub(crate) async fn relay_udp_socket(
             }
         }
         .await;
-        if ret.is_err() {
-            if let Some(performance_tracker) =
+        if ret.is_err()
+            && let Some(performance_tracker) =
                 server_chooser.get_performance_tracker(&candidate_udp_socket_clone.proxy_group_name)
-            {
-                if let Some(server_config) = &candidate_udp_socket_clone.server_config {
+                && let Some(server_config) = &candidate_udp_socket_clone.server_config {
                     performance_tracker.add_result(server_config, None, false);
                 }
-            }
-        }
         session_manager.recycle_port(session_port);
         udp_manager_clone.write().remove(&session_port);
         candidate_udp_socket_clone.socket.shutdown();

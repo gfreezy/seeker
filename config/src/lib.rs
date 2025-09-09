@@ -335,10 +335,23 @@ impl Config {
                     data
                 }
             };
-            let Ok(extra_servers) = parse_remote_config_data(&data) else {
-                eprintln!("Parse config error for `{url}`.");
-                continue;
+            let extra_servers = match parse_remote_config_data(&data) {
+                Ok(extra_servers) => extra_servers,
+                Err(e) => {
+                    eprintln!("Parse config error for `{url}: {e}`.");
+                    continue;
+                }
             };
+            if !extra_servers.is_empty() {
+                eprintln!(
+                    "Load {} extra servers from remote config `{url}`.",
+                    extra_servers.len()
+                );
+            }
+            for server in &extra_servers {
+                eprint!("\"{}\", ", server.name());
+                tracing::info!("Load extra server: {}", server.name());
+            }
             servers.extend(extra_servers);
         }
     }
@@ -459,13 +472,19 @@ fn parse_remote_config_data(data: &[u8]) -> io::Result<Vec<ServerConfig>> {
         .map_err(|_e| io::Error::other("b64decode"))?;
     tracing::info!("b64decoded: {:?}", b64decoded);
     let server_urls = b64decoded.split(|&c| c == b'\n');
-    let ret: Result<_, _> = server_urls
+    let ret = server_urls
         .filter_map(|url| std::str::from_utf8(url).ok())
         .map(|s| s.trim())
         .filter(|url| !url.is_empty())
-        .map(ServerConfig::from_str)
+        .filter_map(|url| match ServerConfig::from_str(url) {
+            Ok(server) => Some(server),
+            Err(e) => {
+                tracing::error!("build server from url: {}, error: {:?}", url, e);
+                None
+            }
+        })
         .collect();
-    ret.map_err(|_e| io::Error::other("build server from url"))
+    Ok(ret)
 }
 
 #[cfg(test)]
