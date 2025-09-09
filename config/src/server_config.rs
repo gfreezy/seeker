@@ -190,6 +190,9 @@ impl ServerConfig {
             };
 
             decoded_body.insert_str(0, "ss://");
+            if let Some(fragment) = parsed.fragment() {
+                decoded_body.push_str(&format!("#{}", fragment));
+            }
             // Parse it like ss://method:password@host:port
             return ServerConfig::from_url(&decoded_body);
         }
@@ -380,6 +383,15 @@ mod tests {
             })
         );
         assert_eq!(server_config.method(), Some(CipherType::Aes256Gcm));
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_ss_url_with_base64() -> Result<(), UrlParseError> {
+        let url = "ss://Y2hhY2hhMjAtaWV0Zi1wb2x5MTMwNTozMnNzZGZAZmJub2RlLWFsbC42cHpmd2YuY29tOjU2MDAz#%5BSS%5D%20Hong%20Kong-02";
+        let server_config = ServerConfig::from_str(url)?;
+        assert_eq!(server_config.name, "[SS] Hong Kong-02");
+        assert_eq!(server_config.protocol(), ServerProtocol::Shadowsocks);
         Ok(())
     }
 }
