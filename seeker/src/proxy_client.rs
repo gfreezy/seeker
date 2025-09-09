@@ -286,9 +286,10 @@ impl ProxyClient {
                 if let Some(performance_tracker) = self
                     .server_chooser
                     .get_performance_tracker(&candidate_udp_socket.proxy_group_name)
-                    && let Some(server_config) = candidate_udp_socket.server_config {
-                        performance_tracker.add_result(&server_config, None, false);
-                    }
+                    && let Some(server_config) = candidate_udp_socket.server_config
+                {
+                    performance_tracker.add_result(&server_config, None, false);
+                }
                 if let Some(session_manager) = &self.session_manager {
                     session_manager.recycle_port(session_port);
                 }
@@ -315,9 +316,10 @@ pub(crate) async fn get_action_for_addr(
         }
     };
     if let Some(uid) = user_id
-        && !socket_addr_belong_to_user(real_src, uid)? {
-            pass_proxy = true;
-        }
+        && !socket_addr_belong_to_user(real_src, uid)?
+    {
+        pass_proxy = true;
+    }
     let action = if pass_proxy {
         Action::Direct
     } else {
