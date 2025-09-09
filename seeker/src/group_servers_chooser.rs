@@ -302,13 +302,22 @@ impl GroupServersChooser {
     async fn ping_server(&self, server_config: ServerConfig) -> std::io::Result<Duration> {
         let instant = Instant::now();
         for ping_url in &self.ping_urls {
-            ping_server(
+            let ret = ping_server(
                 server_config.clone(),
                 ping_url,
                 self.ping_timeout,
                 self.dns_client.clone(),
             )
-            .await?;
+            .await;
+            if let Err(err) = ret {
+                tracing::error!(
+                    "ping server: {}, ur: {}, err: {:?}",
+                    server_config.name(),
+                    ping_url,
+                    err
+                );
+                return Err(err);
+            }
         }
         Ok(instant.elapsed())
     }

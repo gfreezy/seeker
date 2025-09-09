@@ -343,13 +343,12 @@ impl Config {
                 }
             };
             if !extra_servers.is_empty() {
-                eprintln!(
+                tracing::info!(
                     "Load {} extra servers from remote config `{url}`.",
                     extra_servers.len()
                 );
             }
             for server in &extra_servers {
-                eprint!("\"{}\", ", server.name());
                 tracing::info!("Load extra server: {}", server.name());
             }
             servers.extend(extra_servers);
@@ -470,7 +469,7 @@ fn read_data_from_remote_config(url: &str) -> io::Result<Vec<u8>> {
 fn parse_remote_config_data(data: &[u8]) -> io::Result<Vec<ServerConfig>> {
     let b64decoded = base64::decode_engine(data, &URL_SAFE_ENGINE)
         .map_err(|_e| io::Error::other("b64decode"))?;
-    tracing::info!("b64decoded: {:?}", b64decoded);
+    // tracing::info!("b64decoded: {:?}", b64decoded);
     let server_urls = b64decoded.split(|&c| c == b'\n');
     let ret = server_urls
         .filter_map(|url| std::str::from_utf8(url).ok())
