@@ -11,11 +11,11 @@ use std::{
     time::SystemTime,
 };
 
+use nanorand::{tls_rng, Rng};
 use tokio::{
     io::{AsyncRead, AsyncWrite},
     net::TcpStream,
 };
-use nanorand::{tls_rng, Rng};
 
 use crate::Connection;
 

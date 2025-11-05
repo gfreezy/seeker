@@ -1,15 +1,14 @@
-use tokio::{io::{AsyncReadExt, AsyncWriteExt}};
-use native_tls;
-use tokio::task;
 use config::rule::Action;
 use parking_lot::Mutex;
-use std::{collections::HashMap, future::pending};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
+use std::{collections::HashMap, future::pending};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::task;
 
-use tokio::net::TcpStream;
 use config::Address;
+use tokio::net::TcpStream;
 use tracing::instrument;
 
 use crate::server_chooser::{CandidateTcpStream, ServerChooser};
@@ -190,7 +189,9 @@ impl ProbeConnectivity {
         response.starts_with("HTTP")
     }
 
-    async fn probe_ssh_connectivity<IO: AsyncReadExt + AsyncWriteExt + Unpin>(mut tcp_stream: IO) -> bool {
+    async fn probe_ssh_connectivity<IO: AsyncReadExt + AsyncWriteExt + Unpin>(
+        mut tcp_stream: IO,
+    ) -> bool {
         let Ok(_) = tcp_stream.write_all(b"SSH-2.0-seeker\r\n").await else {
             return false;
         };

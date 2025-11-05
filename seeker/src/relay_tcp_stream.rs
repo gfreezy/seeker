@@ -1,8 +1,8 @@
 use anyhow::Result;
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
-use tokio::time::timeout;
-use tokio::net::TcpStream;
 use config::{Address, Config};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::net::TcpStream;
+use tokio::time::timeout;
 
 use std::net::SocketAddr;
 
@@ -106,7 +106,10 @@ async fn choose_proxy_tcp_stream(
     .await?)
 }
 
-async fn tunnel_tcp_stream<T1: AsyncRead + AsyncWrite + Unpin, T2: AsyncRead + AsyncWrite + Unpin>(
+async fn tunnel_tcp_stream<
+    T1: AsyncRead + AsyncWrite + Unpin,
+    T2: AsyncRead + AsyncWrite + Unpin,
+>(
     _host: &Address,
     conn1: T1,
     conn2: T2,

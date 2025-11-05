@@ -65,7 +65,6 @@ impl AsyncWrite for HttpProxyTcpStream {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;

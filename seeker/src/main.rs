@@ -203,10 +203,7 @@ fn load_config(
             let ret = ureq::get(url).timeout(Duration::from_secs(5)).call();
             let resp = match ret {
                 Err(e) => {
-                    return Err(anyhow::anyhow!(
-                        "Load config from remote host error: {}",
-                        e.to_string()
-                    ));
+                    return Err(anyhow::anyhow!("Load config from remote host error: {}", e));
                 }
                 Ok(resp) => resp,
             };

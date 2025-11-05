@@ -4,11 +4,11 @@ use crate::proxy_tcp_stream::ProxyTcpStream;
 use crate::proxy_udp_socket::ProxyUdpSocket;
 use crate::server_performance::ServerPerformanceTracker;
 use anyhow::Result;
-use tokio::task;
 use config::rule::Action;
 use config::{Address, Config, ServerConfig};
 use futures_util::future::join_all;
 use std::collections::HashMap;
+use tokio::task;
 
 #[derive(Clone)]
 pub struct ServerChooser {
@@ -138,7 +138,9 @@ impl ServerChooser {
         let mut handles = Vec::new();
         for chooser in self.group_servers_chooser.values() {
             let chooser = chooser.clone();
-            handles.push(task::spawn(async move { chooser.run_background_tasks().await }));
+            handles.push(task::spawn(
+                async move { chooser.run_background_tasks().await },
+            ));
         }
         let results: Vec<_> = join_all(handles).await;
         for result in results {

@@ -9,7 +9,10 @@ macro_rules! retry_timeout {
                     Err(_) => {
                         tracing::warn!("retry_timeout: {}", $retries - retries);
                         if retries <= 0 {
-                            return Err(std::io::Error::new(std::io::ErrorKind::TimedOut, "timeout"));
+                            return Err(std::io::Error::new(
+                                std::io::ErrorKind::TimedOut,
+                                "timeout",
+                            ));
                         }
                     }
                 }

@@ -4,7 +4,6 @@
 //! Implements [SOCKS Protocol Version 5](https://www.ietf.org/rfc/rfc1928.txt) proxy protocol
 //! Taken from https://github.com/shadowsocks/shadowsocks-rust/blob/master/src/relay/socks5.rs
 
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use bytes::{Buf, BufMut, BytesMut};
 use std::{
     error,
@@ -14,6 +13,7 @@ use std::{
     str::FromStr,
     vec,
 };
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 pub use self::consts::SOCKS5_AUTH_METHOD_NONE;
 use tokio::io::{AsyncRead, AsyncWrite};

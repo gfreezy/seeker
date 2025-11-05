@@ -1,9 +1,9 @@
-use hickory_resolver::proto::rr::rdata::{A, AAAA};
-use hickory_resolver::proto::rr::{RData, RecordType};
-use hickory_resolver::TokioResolver;
 use async_trait::async_trait;
 use config::rule::{Action, ProxyRules};
 use hermesdns::{DnsPacket, DnsRecord, DnsResolver, Hosts, QueryType, TransientTtl};
+use hickory_resolver::proto::rr::rdata::{A, AAAA};
+use hickory_resolver::proto::rr::{RData, RecordType};
+use hickory_resolver::TokioResolver;
 use std::any::Any;
 use std::io;
 use std::io::Result;

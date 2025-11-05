@@ -1,9 +1,9 @@
 mod aead;
 mod stream;
 
-use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use std::io::{ErrorKind, Result};
 use tcp_connection::TcpConnection;
+use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 
 use std::{
     io,
@@ -11,8 +11,8 @@ use std::{
     task::{Context, Poll},
 };
 
-use std::task::ready;
 use bytes::{Bytes, BytesMut};
+use std::task::ready;
 use tracing::trace;
 
 use crypto::{CipherCategory, CipherType};
@@ -130,9 +130,12 @@ impl SSTcpStream {
                 &key,
                 iv,
             )),
-            CipherCategory::Aead => {
-                EncryptedWriter::Aead(AeadEncryptedWriter::new(stream_shared.clone(), method, &key, iv))
-            }
+            CipherCategory::Aead => EncryptedWriter::Aead(AeadEncryptedWriter::new(
+                stream_shared.clone(),
+                method,
+                &key,
+                iv,
+            )),
         };
 
         let mut ss_stream = SSTcpStream {
@@ -180,9 +183,12 @@ impl SSTcpStream {
                 &key,
                 iv,
             )),
-            CipherCategory::Aead => {
-                EncryptedWriter::Aead(AeadEncryptedWriter::new(stream_shared.clone(), method, &key, iv))
-            }
+            CipherCategory::Aead => EncryptedWriter::Aead(AeadEncryptedWriter::new(
+                stream_shared.clone(),
+                method,
+                &key,
+                iv,
+            )),
         };
 
         SSTcpStream {
@@ -328,11 +334,11 @@ impl AsyncWrite for SSTcpStream {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tokio::net::TcpListener;
-    use tokio::time::sleep;
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use std::net::ToSocketAddrs;
     use std::time::Duration;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
+    use tokio::time::sleep;
     use tracing::trace;
 
     #[allow(dead_code)]
@@ -353,33 +359,33 @@ mod tests {
         let server = "127.0.0.1:14187".to_socket_addrs().unwrap().next().unwrap();
         let data = b"GET / HTTP/1.1\r\n\r\n";
         let addr = Address::DomainNameAddress("twitter.com".to_string(), 443);
-            let key_clone = key.clone();
-            let addr_clone = addr.clone();
-            let listener = TcpListener::bind("0.0.0.0:14187").await.unwrap();
-            let h = tokio::task::spawn(async move {
-                let (stream, _) = listener.accept().await.unwrap();
-                trace!("accept conn");
-                let mut ss_server = SSTcpStream::accept(TcpConnection::new(stream), method, key);
-                let addr = Address::read_from(&mut ss_server).await.unwrap();
-                trace!("read address");
-                assert_eq!(addr, addr_clone);
-                let mut buf = vec![0; 1024];
-                let s = ss_server.read(&mut buf).await.unwrap();
-                trace!("read data");
-                ss_server.write(data).await.unwrap();
-                assert_eq!(&buf[..s], data);
-            });
+        let key_clone = key.clone();
+        let addr_clone = addr.clone();
+        let listener = TcpListener::bind("0.0.0.0:14187").await.unwrap();
+        let h = tokio::task::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            trace!("accept conn");
+            let mut ss_server = SSTcpStream::accept(TcpConnection::new(stream), method, key);
+            let addr = Address::read_from(&mut ss_server).await.unwrap();
+            trace!("read address");
+            assert_eq!(addr, addr_clone);
+            let mut buf = vec![0; 1024];
+            let s = ss_server.read(&mut buf).await.unwrap();
+            trace!("read data");
+            ss_server.write(data).await.unwrap();
+            assert_eq!(&buf[..s], data);
+        });
 
-            sleep(Duration::from_secs(3)).await;
-            trace!("before connect");
-            let conn = TcpConnection::connect_tcp(server).await.unwrap();
-            let mut conn = SSTcpStream::connect(conn, addr, method, key_clone)
-                .await
-                .unwrap();
-            trace!("before write");
-            conn.write_all(data).await.unwrap();
-            trace!("after write");
-            drop(conn);
-            h.await.unwrap();
+        sleep(Duration::from_secs(3)).await;
+        trace!("before connect");
+        let conn = TcpConnection::connect_tcp(server).await.unwrap();
+        let mut conn = SSTcpStream::connect(conn, addr, method, key_clone)
+            .await
+            .unwrap();
+        trace!("before write");
+        conn.write_all(data).await.unwrap();
+        trace!("after write");
+        drop(conn);
+        h.await.unwrap();
     }
 }
