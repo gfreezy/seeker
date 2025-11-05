@@ -40,13 +40,13 @@ use std::{
     task::{Context, Poll},
 };
 
-use async_std::task::ready;
 use byteorder::{BigEndian, ByteOrder};
 use bytes::{BufMut, Bytes, BytesMut};
+use std::task::ready;
 
 use crate::BUFFER_SIZE;
-use async_std::io::{Read, Write};
 use crypto::{BoxAeadDecryptor, BoxAeadEncryptor, CipherType};
+use tokio::io::{AsyncRead, AsyncWrite};
 
 /// AEAD packet payload must be smaller than 0x3FFF
 const MAX_PACKET_SIZE: usize = 0x3FFF;
@@ -69,7 +69,7 @@ pub struct DecryptedReader<T> {
     got_final: bool,
 }
 
-impl<T: Read + Write + Unpin> DecryptedReader<T> {
+impl<T: AsyncRead + AsyncWrite + Unpin> DecryptedReader<T> {
     pub fn new(conn: T, t: CipherType, key: &[u8], nonce: &[u8]) -> DecryptedReader<T> {
         DecryptedReader {
             conn,
@@ -178,7 +178,9 @@ impl<T: Read + Write + Unpin> DecryptedReader<T> {
                 // It has enough space, I am sure about that
                 let buffer =
                     slice::from_raw_parts_mut(self.buffer.chunk_mut().as_mut_ptr(), remaining);
-                let n = ready!(Pin::new(&mut self.conn).poll_read(ctx, buffer))?;
+                let mut read_buf = tokio::io::ReadBuf::new(buffer);
+                ready!(Pin::new(&mut self.conn).poll_read(ctx, &mut read_buf))?;
+                let n = read_buf.filled().len();
                 if n == 0 {
                     if self.buffer.is_empty() && allow_eof && !self.got_final {
                         // Read nothing
@@ -197,13 +199,21 @@ impl<T: Read + Write + Unpin> DecryptedReader<T> {
     }
 }
 
-impl<T: Read + Write + Unpin> Read for DecryptedReader<T> {
+impl<T: AsyncRead + AsyncWrite + Unpin> AsyncRead for DecryptedReader<T> {
     fn poll_read(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-        buf: &mut [u8],
-    ) -> Poll<Result<usize>> {
-        (*self).poll_read_decrypted(cx, buf)
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> Poll<Result<()>> {
+        let mut temp_buf = vec![0u8; buf.remaining()];
+        match (*self).poll_read_decrypted(cx, &mut temp_buf) {
+            Poll::Ready(Ok(n)) => {
+                buf.put_slice(&temp_buf[..n]);
+                Poll::Ready(Ok(()))
+            }
+            Poll::Ready(Err(e)) => Poll::Ready(Err(e)),
+            Poll::Pending => Poll::Pending,
+        }
     }
 }
 
@@ -221,7 +231,7 @@ pub struct EncryptedWriter<T> {
     nonce: Option<Bytes>,
 }
 
-impl<T: Read + Write + Unpin> EncryptedWriter<T> {
+impl<T: AsyncRead + AsyncWrite + Unpin> EncryptedWriter<T> {
     /// Creates a new EncryptedWriter
     pub fn new(conn: T, t: CipherType, key: &[u8], nonce: Bytes) -> EncryptedWriter<T> {
         EncryptedWriter {
@@ -317,7 +327,7 @@ impl<T: Read + Write + Unpin> EncryptedWriter<T> {
     }
 }
 
-impl<T: Read + Write + Unpin> Write for EncryptedWriter<T> {
+impl<T: AsyncRead + AsyncWrite + Unpin> AsyncWrite for EncryptedWriter<T> {
     fn poll_write(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -330,51 +340,46 @@ impl<T: Read + Write + Unpin> Write for EncryptedWriter<T> {
         Pin::new(&mut self.conn).poll_flush(cx)
     }
 
-    fn poll_close(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<()>> {
-        Pin::new(&mut self.conn).poll_close(cx)
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<()>> {
+        Pin::new(&mut self.conn).poll_shutdown(cx)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{DecryptedReader, EncryptedWriter};
-    use async_std::io::Cursor;
-    use async_std::prelude::*;
-    use async_std::task::block_on;
     use bytes::Bytes;
     use crypto::CipherType;
+    use std::io::Cursor;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-    #[test]
-    fn test_write() {
-        block_on(async move {
-            let method = CipherType::ChaCha20IetfPoly1305;
-            let password = "GwEU01uXWm0Pp6t08";
-            let key = method.bytes_to_key(password.as_bytes());
-            let nonce = method.gen_salt();
-            let mut buf = Cursor::new(Vec::new());
-            let mut writer = EncryptedWriter::new(&mut buf, method, &key, nonce.clone());
-            let data = b"hello";
-            writer.write_all(data).await.unwrap();
-            buf.set_position(0);
-            let encrypted = encrypt(method, key, nonce.clone(), data);
-            assert_eq!(&buf.get_ref()[nonce.len()..], encrypted.as_slice());
-        });
+    #[tokio::test]
+    async fn test_write() {
+        let method = CipherType::ChaCha20IetfPoly1305;
+        let password = "GwEU01uXWm0Pp6t08";
+        let key = method.bytes_to_key(password.as_bytes());
+        let nonce = method.gen_salt();
+        let mut buf = Cursor::new(Vec::new());
+        let mut writer = EncryptedWriter::new(&mut buf, method, &key, nonce.clone());
+        let data = b"hello";
+        writer.write_all(data).await.unwrap();
+        buf.set_position(0);
+        let encrypted = encrypt(method, key, nonce.clone(), data);
+        assert_eq!(&buf.get_ref()[nonce.len()..], encrypted.as_slice());
     }
 
-    #[test]
-    fn test_read() {
-        block_on(async move {
-            let method = CipherType::ChaCha20IetfPoly1305;
-            let password = "GwEU01uXWm0Pp6t08";
-            let key = method.bytes_to_key(password.as_bytes());
-            let nonce = method.gen_salt();
-            let data = b"hello";
-            let output = encrypt(method, key.clone(), nonce.clone(), data);
-            let mut reader = DecryptedReader::new(Cursor::new(output), method, &key, &nonce);
-            let mut buf = vec![];
-            reader.read_to_end(&mut buf).await.unwrap();
-            assert_eq!(buf.as_slice(), data)
-        });
+    #[tokio::test]
+    async fn test_read() {
+        let method = CipherType::ChaCha20IetfPoly1305;
+        let password = "GwEU01uXWm0Pp6t08";
+        let key = method.bytes_to_key(password.as_bytes());
+        let nonce = method.gen_salt();
+        let data = b"hello";
+        let output = encrypt(method, key.clone(), nonce.clone(), data);
+        let mut reader = DecryptedReader::new(Cursor::new(output), method, &key, &nonce);
+        let mut buf = vec![];
+        reader.read_to_end(&mut buf).await.unwrap();
+        assert_eq!(buf.as_slice(), data)
     }
 
     #[test]

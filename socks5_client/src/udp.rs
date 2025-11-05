@@ -2,11 +2,11 @@ use crate::types::{
     Address, Command, HandshakeRequest, HandshakeResponse, Reply, TcpRequestHeader,
     TcpResponseHeader, UdpAssociateHeader, SOCKS5_AUTH_METHOD_NONE,
 };
-use async_std::io;
-use async_std::net::{TcpStream, UdpSocket};
 use std::io::{Error, ErrorKind, Result};
 use std::net::SocketAddr;
 use std::time::Duration;
+use tokio::net::{TcpStream, UdpSocket};
+use tokio::time::timeout;
 
 #[derive(Debug)]
 pub struct Socks5UdpSocket {
@@ -18,8 +18,7 @@ pub struct Socks5UdpSocket {
 impl Socks5UdpSocket {
     pub async fn new(socks5_server: SocketAddr) -> Result<Self> {
         let socket = UdpSocket::bind("0.0.0.0:0").await?;
-        let mut conn =
-            io::timeout(Duration::from_secs(1), TcpStream::connect(socks5_server)).await?;
+        let mut conn = timeout(Duration::from_secs(1), TcpStream::connect(socks5_server)).await??;
         let handshake_req = HandshakeRequest::new(vec![SOCKS5_AUTH_METHOD_NONE]);
         handshake_req.write_to(&mut conn).await?;
         let handshake_resp = HandshakeResponse::read_from(&mut conn).await?;
@@ -91,25 +90,22 @@ impl Socks5UdpSocket {
     }
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-//     use async_std::task::block_on;
-//     use std::str::FromStr;
-//
-//     #[test]
-//     fn test_udp() -> Result<()> {
-//         block_on(async {
-//             let server = "127.0.0.1:1086".parse().unwrap();
-//             let udp = Socks5UdpSocket::connect(server).await?;
-//             let mut buf = vec![0; 1500];
-//             let to_addr = Address::SocketAddress("118.145.8.14:10240".parse().unwrap());
-//             let size = udp.send_to(b"hello", to_addr.clone()).await?;
-//             let (s, addr) = udp.recv_from(&mut buf).await?;
-//             assert_eq!(s, size);
-//             assert_eq!(addr, to_addr);
-//             assert_eq!(&buf[..s], b"hello");
-//             Ok(())
-//         })
-//     }
-// }
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[ignore]
+    #[tokio::test]
+    async fn test_udp() -> Result<()> {
+        let server = "127.0.0.1:1086".parse().unwrap();
+        let udp = Socks5UdpSocket::new(server).await?;
+        let mut buf = vec![0; 1500];
+        let to_addr: SocketAddr = "118.145.8.14:10240".parse().unwrap();
+        let size = udp.send_to(b"hello", to_addr).await?;
+        let (s, addr) = udp.recv_from(&mut buf).await?;
+        assert_eq!(s, size);
+        assert_eq!(addr, to_addr);
+        assert_eq!(&buf[..s], b"hello");
+        Ok(())
+    }
+}

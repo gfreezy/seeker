@@ -4,7 +4,6 @@
 //! Implements [SOCKS Protocol Version 5](https://www.ietf.org/rfc/rfc1928.txt) proxy protocol
 //! Taken from https://github.com/shadowsocks/shadowsocks-rust/blob/master/src/relay/socks5.rs
 
-use async_std::prelude::*;
 use bytes::{Buf, BufMut, BytesMut};
 use std::{
     error,
@@ -14,9 +13,10 @@ use std::{
     str::FromStr,
     vec,
 };
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 pub use self::consts::SOCKS5_AUTH_METHOD_NONE;
-use async_std::io::prelude::{Read, Write};
+use tokio::io::{AsyncRead, AsyncWrite};
 
 #[rustfmt::skip]
 mod consts {
@@ -211,7 +211,7 @@ pub enum Address {
 impl Address {
     pub async fn read_from<R>(stream: &mut R) -> Result<Address, Error>
     where
-        R: Read + Unpin,
+        R: AsyncRead + Unpin,
     {
         let mut addr_type_buf = [0u8; 1];
         stream.read_exact(&mut addr_type_buf).await?;
@@ -297,7 +297,7 @@ impl Address {
     #[inline]
     pub async fn write_to<W>(&self, writer: &mut W) -> io::Result<()>
     where
-        W: Write + Unpin,
+        W: AsyncWrite + Unpin,
     {
         let mut buf = BytesMut::with_capacity(self.serialized_len());
         self.write_to_buf(&mut buf);
@@ -478,7 +478,7 @@ impl TcpRequestHeader {
     /// Read from a reader
     pub async fn read_from<R>(r: &mut R) -> Result<TcpRequestHeader, Error>
     where
-        R: Read + Unpin,
+        R: AsyncRead + Unpin,
     {
         let mut buf = [0u8; 3];
         r.read_exact(&mut buf).await?;
@@ -509,7 +509,7 @@ impl TcpRequestHeader {
     /// Write data into a writer
     pub async fn write_to<W>(&self, w: &mut W) -> io::Result<()>
     where
-        W: Write + Unpin,
+        W: AsyncWrite + Unpin,
     {
         let mut buf = BytesMut::with_capacity(self.serialized_len());
         self.write_to_buf(&mut buf);
@@ -560,7 +560,7 @@ impl TcpResponseHeader {
     /// Read from a reader
     pub async fn read_from<R>(r: &mut R) -> Result<TcpResponseHeader, Error>
     where
-        R: Read + Unpin,
+        R: AsyncRead + Unpin,
     {
         let mut buf = [0u8; 3];
         r.read_exact(&mut buf).await?;
@@ -586,7 +586,7 @@ impl TcpResponseHeader {
     /// Write to a writer
     pub async fn write_to<W>(&self, w: &mut W) -> io::Result<()>
     where
-        W: Write + Unpin,
+        W: AsyncWrite + Unpin,
     {
         let mut buf = BytesMut::with_capacity(self.serialized_len());
         self.write_to_buf(&mut buf);
@@ -633,7 +633,7 @@ impl HandshakeRequest {
     /// Read from a reader
     pub async fn read_from<R>(r: &mut R) -> io::Result<HandshakeRequest>
     where
-        R: Read + Unpin,
+        R: AsyncRead + Unpin,
     {
         let mut buf = [0u8; 2];
         r.read_exact(&mut buf).await?;
@@ -659,7 +659,7 @@ impl HandshakeRequest {
     /// Write to a writer
     pub async fn write_to<W>(&self, w: &mut W) -> io::Result<()>
     where
-        W: Write + Unpin,
+        W: AsyncWrite + Unpin,
     {
         let mut buf = BytesMut::with_capacity(self.serialized_len());
         self.write_to_buf(&mut buf);
@@ -702,7 +702,7 @@ impl HandshakeResponse {
     /// Read from a reader
     pub async fn read_from<R>(r: &mut R) -> io::Result<HandshakeResponse>
     where
-        R: Read + Unpin,
+        R: AsyncRead + Unpin,
     {
         let mut buf = [0u8; 2];
         r.read_exact(&mut buf).await?;
@@ -725,7 +725,7 @@ impl HandshakeResponse {
     /// Write to a writer
     pub async fn write_to<W>(self, w: &mut W) -> io::Result<()>
     where
-        W: Write + Unpin,
+        W: AsyncWrite + Unpin,
     {
         let mut buf = BytesMut::with_capacity(self.serialized_len());
         self.write_to_buf(&mut buf);
@@ -771,7 +771,7 @@ impl UdpAssociateHeader {
     /// Read from a reader
     pub async fn read_from<R>(r: &mut R) -> Result<UdpAssociateHeader, Error>
     where
-        R: Read + Unpin,
+        R: AsyncRead + Unpin,
     {
         let mut buf = [0u8; 3];
         r.read_exact(&mut buf).await?;
@@ -784,7 +784,7 @@ impl UdpAssociateHeader {
     /// Write to a writer
     pub async fn write_to<W>(&self, w: &mut W) -> io::Result<()>
     where
-        W: Write + Unpin,
+        W: AsyncWrite + Unpin,
     {
         let mut buf = BytesMut::with_capacity(self.serialized_len());
         self.write_to_buf(&mut buf);

@@ -1,8 +1,10 @@
-use async_std_resolver::config::{
-    NameServerConfig, NameServerConfigGroup, Protocol, ResolverConfig, ResolverOpts,
-};
-use async_std_resolver::{AsyncStdResolver, resolver};
 use config::{Address, DnsServerAddr};
+use hickory_proto::xfer::Protocol;
+use hickory_resolver::config::{
+    NameServerConfig, NameServerConfigGroup, ResolverConfig, ResolverOpts,
+};
+use hickory_resolver::name_server::TokioConnectionProvider;
+use hickory_resolver::{Name, TokioResolver};
 use std::io::{Error, ErrorKind, Result};
 use std::net::IpAddr;
 use std::net::SocketAddr;
@@ -10,7 +12,7 @@ use std::time::Duration;
 
 #[derive(Clone)]
 pub struct DnsClient {
-    resolver: AsyncStdResolver,
+    resolver: TokioResolver,
 }
 
 impl DnsClient {
@@ -20,28 +22,17 @@ impl DnsClient {
         for addr in dns_servers {
             match addr {
                 DnsServerAddr::UdpSocketAddr(addr) => {
-                    let udp = NameServerConfig {
-                        socket_addr: *addr,
-                        protocol: Protocol::Udp,
-                        tls_dns_name: None,
-                        trust_negative_responses: false,
-                        bind_addr: None,
-                    };
+                    let udp = NameServerConfig::new(*addr, Protocol::Udp);
                     name_servers.push(udp);
                 }
                 DnsServerAddr::TcpSocketAddr(addr) => {
                     if !["tcp", "tls"].contains(&addr.scheme()) {
                         panic!("Invalid dns server address")
                     }
-                    let tcp = NameServerConfig {
-                        socket_addr: format!("{}:{}", addr.host().unwrap(), addr.port().unwrap())
-                            .parse()
-                            .unwrap(),
-                        protocol: Protocol::Tcp,
-                        tls_dns_name: None,
-                        trust_negative_responses: false,
-                        bind_addr: None,
-                    };
+                    let socket_addr = format!("{}:{}", addr.host().unwrap(), addr.port().unwrap())
+                        .parse()
+                        .unwrap();
+                    let tcp = NameServerConfig::new(socket_addr, Protocol::Tcp);
                     name_servers.push(tcp);
                 }
             }
@@ -50,28 +41,29 @@ impl DnsClient {
         let num_concurrent_reqs = name_servers.len();
 
         // Construct a new Resolver with default configuration options
-        let resolver = resolver(
+        let mut opts = ResolverOpts::default();
+        opts.timeout = timeout;
+        opts.num_concurrent_reqs = num_concurrent_reqs;
+
+        let resolver = TokioResolver::builder_with_config(
             ResolverConfig::from_parts(None, Vec::new(), name_servers),
-            {
-                let mut opts = ResolverOpts::default();
-                opts.timeout = timeout;
-                opts.num_concurrent_reqs = num_concurrent_reqs;
-                opts
-            },
+            TokioConnectionProvider::default(),
         )
-        .await;
+        .with_options(opts)
+        .build();
 
         DnsClient { resolver }
     }
 
-    pub fn resolver(&self) -> AsyncStdResolver {
+    pub fn resolver(&self) -> TokioResolver {
         self.resolver.clone()
     }
     pub async fn lookup(&self, domain: &str) -> Result<IpAddr> {
-        let response =
-            self.resolver.lookup_ip(domain).await.map_err(|e| {
-                Error::new(ErrorKind::NotFound, format!("{domain} not resolved.\n{e}"))
-            })?;
+        let response = self
+            .resolver
+            .lookup_ip(Name::from_str_relaxed(domain)?)
+            .await
+            .map_err(|e| Error::new(ErrorKind::NotFound, format!("{domain} not resolved.\n{e}")))?;
         response.iter().next().ok_or_else(|| {
             Error::new(
                 ErrorKind::NotFound,

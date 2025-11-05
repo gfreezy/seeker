@@ -1,10 +1,9 @@
 mod aead;
 mod stream;
 
-use async_std::io::{Read, Write};
-use async_std::prelude::*;
 use std::io::{ErrorKind, Result};
 use tcp_connection::TcpConnection;
+use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 
 use std::{
     io,
@@ -12,8 +11,8 @@ use std::{
     task::{Context, Poll},
 };
 
-use async_std::task::ready;
 use bytes::{Bytes, BytesMut};
+use std::task::ready;
 use tracing::trace;
 
 use crypto::{CipherCategory, CipherType};
@@ -25,6 +24,48 @@ use self::{
 use config::Address;
 use parking_lot::Mutex;
 use std::sync::Arc;
+
+// Wrapper for Arc<Mutex<TcpConnection>> to implement AsyncRead/AsyncWrite
+#[derive(Clone)]
+pub struct SharedTcpConnection(Arc<Mutex<TcpConnection>>);
+
+impl SharedTcpConnection {
+    pub fn new(conn: TcpConnection) -> Self {
+        Self(Arc::new(Mutex::new(conn)))
+    }
+
+    pub fn lock(&self) -> parking_lot::MutexGuard<'_, TcpConnection> {
+        self.0.lock()
+    }
+}
+
+impl AsyncRead for SharedTcpConnection {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        Pin::new(&mut *self.0.lock()).poll_read(cx, buf)
+    }
+}
+
+impl AsyncWrite for SharedTcpConnection {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        Pin::new(&mut *self.0.lock()).poll_write(cx, buf)
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut *self.0.lock()).poll_flush(cx)
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut *self.0.lock()).poll_shutdown(cx)
+    }
+}
 
 enum DecryptedReader<T> {
     Aead(AeadDecryptedReader<T>),
@@ -48,11 +89,10 @@ enum ReadStatus {
 }
 
 /// A bidirectional stream for communicating with ShadowSocks' server
-#[derive(Clone)]
 pub struct SSTcpStream {
-    stream: TcpConnection,
-    dec: Option<Arc<Mutex<DecryptedReader<TcpConnection>>>>,
-    enc: Arc<Mutex<EncryptedWriter<TcpConnection>>>,
+    stream: SharedTcpConnection,
+    dec: Option<Arc<Mutex<DecryptedReader<SharedTcpConnection>>>>,
+    enc: Arc<Mutex<EncryptedWriter<SharedTcpConnection>>>,
     read_status: Arc<Mutex<ReadStatus>>,
 }
 
@@ -82,20 +122,24 @@ impl SSTcpStream {
             }
         };
 
+        let stream_shared = SharedTcpConnection::new(stream);
         let enc = match method.category() {
             CipherCategory::Stream => EncryptedWriter::Stream(StreamEncryptedWriter::new(
-                stream.clone(),
+                stream_shared.clone(),
                 method,
                 &key,
                 iv,
             )),
-            CipherCategory::Aead => {
-                EncryptedWriter::Aead(AeadEncryptedWriter::new(stream.clone(), method, &key, iv))
-            }
+            CipherCategory::Aead => EncryptedWriter::Aead(AeadEncryptedWriter::new(
+                stream_shared.clone(),
+                method,
+                &key,
+                iv,
+            )),
         };
 
         let mut ss_stream = SSTcpStream {
-            stream,
+            stream: stream_shared,
             dec: None,
             enc: Arc::new(Mutex::new(enc)),
             read_status: Arc::new(Mutex::new(ReadStatus::WaitIv(
@@ -131,20 +175,24 @@ impl SSTcpStream {
             }
         };
 
+        let stream_shared = SharedTcpConnection::new(stream);
         let enc = match method.category() {
             CipherCategory::Stream => EncryptedWriter::Stream(StreamEncryptedWriter::new(
-                stream.clone(),
+                stream_shared.clone(),
                 method,
                 &key,
                 iv,
             )),
-            CipherCategory::Aead => {
-                EncryptedWriter::Aead(AeadEncryptedWriter::new(stream.clone(), method, &key, iv))
-            }
+            CipherCategory::Aead => EncryptedWriter::Aead(AeadEncryptedWriter::new(
+                stream_shared.clone(),
+                method,
+                &key,
+                iv,
+            )),
         };
 
         SSTcpStream {
-            stream,
+            stream: stream_shared,
             dec: None,
             enc: Arc::new(Mutex::new(enc)),
             read_status: Arc::new(Mutex::new(ReadStatus::WaitIv(
@@ -157,7 +205,7 @@ impl SSTcpStream {
     }
 
     /// Return a reference to the underlying stream
-    pub fn get_ref(&self) -> &TcpConnection {
+    pub fn get_ref(&self) -> &SharedTcpConnection {
         &self.stream
     }
 
@@ -166,7 +214,9 @@ impl SSTcpStream {
             *self.read_status.lock()
         {
             while *pos < buf.len() {
-                let n = ready!(Pin::new(&mut self.stream).poll_read(cx, &mut buf[*pos..]))?;
+                let mut read_buf = tokio::io::ReadBuf::new(&mut buf[*pos..]);
+                ready!(Pin::new(&mut self.stream).poll_read(cx, &mut read_buf))?;
+                let n = read_buf.filled().len();
                 if n == 0 {
                     trace!("wait iv error");
                     return Poll::Ready(Err(ErrorKind::UnexpectedEof.into()));
@@ -212,9 +262,15 @@ impl SSTcpStream {
         let this = self.get_mut();
         ready!(this.poll_read_handshake(ctx))?;
 
-        match *this.dec.as_ref().unwrap().lock() {
-            DecryptedReader::Aead(ref mut r) => Pin::new(r).poll_read(ctx, buf),
-            DecryptedReader::Stream(ref mut r) => Pin::new(r).poll_read(ctx, buf),
+        let mut read_buf = tokio::io::ReadBuf::new(buf);
+        let result = match *this.dec.as_ref().unwrap().lock() {
+            DecryptedReader::Aead(ref mut r) => Pin::new(r).poll_read(ctx, &mut read_buf),
+            DecryptedReader::Stream(ref mut r) => Pin::new(r).poll_read(ctx, &mut read_buf),
+        };
+        match result {
+            Poll::Ready(Ok(())) => Poll::Ready(Ok(read_buf.filled().len())),
+            Poll::Ready(Err(e)) => Poll::Ready(Err(e)),
+            Poll::Pending => Poll::Pending,
         }
     }
 
@@ -230,26 +286,34 @@ impl SSTcpStream {
         }
     }
 
-    fn priv_poll_flush(mut self: Pin<&mut Self>, ctx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        Write::poll_flush(Pin::new(&mut self.stream), ctx)
+    fn priv_poll_flush(self: Pin<&mut Self>, ctx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        AsyncWrite::poll_flush(Pin::new(&mut self.get_mut().stream), ctx)
     }
 
-    fn priv_poll_close(mut self: Pin<&mut Self>, ctx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        Write::poll_close(Pin::new(&mut self.stream), ctx)
+    fn priv_poll_close(self: Pin<&mut Self>, ctx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        AsyncWrite::poll_shutdown(Pin::new(&mut self.get_mut().stream), ctx)
     }
 }
 
-impl Read for SSTcpStream {
+impl AsyncRead for SSTcpStream {
     fn poll_read(
-        self: Pin<&mut Self>,
+        mut self: Pin<&mut Self>,
         ctx: &mut Context<'_>,
-        buf: &mut [u8],
-    ) -> Poll<io::Result<usize>> {
-        self.priv_poll_read(ctx, buf)
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        let mut temp_buf = vec![0u8; buf.remaining()];
+        match self.as_mut().priv_poll_read(ctx, &mut temp_buf) {
+            Poll::Ready(Ok(n)) => {
+                buf.put_slice(&temp_buf[..n]);
+                Poll::Ready(Ok(()))
+            }
+            Poll::Ready(Err(e)) => Poll::Ready(Err(e)),
+            Poll::Pending => Poll::Pending,
+        }
     }
 }
 
-impl Write for SSTcpStream {
+impl AsyncWrite for SSTcpStream {
     fn poll_write(
         self: Pin<&mut Self>,
         ctx: &mut Context<'_>,
@@ -262,7 +326,7 @@ impl Write for SSTcpStream {
         self.priv_poll_flush(ctx)
     }
 
-    fn poll_close(self: Pin<&mut Self>, ctx: &mut Context<'_>) -> Poll<io::Result<()>> {
+    fn poll_shutdown(self: Pin<&mut Self>, ctx: &mut Context<'_>) -> Poll<io::Result<()>> {
         self.priv_poll_close(ctx)
     }
 }
@@ -270,10 +334,11 @@ impl Write for SSTcpStream {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use async_std::net::TcpListener;
-    use async_std::task::{block_on, sleep, spawn};
     use std::net::ToSocketAddrs;
     use std::time::Duration;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
+    use tokio::time::sleep;
     use tracing::trace;
 
     #[allow(dead_code)]
@@ -285,8 +350,8 @@ mod tests {
         builder.try_init().unwrap();
     }
 
-    #[test]
-    fn test_tcp_read_write() {
+    #[tokio::test]
+    async fn test_tcp_read_write() {
         // setup_tracing_subscriber();
         let method = CipherType::ChaCha20Ietf;
         let password = "GwEU01uXWm0Pp6t08";
@@ -294,35 +359,33 @@ mod tests {
         let server = "127.0.0.1:14187".to_socket_addrs().unwrap().next().unwrap();
         let data = b"GET / HTTP/1.1\r\n\r\n";
         let addr = Address::DomainNameAddress("twitter.com".to_string(), 443);
-        block_on(async {
-            let key_clone = key.clone();
-            let addr_clone = addr.clone();
-            let listener = TcpListener::bind("0.0.0.0:14187").await.unwrap();
-            let h = spawn(async move {
-                let (stream, _) = listener.accept().await.unwrap();
-                trace!("accept conn");
-                let mut ss_server = SSTcpStream::accept(TcpConnection::new(stream), method, key);
-                let addr = Address::read_from(&mut ss_server).await.unwrap();
-                trace!("read address");
-                assert_eq!(addr, addr_clone);
-                let mut buf = vec![0; 1024];
-                let s = ss_server.read(&mut buf).await.unwrap();
-                trace!("read data");
-                ss_server.write(data).await.unwrap();
-                assert_eq!(&buf[..s], data);
-            });
+        let key_clone = key.clone();
+        let addr_clone = addr.clone();
+        let listener = TcpListener::bind("0.0.0.0:14187").await.unwrap();
+        let h = tokio::task::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            trace!("accept conn");
+            let mut ss_server = SSTcpStream::accept(TcpConnection::new(stream), method, key);
+            let addr = Address::read_from(&mut ss_server).await.unwrap();
+            trace!("read address");
+            assert_eq!(addr, addr_clone);
+            let mut buf = vec![0; 1024];
+            let s = ss_server.read(&mut buf).await.unwrap();
+            trace!("read data");
+            ss_server.write(data).await.unwrap();
+            assert_eq!(&buf[..s], data);
+        });
 
-            sleep(Duration::from_secs(3)).await;
-            trace!("before connect");
-            let conn = TcpConnection::connect_tcp(server).await.unwrap();
-            let mut conn = SSTcpStream::connect(conn, addr, method, key_clone)
-                .await
-                .unwrap();
-            trace!("before write");
-            conn.write_all(data).await.unwrap();
-            trace!("after write");
-            drop(conn);
-            h.await;
-        })
+        sleep(Duration::from_secs(3)).await;
+        trace!("before connect");
+        let conn = TcpConnection::connect_tcp(server).await.unwrap();
+        let mut conn = SSTcpStream::connect(conn, addr, method, key_clone)
+            .await
+            .unwrap();
+        trace!("before write");
+        conn.write_all(data).await.unwrap();
+        trace!("after write");
+        drop(conn);
+        h.await.unwrap();
     }
 }

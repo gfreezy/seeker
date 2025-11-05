@@ -11,9 +11,9 @@ use tracing::debug;
 
 use self::crypto_io::{decrypt_payload, encrypt_payload};
 
-use async_std::net::UdpSocket;
 use config::Address;
 use crypto::CipherType;
+use tokio::net::UdpSocket;
 
 pub const MAXIMUM_UDP_PAYLOAD_SIZE: usize = 1600;
 
@@ -114,31 +114,29 @@ impl SSUdpSocket {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use async_std::task::{block_on, sleep, spawn};
     use std::net::ToSocketAddrs;
     use std::time::Duration;
+    use tokio::time::sleep;
 
-    #[test]
-    fn test_read_write() {
+    #[tokio::test]
+    async fn test_read_write() {
         let method = CipherType::ChaCha20Ietf;
         let password = "GwEU01uXWm0Pp6t08";
         let key = method.bytes_to_key(password.as_bytes());
         let server = "127.0.0.1:14188".to_socket_addrs().unwrap().next().unwrap();
         let data = b"GET / HTTP/1.1\r\n\r\n";
         let addr = "127.0.0.1:443".parse().unwrap();
-        block_on(async {
-            let key_clone = key.clone();
-            let h = spawn(async move {
-                let u = UdpSocket::bind("0.0.0.0:14188").await.unwrap();
-                let udp = SSUdpSocket::bind(u, method, key_clone);
-                let mut b = vec![0; 1024];
-                let (s, _) = udp.recv_from(&mut b).await.unwrap();
-                assert_eq!(&b[..s], data);
-            });
-            sleep(Duration::from_secs(1)).await;
-            let udp = SSUdpSocket::new(server, method, key).await.unwrap();
-            udp.send_to(data, addr).await.unwrap();
-            h.await;
+        let key_clone = key.clone();
+        let h = tokio::task::spawn(async move {
+            let u = UdpSocket::bind("0.0.0.0:14188").await.unwrap();
+            let udp = SSUdpSocket::bind(u, method, key_clone);
+            let mut b = vec![0; 1024];
+            let (s, _) = udp.recv_from(&mut b).await.unwrap();
+            assert_eq!(&b[..s], data);
         });
+        sleep(Duration::from_secs(1)).await;
+        let udp = SSUdpSocket::new(server, method, key).await.unwrap();
+        udp.send_to(data, addr).await.unwrap();
+        h.await.unwrap();
     }
 }
