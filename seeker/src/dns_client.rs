@@ -1,7 +1,7 @@
 use hickory_resolver::config::{
     NameServerConfig, NameServerConfigGroup, ResolverConfig, ResolverOpts,
 };
-use hickory_resolver::TokioResolver;
+use hickory_resolver::{Name, TokioResolver};
 use hickory_resolver::name_server::TokioConnectionProvider;
 use hickory_proto::xfer::Protocol;
 use config::{Address, DnsServerAddr};
@@ -60,7 +60,7 @@ impl DnsClient {
     }
     pub async fn lookup(&self, domain: &str) -> Result<IpAddr> {
         let response =
-            self.resolver.lookup_ip(domain).await.map_err(|e| {
+            self.resolver.lookup_ip(Name::from_str_relaxed(domain)?).await.map_err(|e| {
                 Error::new(ErrorKind::NotFound, format!("{domain} not resolved.\n{e}"))
             })?;
         response.iter().next().ok_or_else(|| {
