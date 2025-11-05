@@ -13,6 +13,7 @@ config = { path = "../config" }
 async-trait = { workspace = true }
 tracing = { workspace = true }
 hickory-resolver = { workspace = true }
+hickory-proto = { workspace = true }
 store = { path = "../store" }
 parking_lot = { workspace = true }
 

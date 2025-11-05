@@ -1,6 +1,6 @@
 use hickory_resolver::proto::rr::rdata::{A, AAAA};
 use hickory_resolver::proto::rr::{RData, RecordType};
-use hickory_resolver::TokioAsyncResolver;
+use hickory_resolver::TokioResolver;
 use async_trait::async_trait;
 use config::rule::{Action, ProxyRules};
 use hermesdns::{DnsPacket, DnsRecord, DnsResolver, Hosts, QueryType, TransientTtl};
@@ -23,11 +23,11 @@ struct Inner {
     hosts: Hosts,
     rules: ProxyRules,
     bypass_direct: bool,
-    resolver: TokioAsyncResolver,
+    resolver: TokioResolver,
 }
 
 impl RuleBasedDnsResolver {
-    pub async fn new(bypass_direct: bool, rules: ProxyRules, resolver: TokioAsyncResolver) -> Self {
+    pub async fn new(bypass_direct: bool, rules: ProxyRules, resolver: TokioResolver) -> Self {
         RuleBasedDnsResolver {
             inner: Arc::new(Inner {
                 hosts: Hosts::load().expect("load /etc/hosts"),
@@ -70,36 +70,33 @@ impl RuleBasedDnsResolver {
 
         for record in lookup.record_iter() {
             let rdata = match record.data() {
-                None => {
-                    continue;
-                }
-                Some(RData::A(A(ip))) => DnsRecord::A {
+                RData::A(A(ip)) => DnsRecord::A {
                     domain: domain.to_string(),
                     addr: *ip,
                     ttl: TransientTtl(record.ttl()),
                 },
-                Some(RData::AAAA(AAAA(ip))) => DnsRecord::AAAA {
+                RData::AAAA(AAAA(ip)) => DnsRecord::AAAA {
                     domain: domain.to_string(),
                     addr: *ip,
                     ttl: TransientTtl(record.ttl()),
                 },
-                Some(RData::CNAME(cname)) => DnsRecord::CNAME {
+                RData::CNAME(cname) => DnsRecord::CNAME {
                     domain: domain.to_string(),
                     host: cname.to_string(),
                     ttl: TransientTtl(record.ttl()),
                 },
-                Some(RData::MX(mx)) => DnsRecord::MX {
+                RData::MX(mx) => DnsRecord::MX {
                     domain: domain.to_string(),
                     host: mx.exchange().to_string(),
                     priority: mx.preference(),
                     ttl: TransientTtl(record.ttl()),
                 },
-                Some(RData::NS(ns)) => DnsRecord::NS {
+                RData::NS(ns) => DnsRecord::NS {
                     domain: domain.to_string(),
                     host: ns.to_string(),
                     ttl: TransientTtl(record.ttl()),
                 },
-                Some(RData::SOA(soa)) => DnsRecord::SOA {
+                RData::SOA(soa) => DnsRecord::SOA {
                     domain: domain.to_string(),
                     m_name: soa.mname().to_string(),
                     r_name: soa.rname().to_string(),
@@ -110,12 +107,12 @@ impl RuleBasedDnsResolver {
                     minimum: soa.minimum(),
                     ttl: TransientTtl(record.ttl()),
                 },
-                Some(RData::TXT(txt)) => DnsRecord::TXT {
+                RData::TXT(txt) => DnsRecord::TXT {
                     domain: domain.to_string(),
                     data: txt.to_string(),
                     ttl: TransientTtl(record.ttl()),
                 },
-                Some(RData::SRV(srv)) => DnsRecord::SRV {
+                RData::SRV(srv) => DnsRecord::SRV {
                     domain: domain.to_string(),
                     priority: srv.priority(),
                     weight: srv.weight(),
