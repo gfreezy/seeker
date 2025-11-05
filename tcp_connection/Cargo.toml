@@ -7,14 +7,11 @@ edition = "2021"
 
 [dependencies]
 dyn-clone = { workspace = true }
-async-std = { workspace = true }
+tokio = { workspace = true }
 nanorand = { workspace = true }
 memchr = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 base64 = { workspace = true }
-
-[dev-dependencies]
-async-std = { workspace = true, features = ["attributes"] }
 
 [target.'cfg(target_arch = "x86_64")'.dev-dependencies]
 testcontainers = { workspace = true }

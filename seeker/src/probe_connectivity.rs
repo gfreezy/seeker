@@ -1,15 +1,14 @@
-use async_std::io::{Read, Write};
-use async_std::task::spawn;
+use tokio::{io::{AsyncReadExt, AsyncWriteExt}};
+use native_tls;
+use tokio::task;
 use config::rule::Action;
-use futures_util::FutureExt;
 use parking_lot::Mutex;
-use std::collections::HashMap;
+use std::{collections::HashMap, future::pending};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use async_std::net::TcpStream;
-use async_std::prelude::{FutureExt as _, *};
+use tokio::net::TcpStream;
 use config::Address;
 use tracing::instrument;
 
@@ -112,22 +111,23 @@ impl ProbeConnectivity {
             Action::Direct
         };
 
-        proxy_connectivity_fut
-            .inspect(|ret| {
-                tracing::info!("Probe proxy connectivity result: {:?}", ret);
-            })
-            .race(direct_connectivity_fut.inspect(|ret| {
-                tracing::info!("Probe direct connectivity result: {:?}", ret);
-            }))
-            .timeout(timeout)
-            .await
-            .unwrap_or_else(|_| {
-                tracing::info!("Probe connectivity timeout");
+        tokio::select! {
+            proxy_result = proxy_connectivity_fut => {
+                tracing::info!("Probe proxy connectivity result: {:?}", proxy_result);
+                proxy_result
+            }
+            direct_result = direct_connectivity_fut => {
+                tracing::info!("Probe direct connectivity result: {:?}", direct_result);
+                direct_result
+            }
+            _ = tokio::time::timeout(timeout, pending::<()>()) => {
+                tracing::warn!("Probe connectivity timeout");
                 Action::Proxy(proxy_group_name)
-            })
+            }
+        }
     }
 
-    async fn probe_https_connectivity<IO: Read + Write + Unpin>(
+    async fn probe_https_connectivity<IO: AsyncReadExt + AsyncWriteExt + Unpin>(
         addr: &Address,
         tcp_stream: IO,
     ) -> bool {
@@ -135,7 +135,8 @@ impl ProbeConnectivity {
             // If the address is an IP address, we assume it is a direct connection.
             return true;
         };
-        let connector = async_tls::TlsConnector::default();
+        let cx = native_tls::TlsConnector::builder().build().unwrap();
+        let connector = tokio_native_tls::TlsConnector::from(cx);
         let encrypted_stream = connector.connect(hostname, tcp_stream).await;
         let Ok(mut tls_stream) = encrypted_stream else {
             return false;
@@ -157,7 +158,7 @@ impl ProbeConnectivity {
         Self::is_valid_http_head_response(&buf[0..len])
     }
 
-    async fn probe_http_connectivity<IO: Read + Write + Unpin>(
+    async fn probe_http_connectivity<IO: AsyncReadExt + AsyncWriteExt + Unpin>(
         addr: &Address,
         mut tcp_stream: IO,
     ) -> bool {
@@ -189,7 +190,7 @@ impl ProbeConnectivity {
         response.starts_with("HTTP")
     }
 
-    async fn probe_ssh_connectivity<IO: Read + Write + Unpin>(mut tcp_stream: IO) -> bool {
+    async fn probe_ssh_connectivity<IO: AsyncReadExt + AsyncWriteExt + Unpin>(mut tcp_stream: IO) -> bool {
         let Ok(_) = tcp_stream.write_all(b"SSH-2.0-seeker\r\n").await else {
             return false;
         };
@@ -217,7 +218,7 @@ impl ProbeConnectivity {
             let timeout = self.timeout;
             let addr = addr.clone();
 
-            spawn(async move {
+            task::spawn(async move {
                 let action = Self::force_probe_connectivity(
                     server_chooser,
                     sock_addr,
@@ -260,7 +261,7 @@ mod tests {
         assert!(ProbeConnectivity::is_valid_ssh_response(b"SSH-2.0-seeker"));
     }
 
-    #[async_std::test]
+    #[tokio::test]
     async fn test_probe_ssh_connectivity() {
         // 205.166.94.16:22 is sdf.org, a free ssh server
         let tcp_stream = TcpStream::connect("205.166.94.16:22").await.unwrap();

@@ -1,9 +1,9 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use async_std::io::timeout;
-use async_std::net::UdpSocket;
-use async_std::task::spawn;
+use tokio::time::timeout;
+use tokio::net::UdpSocket;
+use tokio::task;
 use config::{Address, Config};
 use dnsserver::resolver::RuleBasedDnsResolver;
 use tun_nat::SessionManager;
@@ -53,7 +53,7 @@ pub(crate) async fn relay_udp_socket(
     let candidate_udp_socket_clone = candidate_udp_socket.clone();
     let host_clone = host.clone();
     let udp_manager_clone = udp_manager.clone();
-    spawn(async move {
+    task::spawn(async move {
         let ret: std::io::Result<()> = async {
             let mut buf = vec![0; 2000];
             loop {
@@ -64,13 +64,13 @@ pub(crate) async fn relay_udp_socket(
                     ));
                 }
                 let (recv_size, _peer) =
-                    timeout(config.read_timeout, proxy_socket.recv_from(&mut buf)).await?;
+                    timeout(config.read_timeout, proxy_socket.recv_from(&mut buf)).await.map_err(|_| std::io::Error::new(std::io::ErrorKind::TimedOut, "read timeout"))??;
                 assert!(recv_size < 2000);
                 let send_size = timeout(
                     config.write_timeout,
                     tun_socket.send_to(&buf[..recv_size], tun_addr),
                 )
-                .await?;
+                .await.map_err(|_| std::io::Error::new(std::io::ErrorKind::TimedOut, "write timeout"))??;
                 assert_eq!(send_size, recv_size);
             }
         }

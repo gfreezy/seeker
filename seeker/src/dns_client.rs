@@ -1,7 +1,7 @@
-use async_std_resolver::config::{
+use hickory_resolver::config::{
     NameServerConfig, NameServerConfigGroup, Protocol, ResolverConfig, ResolverOpts,
 };
-use async_std_resolver::{AsyncStdResolver, resolver};
+use hickory_resolver::TokioAsyncResolver;
 use config::{Address, DnsServerAddr};
 use std::io::{Error, ErrorKind, Result};
 use std::net::IpAddr;
@@ -10,7 +10,7 @@ use std::time::Duration;
 
 #[derive(Clone)]
 pub struct DnsClient {
-    resolver: AsyncStdResolver,
+    resolver: TokioAsyncResolver,
 }
 
 impl DnsClient {
@@ -50,7 +50,7 @@ impl DnsClient {
         let num_concurrent_reqs = name_servers.len();
 
         // Construct a new Resolver with default configuration options
-        let resolver = resolver(
+        let resolver = TokioAsyncResolver::tokio(
             ResolverConfig::from_parts(None, Vec::new(), name_servers),
             {
                 let mut opts = ResolverOpts::default();
@@ -58,13 +58,12 @@ impl DnsClient {
                 opts.num_concurrent_reqs = num_concurrent_reqs;
                 opts
             },
-        )
-        .await;
+        );
 
         DnsClient { resolver }
     }
 
-    pub fn resolver(&self) -> AsyncStdResolver {
+    pub fn resolver(&self) -> TokioAsyncResolver {
         self.resolver.clone()
     }
     pub async fn lookup(&self, domain: &str) -> Result<IpAddr> {

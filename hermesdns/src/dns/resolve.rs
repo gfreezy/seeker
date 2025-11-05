@@ -239,346 +239,271 @@ mod tests {
 
     use crate::dns::context::tests::create_test_context;
     use crate::ResolveStrategy;
-    use async_std::task::block_on;
 
-    #[test]
-    fn test_forwarding_resolver() {
-        block_on(async {
-            let context = create_test_context(
-                Box::new(|qname, _, _, _| {
-                    let mut packet = DnsPacket::new();
+    #[tokio::test]
+    async fn test_forwarding_resolver() {
+        let context = create_test_context(
+            Box::new(|qname, _, _, _| {
+                let mut packet = DnsPacket::new();
 
-                    if qname == "google.com" {
-                        packet.answers.push(DnsRecord::A {
-                            domain: "google.com".to_string(),
-                            addr: "127.0.0.1".parse().unwrap(),
-                            ttl: TransientTtl(3600),
-                        });
-                    } else {
-                        packet.header.rescode = ResultCode::NXDOMAIN;
-                    }
-
-                    Ok(packet)
-                }),
-                ResolveStrategy::Forward {
-                    host: "114.114.114.114".to_string(),
-                    port: 53,
-                },
-            )
-            .await;
-
-            let resolver: &ForwardingDnsResolver = context
-                .resolver
-                .as_any()
-                .downcast_ref::<ForwardingDnsResolver>()
-                .expect("cast to ForwardingDnsResolver");
-
-            // First verify that we get a match back
-            {
-                let res = match resolver.resolve("google.com", QueryType::A, true).await {
-                    Ok(x) => x,
-                    Err(_) => panic!(),
-                };
-
-                assert_eq!(1, res.answers.len());
-
-                match res.answers[0] {
-                    DnsRecord::A { ref domain, .. } => {
-                        assert_eq!("google.com", domain);
-                    }
-                    _ => panic!(),
-                }
-            };
-
-            // Do the same lookup again, and verify that it's present in the cache
-            // and that the counter has been updated
-            {
-                let res = match resolver.resolve("google.com", QueryType::A, true).await {
-                    Ok(x) => x,
-                    Err(_) => panic!(),
-                };
-
-                assert_eq!(1, res.answers.len());
-
-                let list = match resolver.cache.list() {
-                    Ok(x) => x,
-                    Err(_) => panic!(),
-                };
-
-                assert_eq!(1, list.len());
-
-                assert_eq!("google.com", list[0].domain);
-                assert_eq!(1, list[0].record_types.len());
-                assert_eq!(1, list[0].hits);
-            };
-
-            // Do a failed lookup
-            {
-                let res = match resolver.resolve("yahoo.com", QueryType::A, true).await {
-                    Ok(x) => x,
-                    Err(_) => panic!(),
-                };
-
-                assert_eq!(0, res.answers.len());
-                assert_eq!(ResultCode::NXDOMAIN, res.header.rescode);
-            };
-        });
-    }
-
-    #[test]
-    fn test_recursive_resolver_with_no_nameserver() {
-        block_on(async {
-            let context = create_test_context(
-                Box::new(|_, _, _, _| {
-                    let mut packet = DnsPacket::new();
-                    packet.header.rescode = ResultCode::NXDOMAIN;
-                    Ok(packet)
-                }),
-                ResolveStrategy::Recursive,
-            )
-            .await;
-
-            let resolver = &context.resolver;
-
-            // Expect failure when no name servers are available
-            if resolver
-                .resolve("google.com", QueryType::A, true)
-                .await
-                .is_ok()
-            {
-                panic!();
-            }
-        })
-    }
-
-    #[test]
-    fn test_recursive_resolver_with_missing_a_record() {
-        block_on(async {
-            let context = create_test_context(
-                Box::new(|_, _, _, _| {
-                    let mut packet = DnsPacket::new();
-                    packet.header.rescode = ResultCode::NXDOMAIN;
-                    Ok(packet)
-                }),
-                ResolveStrategy::Recursive,
-            )
-            .await;
-
-            let resolver: &RecursiveDnsResolver = context
-                .resolver
-                .as_any()
-                .downcast_ref::<RecursiveDnsResolver>()
-                .expect("cast to RecursiveDnsResolver");
-
-            // Expect failure when no name servers are available
-            if resolver
-                .resolve("google.com", QueryType::A, true)
-                .await
-                .is_ok()
-            {
-                panic!();
-            }
-
-            // Insert name server, but no corresponding A record
-            let nameservers = vec![DnsRecord::NS {
-                domain: "".to_string(),
-                host: "a.myroot.net".to_string(),
-                ttl: TransientTtl(3600),
-            }];
-
-            let _ = resolver.cache.store(&nameservers);
-
-            if resolver
-                .resolve("google.com", QueryType::A, true)
-                .await
-                .is_ok()
-            {
-                panic!();
-            }
-        })
-    }
-
-    #[test]
-    fn test_recursive_resolver_match_order() {
-        block_on(async {
-            let context = create_test_context(
-                Box::new(|_, _, (server, _), _| {
-                    let mut packet = DnsPacket::new();
-
-                    if server == "127.0.0.1" {
-                        packet.header.id = 1;
-
-                        packet.answers.push(DnsRecord::A {
-                            domain: "a.google.com".to_string(),
-                            addr: "127.0.0.1".parse().unwrap(),
-                            ttl: TransientTtl(3600),
-                        });
-
-                        return Ok(packet);
-                    } else if server == "127.0.0.2" {
-                        packet.header.id = 2;
-
-                        packet.answers.push(DnsRecord::A {
-                            domain: "b.google.com".to_string(),
-                            addr: "127.0.0.1".parse().unwrap(),
-                            ttl: TransientTtl(3600),
-                        });
-
-                        return Ok(packet);
-                    } else if server == "127.0.0.3" {
-                        packet.header.id = 3;
-
-                        packet.answers.push(DnsRecord::A {
-                            domain: "c.google.com".to_string(),
-                            addr: "127.0.0.1".parse().unwrap(),
-                            ttl: TransientTtl(3600),
-                        });
-
-                        return Ok(packet);
-                    }
-
-                    packet.header.id = 999;
-                    packet.header.rescode = ResultCode::NXDOMAIN;
-                    Ok(packet)
-                }),
-                ResolveStrategy::Recursive,
-            )
-            .await;
-
-            let resolver = context
-                .resolver
-                .as_any()
-                .downcast_ref::<RecursiveDnsResolver>()
-                .expect("cast to ForwardingDnsResolver");
-
-            // Expect failure when no name servers are available
-            if resolver
-                .resolve("google.com", QueryType::A, true)
-                .await
-                .is_ok()
-            {
-                panic!();
-            }
-
-            // Insert root servers
-            {
-                let nameservers = vec![
-                    DnsRecord::NS {
-                        domain: "".to_string(),
-                        host: "a.myroot.net".to_string(),
-                        ttl: TransientTtl(3600),
-                    },
-                    DnsRecord::A {
-                        domain: "a.myroot.net".to_string(),
+                if qname == "google.com" {
+                    packet.answers.push(DnsRecord::A {
+                        domain: "google.com".to_string(),
                         addr: "127.0.0.1".parse().unwrap(),
                         ttl: TransientTtl(3600),
-                    },
-                ];
-
-                let _ = resolver.cache.store(&nameservers);
-            }
-
-            match resolver.resolve("google.com", QueryType::A, true).await {
-                Ok(packet) => {
-                    assert_eq!(1, packet.header.id);
+                    });
+                } else {
+                    packet.header.rescode = ResultCode::NXDOMAIN;
                 }
+
+                Ok(packet)
+            }),
+            ResolveStrategy::Forward {
+                host: "114.114.114.114".to_string(),
+                port: 53,
+            },
+        )
+        .await;
+
+        let resolver: &ForwardingDnsResolver = context
+            .resolver
+            .as_any()
+            .downcast_ref::<ForwardingDnsResolver>()
+            .expect("cast to ForwardingDnsResolver");
+
+        // First verify that we get a match back
+        {
+            let res = match resolver.resolve("google.com", QueryType::A, true).await {
+                Ok(x) => x,
                 Err(_) => panic!(),
-            }
+            };
 
-            // Insert TLD servers
-            {
-                let nameservers = vec![
-                    DnsRecord::NS {
-                        domain: "com".to_string(),
-                        host: "a.mytld.net".to_string(),
-                        ttl: TransientTtl(3600),
-                    },
-                    DnsRecord::A {
-                        domain: "a.mytld.net".to_string(),
-                        addr: "127.0.0.2".parse().unwrap(),
-                        ttl: TransientTtl(3600),
-                    },
-                ];
+            assert_eq!(1, res.answers.len());
 
-                let _ = resolver.cache.store(&nameservers);
-            }
-
-            match resolver.resolve("google.com", QueryType::A, true).await {
-                Ok(packet) => {
-                    assert_eq!(2, packet.header.id);
+            match res.answers[0] {
+                DnsRecord::A { ref domain, .. } => {
+                    assert_eq!("google.com", domain);
                 }
+                _ => panic!(),
+            }
+        };
+
+        // Do the same lookup again, and verify that it's present in the cache
+        // and that the counter has been updated
+        {
+            let res = match resolver.resolve("google.com", QueryType::A, true).await {
+                Ok(x) => x,
                 Err(_) => panic!(),
-            }
+            };
 
-            // Insert authoritative servers
-            {
-                let nameservers = vec![
-                    DnsRecord::NS {
-                        domain: "google.com".to_string(),
-                        host: "ns1.google.com".to_string(),
-                        ttl: TransientTtl(3600),
-                    },
-                    DnsRecord::A {
-                        domain: "ns1.google.com".to_string(),
-                        addr: "127.0.0.3".parse().unwrap(),
-                        ttl: TransientTtl(3600),
-                    },
-                ];
+            assert_eq!(1, res.answers.len());
 
-                let _ = resolver.cache.store(&nameservers);
-            }
-
-            match resolver.resolve("google.com", QueryType::A, true).await {
-                Ok(packet) => {
-                    assert_eq!(3, packet.header.id);
-                }
+            let list = match resolver.cache.list() {
+                Ok(x) => x,
                 Err(_) => panic!(),
-            }
-        });
+            };
+
+            assert_eq!(1, list.len());
+
+            assert_eq!("google.com", list[0].domain);
+            assert_eq!(1, list[0].record_types.len());
+            assert_eq!(1, list[0].hits);
+        };
+
+        // Do a failed lookup
+        {
+            let res = match resolver.resolve("yahoo.com", QueryType::A, true).await {
+                Ok(x) => x,
+                Err(_) => panic!(),
+            };
+
+            assert_eq!(0, res.answers.len());
+            assert_eq!(ResultCode::NXDOMAIN, res.header.rescode);
+        };
     }
 
-    #[test]
-    fn test_recursive_resolver_successfully() {
-        block_on(async {
-            let context = create_test_context(
-                Box::new(|qname, _, _, _| {
-                    let mut packet = DnsPacket::new();
+    #[tokio::test]
+    async fn test_recursive_resolver_with_no_nameserver() {
+        let context = create_test_context(
+            Box::new(|_, _, _, _| {
+                let mut packet = DnsPacket::new();
+                packet.header.rescode = ResultCode::NXDOMAIN;
+                Ok(packet)
+            }),
+            ResolveStrategy::Recursive,
+        )
+        .await;
 
-                    if qname == "google.com" {
-                        packet.answers.push(DnsRecord::A {
-                            domain: "google.com".to_string(),
-                            addr: "127.0.0.1".parse().unwrap(),
-                            ttl: TransientTtl(3600),
-                        });
-                    } else {
-                        packet.header.rescode = ResultCode::NXDOMAIN;
+        let resolver = &context.resolver;
 
-                        packet.authorities.push(DnsRecord::SOA {
-                            domain: "google.com".to_string(),
-                            r_name: "google.com".to_string(),
-                            m_name: "google.com".to_string(),
-                            serial: 0,
-                            refresh: 3600,
-                            retry: 3600,
-                            expire: 3600,
-                            minimum: 3600,
-                            ttl: TransientTtl(3600),
-                        });
-                    }
+        // Expect failure when no name servers are available
+        if resolver
+            .resolve("google.com", QueryType::A, true)
+            .await
+            .is_ok()
+        {
+            panic!();
+        }
+    }
 
-                    Ok(packet)
-                }),
-                ResolveStrategy::Recursive,
-            )
-            .await;
+    #[tokio::test]
+    async fn test_recursive_resolver_with_missing_a_record() {
+        let context = create_test_context(
+            Box::new(|_, _, _, _| {
+                let mut packet = DnsPacket::new();
+                packet.header.rescode = ResultCode::NXDOMAIN;
+                Ok(packet)
+            }),
+            ResolveStrategy::Recursive,
+        )
+        .await;
 
-            let resolver: &RecursiveDnsResolver = context
-                .resolver
-                .as_any()
-                .downcast_ref::<RecursiveDnsResolver>()
-                .expect("cast to ForwardingDnsResolver");
+        let resolver: &RecursiveDnsResolver = context
+            .resolver
+            .as_any()
+            .downcast_ref::<RecursiveDnsResolver>()
+            .expect("cast to RecursiveDnsResolver");
 
-            // Insert name servers
+        // Expect failure when no name servers are available
+        if resolver
+            .resolve("google.com", QueryType::A, true)
+            .await
+            .is_ok()
+        {
+            panic!();
+        }
+
+        // Insert name server, but no corresponding A record
+        let nameservers = vec![DnsRecord::NS {
+            domain: "".to_string(),
+            host: "a.myroot.net".to_string(),
+            ttl: TransientTtl(3600),
+        }];
+
+        let _ = resolver.cache.store(&nameservers);
+
+        if resolver
+            .resolve("google.com", QueryType::A, true)
+            .await
+            .is_ok()
+        {
+            panic!();
+        }
+    }
+
+    #[tokio::test]
+    async fn test_recursive_resolver_match_order() {
+        let context = create_test_context(
+            Box::new(|_, _, (server, _), _| {
+                let mut packet = DnsPacket::new();
+
+                if server == "127.0.0.1" {
+                    packet.header.id = 1;
+
+                    packet.answers.push(DnsRecord::A {
+                        domain: "a.google.com".to_string(),
+                        addr: "127.0.0.1".parse().unwrap(),
+                        ttl: TransientTtl(3600),
+                    });
+
+                    return Ok(packet);
+                } else if server == "127.0.0.2" {
+                    packet.header.id = 2;
+
+                    packet.answers.push(DnsRecord::A {
+                        domain: "b.google.com".to_string(),
+                        addr: "127.0.0.1".parse().unwrap(),
+                        ttl: TransientTtl(3600),
+                    });
+
+                    return Ok(packet);
+                } else if server == "127.0.0.3" {
+                    packet.header.id = 3;
+
+                    packet.answers.push(DnsRecord::A {
+                        domain: "c.google.com".to_string(),
+                        addr: "127.0.0.1".parse().unwrap(),
+                        ttl: TransientTtl(3600),
+                    });
+
+                    return Ok(packet);
+                }
+
+                packet.header.id = 999;
+                packet.header.rescode = ResultCode::NXDOMAIN;
+                Ok(packet)
+            }),
+            ResolveStrategy::Recursive,
+        )
+        .await;
+
+        let resolver = context
+            .resolver
+            .as_any()
+            .downcast_ref::<RecursiveDnsResolver>()
+            .expect("cast to ForwardingDnsResolver");
+
+        // Expect failure when no name servers are available
+        if resolver
+            .resolve("google.com", QueryType::A, true)
+            .await
+            .is_ok()
+        {
+            panic!();
+        }
+
+        // Insert root servers
+        {
+            let nameservers = vec![
+                DnsRecord::NS {
+                    domain: "".to_string(),
+                    host: "a.myroot.net".to_string(),
+                    ttl: TransientTtl(3600),
+                },
+                DnsRecord::A {
+                    domain: "a.myroot.net".to_string(),
+                    addr: "127.0.0.1".parse().unwrap(),
+                    ttl: TransientTtl(3600),
+                },
+            ];
+
+            let _ = resolver.cache.store(&nameservers);
+        }
+
+        match resolver.resolve("google.com", QueryType::A, true).await {
+            Ok(packet) => {
+                assert_eq!(1, packet.header.id);
+            }
+            Err(_) => panic!(),
+        }
+
+        // Insert TLD servers
+        {
+            let nameservers = vec![
+                DnsRecord::NS {
+                    domain: "com".to_string(),
+                    host: "a.mytld.net".to_string(),
+                    ttl: TransientTtl(3600),
+                },
+                DnsRecord::A {
+                    domain: "a.mytld.net".to_string(),
+                    addr: "127.0.0.2".parse().unwrap(),
+                    ttl: TransientTtl(3600),
+                },
+            ];
+
+            let _ = resolver.cache.store(&nameservers);
+        }
+
+        match resolver.resolve("google.com", QueryType::A, true).await {
+            Ok(packet) => {
+                assert_eq!(2, packet.header.id);
+            }
+            Err(_) => panic!(),
+        }
+
+        // Insert authoritative servers
+        {
             let nameservers = vec![
                 DnsRecord::NS {
                     domain: "google.com".to_string(),
@@ -587,77 +512,141 @@ mod tests {
                 },
                 DnsRecord::A {
                     domain: "ns1.google.com".to_string(),
-                    addr: "127.0.0.1".parse().unwrap(),
+                    addr: "127.0.0.3".parse().unwrap(),
                     ttl: TransientTtl(3600),
                 },
             ];
 
             let _ = resolver.cache.store(&nameservers);
+        }
 
-            // Check that we can successfully resolve
-            {
-                let res = match resolver.resolve("google.com", QueryType::A, true).await {
-                    Ok(x) => x,
-                    Err(_) => panic!(),
-                };
+        match resolver.resolve("google.com", QueryType::A, true).await {
+            Ok(packet) => {
+                assert_eq!(3, packet.header.id);
+            }
+            Err(_) => panic!(),
+        }
+    }
 
-                assert_eq!(1, res.answers.len());
+    #[tokio::test]
+    async fn test_recursive_resolver_successfully() {
+        let context = create_test_context(
+            Box::new(|qname, _, _, _| {
+                let mut packet = DnsPacket::new();
 
-                match res.answers[0] {
-                    DnsRecord::A { ref domain, .. } => {
-                        assert_eq!("google.com", domain);
-                    }
-                    _ => panic!(),
+                if qname == "google.com" {
+                    packet.answers.push(DnsRecord::A {
+                        domain: "google.com".to_string(),
+                        addr: "127.0.0.1".parse().unwrap(),
+                        ttl: TransientTtl(3600),
+                    });
+                } else {
+                    packet.header.rescode = ResultCode::NXDOMAIN;
+
+                    packet.authorities.push(DnsRecord::SOA {
+                        domain: "google.com".to_string(),
+                        r_name: "google.com".to_string(),
+                        m_name: "google.com".to_string(),
+                        serial: 0,
+                        refresh: 3600,
+                        retry: 3600,
+                        expire: 3600,
+                        minimum: 3600,
+                        ttl: TransientTtl(3600),
+                    });
                 }
+
+                Ok(packet)
+            }),
+            ResolveStrategy::Recursive,
+        )
+        .await;
+
+        let resolver: &RecursiveDnsResolver = context
+            .resolver
+            .as_any()
+            .downcast_ref::<RecursiveDnsResolver>()
+            .expect("cast to ForwardingDnsResolver");
+
+        // Insert name servers
+        let nameservers = vec![
+            DnsRecord::NS {
+                domain: "google.com".to_string(),
+                host: "ns1.google.com".to_string(),
+                ttl: TransientTtl(3600),
+            },
+            DnsRecord::A {
+                domain: "ns1.google.com".to_string(),
+                addr: "127.0.0.1".parse().unwrap(),
+                ttl: TransientTtl(3600),
+            },
+        ];
+
+        let _ = resolver.cache.store(&nameservers);
+
+        // Check that we can successfully resolve
+        {
+            let res = match resolver.resolve("google.com", QueryType::A, true).await {
+                Ok(x) => x,
+                Err(_) => panic!(),
             };
 
-            // And that we won't find anything for a domain that isn't present
+            assert_eq!(1, res.answers.len());
+
+            match res.answers[0] {
+                DnsRecord::A { ref domain, .. } => {
+                    assert_eq!("google.com", domain);
+                }
+                _ => panic!(),
+            }
+        };
+
+        // And that we won't find anything for a domain that isn't present
+        {
+            let res = match resolver
+                .resolve("foobar.google.com", QueryType::A, true)
+                .await
             {
-                let res = match resolver
-                    .resolve("foobar.google.com", QueryType::A, true)
-                    .await
-                {
-                    Ok(x) => x,
-                    Err(_) => panic!(),
-                };
-
-                assert_eq!(ResultCode::NXDOMAIN, res.header.rescode);
-                assert_eq!(0, res.answers.len());
+                Ok(x) => x,
+                Err(_) => panic!(),
             };
 
-            // Perform another successful query, that should hit the cache
-            {
-                let res = match resolver.resolve("google.com", QueryType::A, true).await {
-                    Ok(x) => x,
-                    Err(_) => panic!(),
-                };
+            assert_eq!(ResultCode::NXDOMAIN, res.header.rescode);
+            assert_eq!(0, res.answers.len());
+        };
 
-                assert_eq!(1, res.answers.len());
+        // Perform another successful query, that should hit the cache
+        {
+            let res = match resolver.resolve("google.com", QueryType::A, true).await {
+                Ok(x) => x,
+                Err(_) => panic!(),
             };
 
-            // Now check that the cache is used, and that the statistics is correct
-            {
-                let list = match resolver.cache.list() {
-                    Ok(x) => x,
-                    Err(_) => panic!(),
-                };
+            assert_eq!(1, res.answers.len());
+        };
 
-                assert_eq!(3, list.len());
-
-                // Check statistics for google entry
-                assert_eq!("google.com", list[1].domain);
-
-                // Should have a NS record and an A record for a total of 2 record types
-                assert_eq!(2, list[1].record_types.len());
-
-                // Should have been hit two times for NS google.com and once for
-                // A google.com
-                assert_eq!(3, list[1].hits);
-
-                assert_eq!("ns1.google.com", list[2].domain);
-                assert_eq!(1, list[2].record_types.len());
-                assert_eq!(2, list[2].hits);
+        // Now check that the cache is used, and that the statistics is correct
+        {
+            let list = match resolver.cache.list() {
+                Ok(x) => x,
+                Err(_) => panic!(),
             };
-        });
+
+            assert_eq!(3, list.len());
+
+            // Check statistics for google entry
+            assert_eq!("google.com", list[1].domain);
+
+            // Should have a NS record and an A record for a total of 2 record types
+            assert_eq!(2, list[1].record_types.len());
+
+            // Should have been hit two times for NS google.com and once for
+            // A google.com
+            assert_eq!(3, list[1].hits);
+
+            assert_eq!("ns1.google.com", list[2].domain);
+            assert_eq!(1, list[2].record_types.len());
+            assert_eq!(2, list[2].hits);
+        };
     }
 }

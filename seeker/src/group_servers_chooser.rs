@@ -5,13 +5,16 @@ use crate::proxy_udp_socket::ProxyUdpSocket;
 use crate::server_chooser::{CandidateTcpStream, CandidateUdpSocket};
 use crate::server_performance::{DEFAULT_SCORE, ServerPerformanceTracker};
 use anyhow::Result;
-use async_std::io::timeout;
-use async_std::prelude::*;
-use async_std::task::{sleep, spawn};
-use async_tls::TlsConnector;
+use tokio::time::timeout;
+use tokio::task;
+use tokio::time::sleep;
+use tokio_native_tls::TlsConnector;
+use native_tls;
 use config::rule::Action;
 use config::{Address, PingURL, ServerConfig};
 use futures_util::stream::FuturesUnordered;
+use futures_util::StreamExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use parking_lot::{Mutex, RwLock};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -279,7 +282,7 @@ impl GroupServersChooser {
             .map(|config| {
                 let self_clone = self.clone();
                 let config_clone = config.clone();
-                spawn(async move {
+                task::spawn(async move {
                     let result = self_clone
                         .ping_server(config_clone.clone())
                         .await
@@ -335,7 +338,7 @@ async fn ping_server(
 ) -> std::io::Result<()> {
     let addr = ping_url.address();
     let path: &str = ping_url.path();
-    timeout(ping_timeout, async {
+    match timeout(ping_timeout, async {
         let stream =
             ProxyTcpStream::connect(addr.clone(), Some(&server_config), dns_client).await.map_err(|e| {
                 tracing::error!("Failed to connect to proxy server: {}, error: {:?}", server_config.addr(), e);
@@ -364,8 +367,9 @@ async fn ping_server(
                 ping_url.host()
             );
         let resp_buf = if ping_url.port() == 443 {
-            let connector = TlsConnector::default();
-            let mut conn = connector.connect(ping_url.host(), stream).await?;
+            let cx = native_tls::TlsConnector::builder().build().unwrap();
+            let connector = TlsConnector::from(cx);
+            let mut conn = connector.connect(ping_url.host(), stream).await.map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
             conn.write_all(req.as_bytes()).await?;
             let mut buf = vec![0; 1024];
             let size = conn.read(&mut buf).await?;
@@ -388,7 +392,10 @@ async fn ping_server(
                 }
         Ok(())
     })
-    .await
+    .await {
+        Ok(result) => result,
+        Err(_) => Err(std::io::Error::new(std::io::ErrorKind::TimedOut, "ping timeout")),
+    }
 }
 
 #[cfg(test)]
@@ -399,7 +406,7 @@ mod tests {
 
     use super::*;
 
-    #[async_std::test]
+    #[tokio::test]
     #[ignore]
     async fn test_ping_server() -> Result<()> {
         store::Store::setup_global_for_test();
