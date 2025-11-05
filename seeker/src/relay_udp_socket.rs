@@ -1,11 +1,11 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use tokio::time::timeout;
-use tokio::net::UdpSocket;
-use tokio::task;
 use config::{Address, Config};
 use dnsserver::resolver::RuleBasedDnsResolver;
+use tokio::net::UdpSocket;
+use tokio::task;
+use tokio::time::timeout;
 use tun_nat::SessionManager;
 
 use crate::dns_client::DnsClient;
@@ -64,13 +64,20 @@ pub(crate) async fn relay_udp_socket(
                     ));
                 }
                 let (recv_size, _peer) =
-                    timeout(config.read_timeout, proxy_socket.recv_from(&mut buf)).await.map_err(|_| std::io::Error::new(std::io::ErrorKind::TimedOut, "read timeout"))??;
+                    timeout(config.read_timeout, proxy_socket.recv_from(&mut buf))
+                        .await
+                        .map_err(|_| {
+                            std::io::Error::new(std::io::ErrorKind::TimedOut, "read timeout")
+                        })??;
                 assert!(recv_size < 2000);
                 let send_size = timeout(
                     config.write_timeout,
                     tun_socket.send_to(&buf[..recv_size], tun_addr),
                 )
-                .await.map_err(|_| std::io::Error::new(std::io::ErrorKind::TimedOut, "write timeout"))??;
+                .await
+                .map_err(|_| {
+                    std::io::Error::new(std::io::ErrorKind::TimedOut, "write timeout")
+                })??;
                 assert_eq!(send_size, recv_size);
             }
         }

@@ -2,12 +2,12 @@ use crate::types::{
     Address, Command, HandshakeRequest, HandshakeResponse, Reply, TcpRequestHeader,
     TcpResponseHeader, SOCKS5_AUTH_METHOD_NONE,
 };
+use std::io::{Error, ErrorKind, Result};
+use std::net::SocketAddr;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpStream;
-use std::task::{Context, Poll};
-use std::net::SocketAddr;
-use std::io::{Error, ErrorKind, Result};
-use std::pin::Pin;
 
 #[derive(Debug)]
 pub struct Socks5TcpStream {

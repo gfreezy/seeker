@@ -40,13 +40,13 @@ use std::{
     task::{Context, Poll},
 };
 
-use std::task::ready;
 use byteorder::{BigEndian, ByteOrder};
 use bytes::{BufMut, Bytes, BytesMut};
+use std::task::ready;
 
 use crate::BUFFER_SIZE;
-use tokio::io::{AsyncRead, AsyncWrite};
 use crypto::{BoxAeadDecryptor, BoxAeadEncryptor, CipherType};
+use tokio::io::{AsyncRead, AsyncWrite};
 
 /// AEAD packet payload must be smaller than 0x3FFF
 const MAX_PACKET_SIZE: usize = 0x3FFF;
@@ -348,38 +348,38 @@ impl<T: AsyncRead + AsyncWrite + Unpin> AsyncWrite for EncryptedWriter<T> {
 #[cfg(test)]
 mod tests {
     use super::{DecryptedReader, EncryptedWriter};
-    use std::io::Cursor;
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use bytes::Bytes;
     use crypto::CipherType;
+    use std::io::Cursor;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     #[tokio::test]
     async fn test_write() {
-            let method = CipherType::ChaCha20IetfPoly1305;
-            let password = "GwEU01uXWm0Pp6t08";
-            let key = method.bytes_to_key(password.as_bytes());
-            let nonce = method.gen_salt();
-            let mut buf = Cursor::new(Vec::new());
-            let mut writer = EncryptedWriter::new(&mut buf, method, &key, nonce.clone());
-            let data = b"hello";
-            writer.write_all(data).await.unwrap();
-            buf.set_position(0);
-            let encrypted = encrypt(method, key, nonce.clone(), data);
-            assert_eq!(&buf.get_ref()[nonce.len()..], encrypted.as_slice());
+        let method = CipherType::ChaCha20IetfPoly1305;
+        let password = "GwEU01uXWm0Pp6t08";
+        let key = method.bytes_to_key(password.as_bytes());
+        let nonce = method.gen_salt();
+        let mut buf = Cursor::new(Vec::new());
+        let mut writer = EncryptedWriter::new(&mut buf, method, &key, nonce.clone());
+        let data = b"hello";
+        writer.write_all(data).await.unwrap();
+        buf.set_position(0);
+        let encrypted = encrypt(method, key, nonce.clone(), data);
+        assert_eq!(&buf.get_ref()[nonce.len()..], encrypted.as_slice());
     }
 
     #[tokio::test]
     async fn test_read() {
-            let method = CipherType::ChaCha20IetfPoly1305;
-            let password = "GwEU01uXWm0Pp6t08";
-            let key = method.bytes_to_key(password.as_bytes());
-            let nonce = method.gen_salt();
-            let data = b"hello";
-            let output = encrypt(method, key.clone(), nonce.clone(), data);
-            let mut reader = DecryptedReader::new(Cursor::new(output), method, &key, &nonce);
-            let mut buf = vec![];
-            reader.read_to_end(&mut buf).await.unwrap();
-            assert_eq!(buf.as_slice(), data)
+        let method = CipherType::ChaCha20IetfPoly1305;
+        let password = "GwEU01uXWm0Pp6t08";
+        let key = method.bytes_to_key(password.as_bytes());
+        let nonce = method.gen_salt();
+        let data = b"hello";
+        let output = encrypt(method, key.clone(), nonce.clone(), data);
+        let mut reader = DecryptedReader::new(Cursor::new(output), method, &key, &nonce);
+        let mut buf = vec![];
+        reader.read_to_end(&mut buf).await.unwrap();
+        assert_eq!(buf.as_slice(), data)
     }
 
     #[test]

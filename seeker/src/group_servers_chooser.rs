@@ -5,20 +5,19 @@ use crate::proxy_udp_socket::ProxyUdpSocket;
 use crate::server_chooser::{CandidateTcpStream, CandidateUdpSocket};
 use crate::server_performance::{DEFAULT_SCORE, ServerPerformanceTracker};
 use anyhow::Result;
-use tokio::time::timeout;
-use tokio::task;
-use tokio::time::sleep;
-use tokio_native_tls::TlsConnector;
-use native_tls;
 use config::rule::Action;
 use config::{Address, PingURL, ServerConfig};
-use futures_util::stream::FuturesUnordered;
 use futures_util::StreamExt;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use futures_util::stream::FuturesUnordered;
 use parking_lot::{Mutex, RwLock};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::task;
+use tokio::time::sleep;
+use tokio::time::timeout;
+use tokio_native_tls::TlsConnector;
 use tracing::info;
 
 #[derive(Clone)]
@@ -369,7 +368,7 @@ async fn ping_server(
         let resp_buf = if ping_url.port() == 443 {
             let cx = native_tls::TlsConnector::builder().build().unwrap();
             let connector = TlsConnector::from(cx);
-            let mut conn = connector.connect(ping_url.host(), stream).await.map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+            let mut conn = connector.connect(ping_url.host(), stream).await.map_err(std::io::Error::other)?;
             conn.write_all(req.as_bytes()).await?;
             let mut buf = vec![0; 1024];
             let size = conn.read(&mut buf).await?;

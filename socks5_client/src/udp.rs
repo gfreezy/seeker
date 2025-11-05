@@ -2,11 +2,11 @@ use crate::types::{
     Address, Command, HandshakeRequest, HandshakeResponse, Reply, TcpRequestHeader,
     TcpResponseHeader, UdpAssociateHeader, SOCKS5_AUTH_METHOD_NONE,
 };
-use tokio::net::{TcpStream, UdpSocket};
-use tokio::time::timeout;
 use std::io::{Error, ErrorKind, Result};
 use std::net::SocketAddr;
 use std::time::Duration;
+use tokio::net::{TcpStream, UdpSocket};
+use tokio::time::timeout;
 
 #[derive(Debug)]
 pub struct Socks5UdpSocket {
@@ -18,8 +18,7 @@ pub struct Socks5UdpSocket {
 impl Socks5UdpSocket {
     pub async fn new(socks5_server: SocketAddr) -> Result<Self> {
         let socket = UdpSocket::bind("0.0.0.0:0").await?;
-        let mut conn =
-            timeout(Duration::from_secs(1), TcpStream::connect(socks5_server)).await??;
+        let mut conn = timeout(Duration::from_secs(1), TcpStream::connect(socks5_server)).await??;
         let handshake_req = HandshakeRequest::new(vec![SOCKS5_AUTH_METHOD_NONE]);
         handshake_req.write_to(&mut conn).await?;
         let handshake_resp = HandshakeResponse::read_from(&mut conn).await?;

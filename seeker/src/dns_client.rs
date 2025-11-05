@@ -1,10 +1,10 @@
+use config::{Address, DnsServerAddr};
+use hickory_proto::xfer::Protocol;
 use hickory_resolver::config::{
     NameServerConfig, NameServerConfigGroup, ResolverConfig, ResolverOpts,
 };
-use hickory_resolver::{Name, TokioResolver};
 use hickory_resolver::name_server::TokioConnectionProvider;
-use hickory_proto::xfer::Protocol;
-use config::{Address, DnsServerAddr};
+use hickory_resolver::{Name, TokioResolver};
 use std::io::{Error, ErrorKind, Result};
 use std::net::IpAddr;
 use std::net::SocketAddr;
@@ -47,7 +47,7 @@ impl DnsClient {
 
         let resolver = TokioResolver::builder_with_config(
             ResolverConfig::from_parts(None, Vec::new(), name_servers),
-            TokioConnectionProvider::default()
+            TokioConnectionProvider::default(),
         )
         .with_options(opts)
         .build();
@@ -59,10 +59,11 @@ impl DnsClient {
         self.resolver.clone()
     }
     pub async fn lookup(&self, domain: &str) -> Result<IpAddr> {
-        let response =
-            self.resolver.lookup_ip(Name::from_str_relaxed(domain)?).await.map_err(|e| {
-                Error::new(ErrorKind::NotFound, format!("{domain} not resolved.\n{e}"))
-            })?;
+        let response = self
+            .resolver
+            .lookup_ip(Name::from_str_relaxed(domain)?)
+            .await
+            .map_err(|e| Error::new(ErrorKind::NotFound, format!("{domain} not resolved.\n{e}")))?;
         response.iter().next().ok_or_else(|| {
             Error::new(
                 ErrorKind::NotFound,

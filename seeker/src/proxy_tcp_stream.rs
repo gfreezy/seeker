@@ -1,5 +1,3 @@
-use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
-use tokio::net::TcpStream;
 use config::rule::Action;
 use config::{Address, ServerConfig, ServerProtocol};
 use http_proxy_client::{HttpProxyTcpStream, HttpsProxyTcpStream};
@@ -9,6 +7,8 @@ use std::io::Result;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Instant;
+use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+use tokio::net::TcpStream;
 
 use tcp_connection::TcpConnection;
 
@@ -17,10 +17,10 @@ use crate::proxy_connection::{
     ProxyConnection, ProxyConnectionEventListener, StoreListener, next_connection_id,
 };
 use crate::traffic::Traffic;
-use std::task::ready;
 use std::io::{Error, ErrorKind};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::task::ready;
 
 // Note: tokio types don't implement Clone
 enum ProxyTcpStreamInner {

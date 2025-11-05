@@ -4,19 +4,19 @@ use crate::probe_connectivity::ProbeConnectivity;
 use crate::relay_tcp_stream::relay_tcp_stream;
 use crate::relay_udp_socket::relay_udp_socket;
 use crate::server_chooser::{CandidateUdpSocket, ServerChooser};
-use std::future::pending;
-use tokio::time::timeout;
-use tokio::net::{TcpListener, TcpStream, UdpSocket};
-use std::net::SocketAddr;
-use tokio::task::JoinHandle;
 use config::rule::Action;
 use config::{Address, Config};
-use hickory_resolver::TokioResolver;
 use dnsserver::create_dns_server;
 use dnsserver::resolver::RuleBasedDnsResolver;
+use hickory_resolver::TokioResolver;
 use parking_lot::RwLock;
 use std::collections::HashMap;
+use std::future::pending;
 use std::io::{Error, Result};
+use std::net::SocketAddr;
+use tokio::net::{TcpListener, TcpStream, UdpSocket};
+use tokio::task::JoinHandle;
+use tokio::time::timeout;
 
 use std::net::IpAddr;
 
@@ -57,10 +57,11 @@ impl ProxyClient {
                 config.threads_per_queue,
             )
             .expect("run nat");
-            let nat_join_handle = tokio::task::spawn_blocking(move || match blocking_join_handle.join() {
-                Ok(()) => tracing::info!("nat stopped"),
-                Err(e) => tracing::error!("nat stopped with error: {:?}", e),
-            });
+            let nat_join_handle =
+                tokio::task::spawn_blocking(move || match blocking_join_handle.join() {
+                    Ok(()) => tracing::info!("nat stopped"),
+                    Err(e) => tracing::error!("nat stopped with error: {:?}", e),
+                });
             (Some(session_manager), Some(nat_join_handle))
         } else {
             (None, None)

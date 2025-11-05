@@ -30,7 +30,7 @@ impl HttpsProxyTcpStream {
         let mut conn = connector
             .connect(proxy_server_domain, stream)
             .await
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+            .map_err(std::io::Error::other)?;
         let authorization = match (username, password) {
             (Some(username), Some(password)) => base64::encode(format!("{username}:{password}")),
             _ => "".to_string(),
