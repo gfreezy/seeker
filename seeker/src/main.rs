@@ -28,8 +28,6 @@ use crate::config_watcher::watch_config;
 use crate::logger::setup_logger;
 use crate::proxy_client::ProxyClient;
 use anyhow::{Context, bail};
-use async_std::prelude::FutureExt;
-use async_std::task::block_on;
 use config::Config;
 use crypto::CipherType;
 use sysconfig::{DNSSetup, IpForward, IptablesSetup, get_current_dns, set_rlimit_no_file};
@@ -78,7 +76,8 @@ struct SeekerArgs {
     stats: bool,
 }
 
-fn main() -> anyhow::Result<()> {
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
     let args = SeekerArgs::parse();
 
     let path = args.config.as_ref().map(String::as_ref);
@@ -156,11 +155,16 @@ fn main() -> anyhow::Result<()> {
     };
     eprint!(".");
     // oneshot channel
-    let (tx, rx) = async_std::channel::bounded(1);
-    ctrlc::set_handler(move || block_on(tx.send(())).expect("send signal"))
-        .expect("Error setting Ctrl-C handler");
+    let (tx, mut rx) = tokio::sync::mpsc::channel(1);
+    ctrlc::set_handler(move || {
+        let tx = tx.clone();
+        tokio::runtime::Handle::current().spawn(async move {
+            tx.send(()).await.expect("send signal")
+        });
+    })
+    .expect("Error setting Ctrl-C handler");
 
-    block_on(async {
+    {
         let cidr = config.tun_cidr.to_string();
         let redir_mode = config.redir_mode;
         let client = ProxyClient::new(config, uid, show_stats)
@@ -178,17 +182,13 @@ fn main() -> anyhow::Result<()> {
             _iptables_setup = Some(setup);
         }
 
-        client
-            .run()
-            .instrument(tracing::trace_span!("ProxyClient.run"))
-            .race(async {
-                rx.recv()
-                    .instrument(tracing::trace_span!("Signal receiver"))
-                    .await
-                    .expect("Could not receive signal on channel.");
-            })
-            .await;
-    });
+        tokio::select! {
+            _ = client.run().instrument(tracing::trace_span!("ProxyClient.run")) => {},
+            _ = rx.recv().instrument(tracing::trace_span!("Signal receiver")) => {
+                println!("Received shutdown signal");
+            }
+        }
+    }
 
     println!("Stop server. Bye bye....");
     Ok(())

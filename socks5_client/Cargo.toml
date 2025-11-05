@@ -8,4 +8,4 @@ edition = "2021"
 
 [dependencies]
 bytes = { workspace = true }
-async-std = { workspace = true }
+tokio = { workspace = true }

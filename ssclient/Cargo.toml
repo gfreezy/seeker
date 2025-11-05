@@ -12,7 +12,7 @@ bytes = { workspace = true }
 byteorder = { workspace = true }
 config = { path = "../config" }
 crypto = { path = "../crypto" }
-async-std = { workspace = true }
+tokio = { workspace = true }
 parking_lot = { workspace = true }
 tcp_connection = { path = "../tcp_connection" }
 

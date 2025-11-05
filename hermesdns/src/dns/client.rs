@@ -4,20 +4,15 @@ use std::collections::HashMap;
 use std::io::{Error, ErrorKind, Result};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-use std::sync::Mutex;
+use tokio::sync::Mutex;
 
 use crate::dns::buffer::{BytePacketBuffer, PacketBuffer};
 use crate::dns::protocol::{DnsPacket, DnsQuestion, QueryType};
-use async_std::channel::{bounded, Receiver, Sender};
-use async_std::future;
-use async_std::io::timeout;
-use async_std::net::UdpSocket;
-use async_std::prelude::FutureExt;
-use async_std::task;
 use async_trait::async_trait;
-use std::time::Duration;
-use tracing::{error, trace, trace_span};
-use tracing_futures::Instrument;
+use tokio::net::UdpSocket;
+use tokio::sync::{mpsc, oneshot};
+use tokio::time::{timeout, Duration};
+use tracing::{error, trace, trace_span, Instrument};
 
 #[async_trait]
 pub trait DnsClient {
@@ -50,19 +45,19 @@ pub struct DnsNetworkClient {
     port: u16,
     timeout: Duration,
 
-    sender: Sender<DnsRequest>,
-    receiver: Receiver<DnsRequest>,
+    sender: mpsc::Sender<DnsRequest>,
+    receiver: Arc<Mutex<mpsc::Receiver<DnsRequest>>>,
 }
 
 struct DnsRequest {
     packet: DnsPacket,
     server: (String, u16),
-    resp: Sender<DnsPacket>,
+    resp: oneshot::Sender<DnsPacket>,
 }
 
 impl DnsNetworkClient {
     pub async fn new(bind_port: u16, timeout: Duration) -> DnsNetworkClient {
-        let (sender, receiver) = bounded(1);
+        let (sender, receiver) = mpsc::channel(1);
         let client = DnsNetworkClient {
             total_sent: Arc::new(AtomicUsize::new(0)),
             total_failed: Arc::new(AtomicUsize::new(0)),
@@ -70,11 +65,11 @@ impl DnsNetworkClient {
             port: bind_port,
             timeout,
             sender,
-            receiver,
+            receiver: Arc::new(Mutex::new(receiver)),
         };
 
         let c = client.clone();
-        task::spawn(async {
+        tokio::task::spawn(async move {
             async move {
                 loop {
                     match c.run().await {
@@ -95,7 +90,7 @@ impl DnsNetworkClient {
     pub async fn run(&self) -> Result<()> {
         let addr = format!("0.0.0.0:{}", self.port);
         let socket = Arc::new(UdpSocket::bind(addr).await?);
-        let req_resp_map: Arc<Mutex<HashMap<u16, Sender<DnsPacket>>>> =
+        let req_resp_map: Arc<Mutex<HashMap<u16, oneshot::Sender<DnsPacket>>>> =
             Arc::new(Mutex::new(HashMap::with_capacity(10)));
 
         let req_resp_map2 = req_resp_map.clone();
@@ -114,9 +109,9 @@ impl DnsNetworkClient {
                 // Construct a DnsPacket from buffer, skipping the packet if parsing
                 // failed
                 if let Ok(packet) = DnsPacket::from_buffer(&mut res_buffer) {
-                    let resp = { req_resp_map2.lock().unwrap().remove(&packet.header.id) };
+                    let resp = { req_resp_map2.lock().await.remove(&packet.header.id) };
                     if let Some(resp) = resp {
-                        resp.send(packet).await.expect("send error");
+                        resp.send(packet).expect("send error");
                     }
                 } else {
                     error!("invalid udp packet");
@@ -128,7 +123,11 @@ impl DnsNetworkClient {
         let req_receiver = self.receiver.clone();
         let write_task = async move {
             let mut req_buffer = BytePacketBuffer::new();
-            while let Ok(mut req) = req_receiver.recv().await {
+            loop {
+                let mut req = match req_receiver.lock().await.recv().await {
+                    Some(req) => req,
+                    None => break,
+                };
                 let server = (req.server.0.as_str(), req.server.1);
                 req_buffer.seek(0)?;
                 req.packet.write(&mut req_buffer, 512)?;
@@ -137,18 +136,21 @@ impl DnsNetworkClient {
                     socket.send_to(&req_buffer.buf[0..req_buffer.pos], server),
                 )
                 .await?;
-                assert_eq!(size, req_buffer.pos);
+                assert_eq!(size?, req_buffer.pos);
                 {
                     req_resp_map
                         .lock()
-                        .unwrap()
+                        .await
                         .insert(req.packet.header.id, req.resp);
                 }
             }
             Ok::<(), Error>(())
         };
 
-        read_task.race(write_task).await?;
+        tokio::select! {
+            res = read_task => res?,
+            res = write_task => res?,
+        }
         Ok(())
     }
 
@@ -185,7 +187,7 @@ impl DnsNetworkClient {
             .questions
             .push(DnsQuestion::new(qname.to_string(), qtype));
 
-        let (sender, receiver) = bounded(1);
+        let (sender, receiver) = oneshot::channel();
 
         self.sender
             .send(DnsRequest {
@@ -196,7 +198,7 @@ impl DnsNetworkClient {
             .await
             .expect("send error");
 
-        match future::timeout(self.timeout, receiver.recv()).await {
+        match timeout(self.timeout, receiver).await {
             Ok(Ok(qr)) => Ok(qr),
             Ok(Err(_)) => {
                 let _ = self.total_failed.fetch_add(1, Ordering::Release);
@@ -248,8 +250,7 @@ pub mod tests {
     use std::io::Result;
     use std::time::Duration;
 
-    use async_std::io::timeout;
-    use async_std::task::block_on;
+    use tokio::time::timeout;
 
     use crate::dns::protocol::{DnsPacket, DnsRecord, QueryType};
 
@@ -292,28 +293,27 @@ pub mod tests {
         }
     }
 
-    #[test]
-    pub fn test_udp_client() {
-        block_on(async {
-            let client = DnsNetworkClient::new(31456, Duration::from_secs(3)).await;
-            let dns = std::env::var("DNS").unwrap_or_else(|_| "223.5.5.5".to_string());
+    #[tokio::test]
+    pub async fn test_udp_client() {
+        let client = DnsNetworkClient::new(31456, Duration::from_secs(3)).await;
+        let dns = std::env::var("DNS").unwrap_or_else(|_| "223.5.5.5".to_string());
 
-            let res = timeout(
-                Duration::from_secs(3),
-                client.send_udp_query("baidu.com", QueryType::A, (&dns, 53), true),
-            )
-            .await
-            .unwrap();
+        let res = timeout(
+            Duration::from_secs(3),
+            client.send_udp_query("baidu.com", QueryType::A, (&dns, 53), true),
+        )
+        .await
+        .unwrap()
+        .unwrap();
 
-            assert_eq!(res.questions[0].name, "baidu.com");
-            assert!(!res.answers.is_empty());
+        assert_eq!(res.questions[0].name, "baidu.com");
+        assert!(!res.answers.is_empty());
 
-            match res.answers[0] {
-                DnsRecord::A { ref domain, .. } => {
-                    assert_eq!("baidu.com", domain);
-                }
-                _ => panic!(),
+        match res.answers[0] {
+            DnsRecord::A { ref domain, .. } => {
+                assert_eq!("baidu.com", domain);
             }
-        });
+            _ => panic!(),
+        }
     }
 }

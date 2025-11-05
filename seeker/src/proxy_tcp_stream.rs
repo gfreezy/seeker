@@ -1,5 +1,5 @@
-use async_std::io::{Read, Write};
-use async_std::net::TcpStream;
+use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+use tokio::net::TcpStream;
 use config::rule::Action;
 use config::{Address, ServerConfig, ServerProtocol};
 use http_proxy_client::{HttpProxyTcpStream, HttpsProxyTcpStream};
@@ -17,12 +17,12 @@ use crate::proxy_connection::{
     ProxyConnection, ProxyConnectionEventListener, StoreListener, next_connection_id,
 };
 use crate::traffic::Traffic;
-use async_std::task::ready;
+use std::task::ready;
 use std::io::{Error, ErrorKind};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-#[derive(Clone)]
+// Note: tokio types don't implement Clone
 enum ProxyTcpStreamInner {
     Direct(TcpStream),
     Socks5(Socks5TcpStream),
@@ -31,7 +31,7 @@ enum ProxyTcpStreamInner {
     Shadowsocks(SSTcpStream),
 }
 
-#[derive(Clone)]
+// Note: tokio types don't implement Clone
 pub struct ProxyTcpStream {
     id: u64,
     inner: ProxyTcpStreamInner,
@@ -201,12 +201,12 @@ impl ProxyConnection for ProxyTcpStream {
     }
 }
 
-impl Read for ProxyTcpStream {
+impl AsyncRead for ProxyTcpStream {
     fn poll_read(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-        buf: &mut [u8],
-    ) -> Poll<Result<usize>> {
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<Result<()>> {
         let stream = &mut *self;
         if !stream.is_alive() {
             return Poll::Ready(Err(Error::new(
@@ -214,6 +214,8 @@ impl Read for ProxyTcpStream {
                 "ProxyTcpStream not alive",
             )));
         }
+
+        let before_filled = buf.filled().len();
         let ret = ready!(match &mut stream.inner {
             ProxyTcpStreamInner::Direct(conn) => {
                 Pin::new(conn).poll_read(cx, buf)
@@ -225,12 +227,13 @@ impl Read for ProxyTcpStream {
         });
 
         match ret {
-            Ok(size) => {
-                self.traffic.recv(size);
+            Ok(()) => {
+                let bytes_read = buf.filled().len() - before_filled;
+                self.traffic.recv(bytes_read);
                 if let Some(l) = &self.event_listener {
-                    l.on_recv_bytes(&*self, size);
+                    l.on_recv_bytes(&*self, bytes_read);
                 }
-                Poll::Ready(Ok(size))
+                Poll::Ready(Ok(()))
             }
             e => {
                 self.shutdown();
@@ -240,7 +243,7 @@ impl Read for ProxyTcpStream {
     }
 }
 
-impl Write for ProxyTcpStream {
+impl AsyncWrite for ProxyTcpStream {
     fn poll_write(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -299,7 +302,7 @@ impl Write for ProxyTcpStream {
         }
     }
 
-    fn poll_close(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<()>> {
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<()>> {
         let stream = &mut *self;
         if !stream.is_alive() {
             return Poll::Ready(Err(Error::new(
@@ -308,11 +311,11 @@ impl Write for ProxyTcpStream {
             )));
         }
         let ret = ready!(match &mut stream.inner {
-            ProxyTcpStreamInner::Direct(conn) => Pin::new(conn).poll_close(cx),
-            ProxyTcpStreamInner::Socks5(conn) => Pin::new(conn).poll_close(cx),
-            ProxyTcpStreamInner::Shadowsocks(conn) => Pin::new(conn).poll_close(cx),
-            ProxyTcpStreamInner::HttpProxy(conn) => Pin::new(conn).poll_close(cx),
-            ProxyTcpStreamInner::HttpsProxy(conn) => Pin::new(conn).poll_close(cx),
+            ProxyTcpStreamInner::Direct(conn) => Pin::new(conn).poll_shutdown(cx),
+            ProxyTcpStreamInner::Socks5(conn) => Pin::new(conn).poll_shutdown(cx),
+            ProxyTcpStreamInner::Shadowsocks(conn) => Pin::new(conn).poll_shutdown(cx),
+            ProxyTcpStreamInner::HttpProxy(conn) => Pin::new(conn).poll_shutdown(cx),
+            ProxyTcpStreamInner::HttpsProxy(conn) => Pin::new(conn).poll_shutdown(cx),
         });
         self.shutdown();
         Poll::Ready(ret)

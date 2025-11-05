@@ -1,4 +1,4 @@
-use async_std::net::Ipv4Addr;
+use std::net::Ipv4Addr;
 use std::collections::HashMap;
 use std::error::Error;
 use std::fmt;

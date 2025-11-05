@@ -4,14 +4,14 @@ use crate::probe_connectivity::ProbeConnectivity;
 use crate::relay_tcp_stream::relay_tcp_stream;
 use crate::relay_udp_socket::relay_udp_socket;
 use crate::server_chooser::{CandidateUdpSocket, ServerChooser};
-use async_std::future::pending;
-use async_std::io::timeout;
-use async_std::net::{SocketAddr, TcpListener, TcpStream, UdpSocket};
-use async_std::task::{JoinHandle, spawn};
-use async_std::{prelude::*, task};
-use async_std_resolver::AsyncStdResolver;
+use std::future::pending;
+use tokio::time::timeout;
+use tokio::net::{TcpListener, TcpStream, UdpSocket};
+use std::net::SocketAddr;
+use tokio::task::JoinHandle;
 use config::rule::Action;
 use config::{Address, Config};
+use hickory_resolver::TokioAsyncResolver;
 use dnsserver::create_dns_server;
 use dnsserver::resolver::RuleBasedDnsResolver;
 use parking_lot::RwLock;
@@ -57,7 +57,7 @@ impl ProxyClient {
                 config.threads_per_queue,
             )
             .expect("run nat");
-            let nat_join_handle = task::spawn_blocking(move || match blocking_join_handle.join() {
+            let nat_join_handle = tokio::task::spawn_blocking(move || match blocking_join_handle.join() {
                 Ok(()) => tracing::info!("nat stopped"),
                 Err(e) => tracing::error!("nat stopped with error: {:?}", e),
             });
@@ -73,7 +73,7 @@ impl ProxyClient {
 
         let chooser = ServerChooser::new(config.clone(), dns_client.clone(), show_stats).await;
         let chooser_clone = chooser.clone();
-        let chooser_join_handle = spawn(async move {
+        let chooser_join_handle = tokio::task::spawn(async move {
             chooser_clone
                 .run_background_tasks()
                 .instrument(tracing::trace_span!("ServerChooser.run_background_tasks"))
@@ -102,8 +102,11 @@ impl ProxyClient {
             .inspect_err(|_e| {
                 eprintln!("error: bind to {REDIR_LISTEN_PORT}");
             })?;
-        let mut incoming = listener.incoming();
-        while let Some(Ok(conn)) = incoming.next().await {
+        loop {
+            let (conn, _peer) = match listener.accept().await {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
             let session_manager = self.session_manager.clone();
             let resolver = self.resolver.clone();
             let dns_client = self.dns_client.clone();
@@ -147,7 +150,8 @@ impl ProxyClient {
 
             tracing::info!("real_src: {real_src:?}, real_desc: {real_dest:?}, host: {host:?}");
 
-            spawn(async move {
+            let session_manager_clone = session_manager.clone();
+            tokio::task::spawn(async move {
                 let _ = relay_tcp_stream(
                     conn,
                     real_src,
@@ -157,8 +161,8 @@ impl ProxyClient {
                     server_chooser,
                     connectivity,
                     uid,
-                    || {
-                        if let Some(session_manager) = &session_manager {
+                    move || {
+                        if let Some(session_manager) = &session_manager_clone {
                             session_manager.update_activity_for_port(session_port)
                         } else {
                             true
@@ -171,17 +175,43 @@ impl ProxyClient {
                 }
             });
         }
-        Ok::<(), std::io::Error>(())
     }
 
     pub async fn run(mut self) {
         let chooser_join_handle = self.chooser_join_handle.take();
         let dns_server_join_handle = self.dns_server_join_handle.take();
         let nat_join_handle = self.nat_join_handle.take();
-        let ret = self
-            .run_tcp_relay_server()
-            .instrument(tracing::trace_span!("ProxyClient.run_tcp_relay_server"))
-            .race(async {
+
+        let chooser_task = async move {
+            if let Some(chooser_join_handle) = chooser_join_handle {
+                chooser_join_handle.await.unwrap();
+            } else {
+                pending::<()>().await;
+            }
+            Ok::<(), std::io::Error>(())
+        };
+
+        let dns_task = async move {
+            if let Some(dns_server_join_handle) = dns_server_join_handle {
+                dns_server_join_handle.await.unwrap();
+            } else {
+                pending::<()>().await;
+            };
+            Ok::<(), std::io::Error>(())
+        };
+
+        let nat_task = async move {
+            if let Some(nat_join_handle) = nat_join_handle {
+                nat_join_handle.await.unwrap();
+            } else {
+                pending::<()>().await;
+            }
+            Ok::<(), std::io::Error>(())
+        };
+
+        let ret = tokio::select! {
+            r = self.run_tcp_relay_server().instrument(tracing::trace_span!("ProxyClient.run_tcp_relay_server")) => r,
+            r = async {
                 if !self.config.redir_mode {
                     let ret = self
                         .run_udp_relay_server()
@@ -194,32 +224,11 @@ impl ProxyClient {
                 } else {
                     pending::<Result<()>>().await
                 }
-            })
-            .race(async move {
-                if let Some(chooser_join_handle) = chooser_join_handle {
-                    chooser_join_handle.await;
-                } else {
-                    pending::<()>().await;
-                }
-                Ok(())
-            })
-            .race(async move {
-                if let Some(dns_server_join_handle) = dns_server_join_handle {
-                    dns_server_join_handle.await;
-                } else {
-                    pending::<()>().await;
-                };
-                Ok(())
-            })
-            .race(async move {
-                if let Some(nat_join_handle) = nat_join_handle {
-                    nat_join_handle.await;
-                } else {
-                    pending::<()>().await;
-                }
-                Ok(())
-            })
-            .await;
+            } => r,
+            r = chooser_task => r,
+            r = dns_task => r,
+            r = nat_task => r,
+        };
         ret.expect("run proxy client");
     }
 
@@ -338,7 +347,7 @@ pub(crate) async fn get_action_for_addr(
 
 async fn run_dns_resolver(
     config: &Config,
-    resolver: AsyncStdResolver,
+    resolver: TokioAsyncResolver,
 ) -> (RuleBasedDnsResolver, JoinHandle<()>) {
     let (dns_server, resolver) = create_dns_server(
         config.dns_listens.clone(),
@@ -347,7 +356,7 @@ async fn run_dns_resolver(
         resolver,
     )
     .await;
-    let handle = spawn(async {
+    let handle = tokio::task::spawn(async {
         dns_server
             .run_server()
             .instrument(trace_span!("Dns_server.run_server"))

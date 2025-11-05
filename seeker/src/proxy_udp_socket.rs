@@ -3,7 +3,8 @@ use crate::proxy_connection::{
     ProxyConnection, ProxyConnectionEventListener, StoreListener, next_connection_id,
 };
 use crate::traffic::Traffic;
-use async_std::net::{SocketAddr, UdpSocket};
+use tokio::net::UdpSocket;
+use std::net::SocketAddr;
 use config::rule::Action;
 use config::{ServerConfig, ServerProtocol};
 use socks5_client::Socks5UdpSocket;

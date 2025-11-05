@@ -1,6 +1,6 @@
-use async_std_resolver::proto::rr::rdata::{A, AAAA};
-use async_std_resolver::proto::rr::{RData, RecordType};
-use async_std_resolver::AsyncStdResolver;
+use hickory_resolver::proto::rr::rdata::{A, AAAA};
+use hickory_resolver::proto::rr::{RData, RecordType};
+use hickory_resolver::TokioAsyncResolver;
 use async_trait::async_trait;
 use config::rule::{Action, ProxyRules};
 use hermesdns::{DnsPacket, DnsRecord, DnsResolver, Hosts, QueryType, TransientTtl};
@@ -23,11 +23,11 @@ struct Inner {
     hosts: Hosts,
     rules: ProxyRules,
     bypass_direct: bool,
-    resolver: AsyncStdResolver,
+    resolver: TokioAsyncResolver,
 }
 
 impl RuleBasedDnsResolver {
-    pub async fn new(bypass_direct: bool, rules: ProxyRules, resolver: AsyncStdResolver) -> Self {
+    pub async fn new(bypass_direct: bool, rules: ProxyRules, resolver: TokioAsyncResolver) -> Self {
         RuleBasedDnsResolver {
             inner: Arc::new(Inner {
                 hosts: Hosts::load().expect("load /etc/hosts"),
@@ -225,7 +225,6 @@ impl DnsResolver for RuleBasedDnsResolver {
 mod tests {
     use super::*;
     use crate::tests::new_resolver;
-    use async_std::task;
     use config::rule::Rule;
 
     #[test]
@@ -235,7 +234,7 @@ mod tests {
             .with_max_level(tracing::Level::DEBUG)
             .init();
         let dns = std::env::var("DNS").unwrap_or_else(|_| "223.5.5.5".to_string());
-        task::block_on(async {
+        tokio_test::block_on(async {
             let resolver = RuleBasedDnsResolver::new(
                 false,
                 ProxyRules::new(
