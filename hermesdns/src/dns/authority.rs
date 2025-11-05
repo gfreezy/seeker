@@ -2,11 +2,11 @@
 #![allow(dead_code)]
 use crate::dns::buffer::{PacketBuffer, StreamPacketBuffer, VectorPacketBuffer};
 use crate::dns::protocol::{DnsPacket, DnsRecord, QueryType, ResultCode, TransientTtl};
-use async_std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::File;
 use std::io::{Result, Write};
 use std::path::Path;
+use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 #[derive(Clone, Debug, Default)]
 pub struct Zone {

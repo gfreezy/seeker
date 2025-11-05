@@ -7,15 +7,17 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-async-std = { workspace = true }
+tokio = { workspace = true }
 hermesdns = { path = "../hermesdns" }
 config = { path = "../config" }
 async-trait = { workspace = true }
 tracing = { workspace = true }
-async-std-resolver = { workspace = true }
+hickory-resolver = { workspace = true }
+hickory-proto = { workspace = true }
 store = { path = "../store" }
 parking_lot = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
 tracing-subscriber = { workspace = true }
+tokio-test = "0.4"

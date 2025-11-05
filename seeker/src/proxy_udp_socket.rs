@@ -3,16 +3,17 @@ use crate::proxy_connection::{
     ProxyConnection, ProxyConnectionEventListener, StoreListener, next_connection_id,
 };
 use crate::traffic::Traffic;
-use async_std::net::{SocketAddr, UdpSocket};
 use config::rule::Action;
 use config::{ServerConfig, ServerProtocol};
 use socks5_client::Socks5UdpSocket;
 use ssclient::SSUdpSocket;
 use std::io;
 use std::io::{Error, ErrorKind};
+use std::net::SocketAddr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
+use tokio::net::UdpSocket;
 
 #[derive(Clone)]
 enum ProxyUdpSocketInner {

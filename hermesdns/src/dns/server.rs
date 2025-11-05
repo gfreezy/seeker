@@ -4,9 +4,8 @@ use crate::dns::buffer::{BytePacketBuffer, PacketBuffer, VectorPacketBuffer};
 use crate::dns::context::ServerContext;
 use crate::dns::protocol::{DnsPacket, DnsRecord, QueryType, ResultCode};
 use crate::dns::resolve::DnsResolver;
-use async_std::net::UdpSocket;
-use async_std::task::spawn;
 use std::sync::Arc;
+use tokio::net::UdpSocket;
 use tracing::Instrument;
 
 macro_rules! return_or_report {
@@ -172,7 +171,7 @@ impl DnsUdpServer {
         for listen in &self.context.listens {
             let listen = listen.clone();
             let context = self.context.clone();
-            let h = spawn(async move {
+            let h = tokio::task::spawn(async move {
                 // Bind the socket
                 let socket = Arc::new(UdpSocket::bind(&listen).await.unwrap());
 
@@ -189,7 +188,7 @@ impl DnsUdpServer {
 
                     let context = context.clone();
                     let socket_clone = socket.clone();
-                    spawn(async move {
+                    tokio::task::spawn(async move {
                         async move {
                             // Parse it
                             let request = return_or_report!(
@@ -233,7 +232,7 @@ impl DnsUdpServer {
         }
 
         for h in handles {
-            h.await;
+            let _ = h.await;
         }
     }
 }
@@ -253,7 +252,6 @@ mod tests {
 
     use crate::dns::context::tests::create_test_context;
     use crate::ResolveStrategy;
-    use async_std::task::block_on;
 
     fn build_query(qname: &str, qtype: QueryType) -> DnsPacket {
         let mut query_packet = DnsPacket::new();
@@ -266,158 +264,154 @@ mod tests {
         query_packet
     }
 
-    #[test]
-    fn test_execute_query() {
-        block_on(async {
-            // Construct a context to execute some queries successfully
-            let mut context = create_test_context(
-                Box::new(|qname, qtype, _, _| {
-                    let mut packet = DnsPacket::new();
+    #[tokio::test]
+    async fn test_execute_query() {
+        // Construct a context to execute some queries successfully
+        let mut context = create_test_context(
+            Box::new(|qname, qtype, _, _| {
+                let mut packet = DnsPacket::new();
 
-                    if qname == "google.com" {
-                        packet.answers.push(DnsRecord::A {
-                            domain: "google.com".to_string(),
-                            addr: "127.0.0.1".parse::<Ipv4Addr>().unwrap(),
-                            ttl: TransientTtl(3600),
-                        });
-                    } else if qname == "www.facebook.com" && qtype == QueryType::CNAME {
-                        packet.answers.push(DnsRecord::CNAME {
-                            domain: "www.facebook.com".to_string(),
-                            host: "cdn.facebook.com".to_string(),
-                            ttl: TransientTtl(3600),
-                        });
-                        packet.answers.push(DnsRecord::A {
-                            domain: "cdn.facebook.com".to_string(),
-                            addr: "127.0.0.1".parse::<Ipv4Addr>().unwrap(),
-                            ttl: TransientTtl(3600),
-                        });
-                    } else if qname == "www.microsoft.com" && qtype == QueryType::CNAME {
-                        packet.answers.push(DnsRecord::CNAME {
-                            domain: "www.microsoft.com".to_string(),
-                            host: "cdn.microsoft.com".to_string(),
-                            ttl: TransientTtl(3600),
-                        });
-                    } else if qname == "cdn.microsoft.com" && qtype == QueryType::A {
-                        packet.answers.push(DnsRecord::A {
-                            domain: "cdn.microsoft.com".to_string(),
-                            addr: "127.0.0.1".parse::<Ipv4Addr>().unwrap(),
-                            ttl: TransientTtl(3600),
-                        });
-                    } else {
-                        packet.header.rescode = ResultCode::NXDOMAIN;
-                    }
+                if qname == "google.com" {
+                    packet.answers.push(DnsRecord::A {
+                        domain: "google.com".to_string(),
+                        addr: "127.0.0.1".parse::<Ipv4Addr>().unwrap(),
+                        ttl: TransientTtl(3600),
+                    });
+                } else if qname == "www.facebook.com" && qtype == QueryType::CNAME {
+                    packet.answers.push(DnsRecord::CNAME {
+                        domain: "www.facebook.com".to_string(),
+                        host: "cdn.facebook.com".to_string(),
+                        ttl: TransientTtl(3600),
+                    });
+                    packet.answers.push(DnsRecord::A {
+                        domain: "cdn.facebook.com".to_string(),
+                        addr: "127.0.0.1".parse::<Ipv4Addr>().unwrap(),
+                        ttl: TransientTtl(3600),
+                    });
+                } else if qname == "www.microsoft.com" && qtype == QueryType::CNAME {
+                    packet.answers.push(DnsRecord::CNAME {
+                        domain: "www.microsoft.com".to_string(),
+                        host: "cdn.microsoft.com".to_string(),
+                        ttl: TransientTtl(3600),
+                    });
+                } else if qname == "cdn.microsoft.com" && qtype == QueryType::A {
+                    packet.answers.push(DnsRecord::A {
+                        domain: "cdn.microsoft.com".to_string(),
+                        addr: "127.0.0.1".parse::<Ipv4Addr>().unwrap(),
+                        ttl: TransientTtl(3600),
+                    });
+                } else {
+                    packet.header.rescode = ResultCode::NXDOMAIN;
+                }
 
-                    Ok(packet)
-                }),
-                ResolveStrategy::Forward {
-                    host: "114.114.114.114".to_string(),
-                    port: 53,
-                },
+                Ok(packet)
+            }),
+            ResolveStrategy::Forward {
+                host: "114.114.114.114".to_string(),
+                port: 53,
+            },
+        )
+        .await;
+
+        // A successful resolve
+        {
+            let res =
+                execute_query(context.clone(), &build_query("google.com", QueryType::A)).await;
+            assert_eq!(1, res.answers.len());
+
+            match res.answers[0] {
+                DnsRecord::A { ref domain, .. } => {
+                    assert_eq!("google.com", domain);
+                }
+                _ => panic!(),
+            }
+        };
+
+        // A successful resolve, that also resolves a CNAME without recursive lookup
+        {
+            let res = execute_query(
+                context.clone(),
+                &build_query("www.facebook.com", QueryType::CNAME),
             )
             .await;
+            assert_eq!(2, res.answers.len());
 
-            // A successful resolve
-            {
-                let res =
-                    execute_query(context.clone(), &build_query("google.com", QueryType::A)).await;
-                assert_eq!(1, res.answers.len());
-
-                match res.answers[0] {
-                    DnsRecord::A { ref domain, .. } => {
-                        assert_eq!("google.com", domain);
-                    }
-                    _ => panic!(),
+            match res.answers[0] {
+                DnsRecord::CNAME { ref domain, .. } => {
+                    assert_eq!("www.facebook.com", domain);
                 }
-            };
-
-            // A successful resolve, that also resolves a CNAME without recursive lookup
-            {
-                let res = execute_query(
-                    context.clone(),
-                    &build_query("www.facebook.com", QueryType::CNAME),
-                )
-                .await;
-                assert_eq!(2, res.answers.len());
-
-                match res.answers[0] {
-                    DnsRecord::CNAME { ref domain, .. } => {
-                        assert_eq!("www.facebook.com", domain);
-                    }
-                    _ => panic!(),
-                }
-
-                match res.answers[1] {
-                    DnsRecord::A { ref domain, .. } => {
-                        assert_eq!("cdn.facebook.com", domain);
-                    }
-                    _ => panic!(),
-                }
-            };
-
-            // A successful resolve, that also resolves a CNAME through recursive lookup
-            {
-                let res = execute_query(
-                    context.clone(),
-                    &build_query("www.microsoft.com", QueryType::CNAME),
-                )
-                .await;
-                assert_eq!(2, res.answers.len());
-
-                match res.answers[0] {
-                    DnsRecord::CNAME { ref domain, .. } => {
-                        assert_eq!("www.microsoft.com", domain);
-                    }
-                    _ => panic!(),
-                }
-            };
-
-            // An unsuccessful resolve, but without any error
-            {
-                let res =
-                    execute_query(context.clone(), &build_query("yahoo.com", QueryType::A)).await;
-                assert_eq!(ResultCode::NXDOMAIN, res.header.rescode);
-                assert_eq!(0, res.answers.len());
-            };
-
-            // Disable recursive resolves to generate a failure
-            match Arc::get_mut(&mut context) {
-                Some(ctx) => {
-                    ctx.allow_recursive = false;
-                }
-                None => panic!(),
+                _ => panic!(),
             }
 
-            // This should generate an error code, since recursive resolves are
-            // no longer allowed
-            {
-                let res =
-                    execute_query(context.clone(), &build_query("yahoo.com", QueryType::A)).await;
-                assert_eq!(ResultCode::REFUSED, res.header.rescode);
-                assert_eq!(0, res.answers.len());
-            };
+            match res.answers[1] {
+                DnsRecord::A { ref domain, .. } => {
+                    assert_eq!("cdn.facebook.com", domain);
+                }
+                _ => panic!(),
+            }
+        };
 
-            // Send a query without a question, which should fail with an error code
-            {
-                let query_packet = DnsPacket::new();
-                let res = execute_query(context.clone(), &query_packet).await;
-                assert_eq!(ResultCode::FORMERR, res.header.rescode);
-                assert_eq!(0, res.answers.len());
-            };
-
-            // Now construct a context where the dns client will return a failure
-            let context2 = create_test_context(
-                Box::new(|_, _, _, _| Err(Error::new(ErrorKind::NotFound, "Fail"))),
-                ResolveStrategy::Recursive,
+        // A successful resolve, that also resolves a CNAME through recursive lookup
+        {
+            let res = execute_query(
+                context.clone(),
+                &build_query("www.microsoft.com", QueryType::CNAME),
             )
             .await;
+            assert_eq!(2, res.answers.len());
 
-            // We expect this to set the server failure rescode
-            {
-                let res =
-                    execute_query(context2.clone(), &build_query("yahoo.com", QueryType::A)).await;
-                assert_eq!(ResultCode::SERVFAIL, res.header.rescode);
-                assert_eq!(0, res.answers.len());
-            };
-        });
+            match res.answers[0] {
+                DnsRecord::CNAME { ref domain, .. } => {
+                    assert_eq!("www.microsoft.com", domain);
+                }
+                _ => panic!(),
+            }
+        };
+
+        // An unsuccessful resolve, but without any error
+        {
+            let res = execute_query(context.clone(), &build_query("yahoo.com", QueryType::A)).await;
+            assert_eq!(ResultCode::NXDOMAIN, res.header.rescode);
+            assert_eq!(0, res.answers.len());
+        };
+
+        // Disable recursive resolves to generate a failure
+        match Arc::get_mut(&mut context) {
+            Some(ctx) => {
+                ctx.allow_recursive = false;
+            }
+            None => panic!(),
+        }
+
+        // This should generate an error code, since recursive resolves are
+        // no longer allowed
+        {
+            let res = execute_query(context.clone(), &build_query("yahoo.com", QueryType::A)).await;
+            assert_eq!(ResultCode::REFUSED, res.header.rescode);
+            assert_eq!(0, res.answers.len());
+        };
+
+        // Send a query without a question, which should fail with an error code
+        {
+            let query_packet = DnsPacket::new();
+            let res = execute_query(context.clone(), &query_packet).await;
+            assert_eq!(ResultCode::FORMERR, res.header.rescode);
+            assert_eq!(0, res.answers.len());
+        };
+
+        // Now construct a context where the dns client will return a failure
+        let context2 = create_test_context(
+            Box::new(|_, _, _, _| Err(Error::new(ErrorKind::NotFound, "Fail"))),
+            ResolveStrategy::Recursive,
+        )
+        .await;
+
+        // We expect this to set the server failure rescode
+        {
+            let res =
+                execute_query(context2.clone(), &build_query("yahoo.com", QueryType::A)).await;
+            assert_eq!(ResultCode::SERVFAIL, res.header.rescode);
+            assert_eq!(0, res.answers.len());
+        };
     }
 }

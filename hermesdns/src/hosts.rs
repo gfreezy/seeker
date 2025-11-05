@@ -1,10 +1,10 @@
-use async_std::net::Ipv4Addr;
 use std::collections::HashMap;
 use std::error::Error;
 use std::fmt;
 use std::fmt::Display;
 use std::fs::File;
 use std::io::Read;
+use std::net::Ipv4Addr;
 
 const HOSTS_PATH: &str = "/etc/hosts";
 

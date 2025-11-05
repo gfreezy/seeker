@@ -11,18 +11,17 @@ use std::{
     time::SystemTime,
 };
 
-use async_std::{
-    io::{Read, Write},
+use nanorand::{tls_rng, Rng};
+use tokio::{
+    io::{AsyncRead, AsyncWrite},
     net::TcpStream,
 };
-use nanorand::{tls_rng, Rng};
 
 use crate::Connection;
 
 const HANDSHAKE_FOOT_LEN: usize = 84;
 const MESSAGE_HEAD_LEN: usize = 5;
 
-#[derive(Clone)]
 pub(crate) struct ObfsTlsTcpStream {
     conn: TcpStream,
     sent_first_request: Arc<AtomicBool>,
@@ -131,20 +130,20 @@ impl ObfsTlsTcpStream {
     }
 }
 
-impl Read for ObfsTlsTcpStream {
+impl AsyncRead for ObfsTlsTcpStream {
     fn poll_read(
         mut self: Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
-        buf: &mut [u8],
-    ) -> std::task::Poll<Result<usize>> {
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> std::task::Poll<Result<()>> {
         {
             let mut recv_buf = self.recv_buf.lock().unwrap();
             // If we have data in the buffer, copy it to the user's buffer.
             if !recv_buf.is_empty() {
-                let consumed = recv_buf.len().min(buf.len());
-                buf[..consumed].copy_from_slice(&recv_buf[..consumed]);
+                let consumed = recv_buf.len().min(buf.remaining());
+                buf.put_slice(&recv_buf[..consumed]);
                 recv_buf.drain(0..consumed);
-                return Poll::Ready(Ok(consumed));
+                return Poll::Ready(Ok(()));
             }
         }
 
@@ -155,20 +154,22 @@ impl Read for ObfsTlsTcpStream {
             recv_buf.resize(1024, 0);
 
             // Read the first response from the server.
-            return match Pin::new(&mut this.conn).poll_read(cx, &mut recv_buf) {
-              Poll::Ready(Ok(total_read_size)) => {
+            let mut read_buf = tokio::io::ReadBuf::new(&mut recv_buf);
+            return match Pin::new(&mut this.conn).poll_read(cx, &mut read_buf) {
+              Poll::Ready(Ok(())) => {
                   this.recvd_first_response.store(true, Ordering::SeqCst);
+                  let total_read_size = read_buf.filled().len();
 
                 let content_size = total_read_size;
-                let consumed = content_size.min(buf.len());
-                buf[..consumed].copy_from_slice(
-                    &recv_buf[0..consumed],
+                let consumed = content_size.min(buf.remaining());
+                buf.put_slice(
+                    &read_buf.filled()[0..consumed],
                 );
                 // Remove the copied data from the buffer.
                 recv_buf.drain(0..consumed);
                 // Truncate the buffer to the real size.
                 recv_buf.truncate(total_read_size  - consumed);
-                Poll::Ready(Ok(consumed))
+                Poll::Ready(Ok(()))
               }
               Poll::Ready(e)  // Error encountered, abort.
                   => Poll::Ready(e),
@@ -185,7 +186,7 @@ impl Read for ObfsTlsTcpStream {
     }
 }
 
-impl Write for ObfsTlsTcpStream {
+impl AsyncWrite for ObfsTlsTcpStream {
     fn poll_write_vectored(
         mut self: Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
@@ -281,11 +282,11 @@ impl Write for ObfsTlsTcpStream {
         Pin::new(&mut self.conn).poll_flush(cx)
     }
 
-    fn poll_close(
+    fn poll_shutdown(
         mut self: Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Result<()>> {
-        Pin::new(&mut self.conn).poll_close(cx)
+        Pin::new(&mut self.conn).poll_shutdown(cx)
     }
 }
 
@@ -293,17 +294,17 @@ impl Write for ObfsTlsTcpStream {
 mod tests {
 
     use super::*;
-    use async_std::{
-        io::{ReadExt, WriteExt},
+    use tokio::{
+        io::{AsyncReadExt, AsyncWriteExt},
         net::TcpListener,
-        prelude::StreamExt,
-        task::{sleep, spawn},
+        time::sleep,
     };
+    // StreamExt removed as it's not available
     use std::time::Duration;
 
     const HANDSHAKE_HEAD_LEN: usize = 142;
 
-    #[async_std::test]
+    #[tokio::test]
     async fn test_obfs_tls_connect() {
         const HOST: &str = "baidu.com";
         const REQ: &str = "hello";
@@ -311,9 +312,9 @@ mod tests {
 
         let listener = TcpListener::bind("localhost:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
-        let handle = spawn(async move {
-            while let Some(conn) = listener.incoming().next().await {
-                let mut stream = conn.unwrap();
+        let handle = tokio::task::spawn(async move {
+            loop {
+                let (mut stream, _) = listener.accept().await.unwrap();
                 let mut buf = [0; 1024];
                 let n = stream.read(&mut buf).await.unwrap();
                 assert_eq!(n, HANDSHAKE_HEAD_LEN + REQ.len() + HANDSHAKE_FOOT_LEN);
@@ -333,11 +334,11 @@ mod tests {
         let n = stream.read(&mut buf).await.unwrap();
         assert_eq!(&buf[..n], RESP.as_bytes());
 
-        let _ = handle.cancel().await;
+        handle.abort();
     }
 
     #[cfg(all(target_arch = "x86_64", target_env = "gnu"))]
-    #[async_std::test]
+    #[tokio::test]
     async fn test_obfs_docker_tls_read_write() {
         use crate::run_obfs_server;
         use std::str::FromStr;
@@ -350,9 +351,9 @@ mod tests {
 
         let listener = TcpListener::bind("0.0.0.0:12346").await.unwrap();
 
-        let handle = spawn(async move {
-            while let Some(conn) = listener.incoming().next().await {
-                let mut stream = conn.unwrap();
+        let handle = tokio::task::spawn(async move {
+            loop {
+                let (mut stream, _) = listener.accept().await.unwrap();
                 let mut buf = [0; 1024];
                 let _n = stream.read(&mut buf).await.unwrap();
                 assert_eq!(
@@ -378,6 +379,6 @@ mod tests {
         let n = stream.read(&mut buf).await.unwrap();
         assert_eq!(&buf[..n], RESP.as_bytes());
 
-        let _ = handle.cancel().await;
+        handle.abort();
     }
 }

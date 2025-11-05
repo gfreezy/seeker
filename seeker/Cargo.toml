@@ -20,14 +20,17 @@ http_proxy_client = { path = "../http_proxy_client" }
 sysconfig = { path = "../sysconfig" }
 tun_nat = { path = "../tun_nat" }
 file-rotate = { workspace = true }
-async-std = { workspace = true, features = ["attributes"] }
-async-tls = { workspace = true }
+tokio = { workspace = true }
+tokio-native-tls = "0.3"
+native-tls = "0.2"
 parking_lot = { workspace = true, features = ["deadlock_detection"] }
 ctrlc = { workspace = true, features = ["termination"] }
 libc = { workspace = true }
 futures-util = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
-async-std-resolver = { workspace = true }
+hickory-resolver = { workspace = true }
+hickory-proto = { workspace = true }
+tokio-util = { workspace = true }
 ureq = { workspace = true, features = ["json"] }
 crypto = { path = "../crypto" }
 bytes = { workspace = true }

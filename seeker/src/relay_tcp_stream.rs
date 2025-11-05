@@ -1,8 +1,8 @@
 use anyhow::Result;
-use async_std::io::{Read, Write, timeout};
-use async_std::net::TcpStream;
-use async_std::prelude::*;
 use config::{Address, Config};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::net::TcpStream;
+use tokio::time::timeout;
 
 use std::net::SocketAddr;
 
@@ -11,7 +11,6 @@ use tracing::{error, instrument, trace};
 
 use crate::probe_connectivity::ProbeConnectivity;
 use crate::proxy_client::get_action_for_addr;
-use crate::proxy_connection::ProxyConnection;
 use crate::server_chooser::{CandidateTcpStream, ServerChooser};
 
 #[allow(clippy::too_many_arguments)]
@@ -25,7 +24,7 @@ pub(crate) async fn relay_tcp_stream(
     server_chooser: ServerChooser,
     connectivity: ProbeConnectivity,
     user_id: Option<u32>,
-    on_update_activity: impl Fn() -> bool,
+    on_update_activity: impl Fn() -> bool + Send + 'static,
 ) -> Result<()> {
     let candidate_tcp_stream = choose_proxy_tcp_stream(
         real_src,
@@ -44,11 +43,11 @@ pub(crate) async fn relay_tcp_stream(
             return Err(e);
         }
     };
-    let remote_conn = &candidate_tcp_stream.stream;
+    let remote_conn = candidate_tcp_stream.stream;
     let ret = tunnel_tcp_stream(
         &host,
         conn,
-        remote_conn.clone(),
+        remote_conn,
         config.read_timeout,
         config.write_timeout,
         on_update_activity,
@@ -68,7 +67,6 @@ pub(crate) async fn relay_tcp_stream(
     } else {
         tracing::info!("tunnel tcp stream: recycle port, host: {host}");
     }
-    remote_conn.shutdown();
     Ok(())
 }
 
@@ -108,41 +106,51 @@ async fn choose_proxy_tcp_stream(
     .await?)
 }
 
-async fn tunnel_tcp_stream<T1: Read + Write + Unpin + Clone, T2: Read + Write + Unpin + Clone>(
+async fn tunnel_tcp_stream<
+    T1: AsyncRead + AsyncWrite + Unpin,
+    T2: AsyncRead + AsyncWrite + Unpin,
+>(
     _host: &Address,
-    mut conn1: T1,
-    mut conn2: T2,
+    conn1: T1,
+    conn2: T2,
     read_timeout: Duration,
     write_timeout: Duration,
-    on_update_activity: impl Fn() -> bool,
+    on_update_activity: impl Fn() -> bool + Send + 'static,
 ) -> std::io::Result<()> {
-    let mut conn1_clone = conn1.clone();
-    let mut conn2_clone = conn2.clone();
-    let f1 = async {
+    let (mut conn1_read, mut conn1_write) = tokio::io::split(conn1);
+    let (mut conn2_read, mut conn2_write) = tokio::io::split(conn2);
+
+    let on_update_activity = std::sync::Arc::new(on_update_activity);
+    let on_update_activity_clone = on_update_activity.clone();
+
+    let f1 = async move {
         let mut buf = vec![0; 1600];
         loop {
             if !on_update_activity() {
                 break Err(std::io::ErrorKind::ConnectionAborted.into());
             }
-            let size = timeout(read_timeout, conn1.read(&mut buf)).await?;
+            let size = timeout(read_timeout, conn1_read.read(&mut buf)).await??;
             if size == 0 {
                 break Ok(());
             }
-            timeout(write_timeout, conn2.write_all(&buf[..size])).await?;
+            timeout(write_timeout, conn2_write.write_all(&buf[..size])).await??;
         }
     };
-    let f2 = async {
+    let f2 = async move {
         let mut buf = vec![0; 1600];
         loop {
-            if !on_update_activity() {
+            if !on_update_activity_clone() {
                 break Err(std::io::ErrorKind::ConnectionAborted.into());
             }
-            let size = timeout(read_timeout, conn2_clone.read(&mut buf)).await?;
+            let size = timeout(read_timeout, conn2_read.read(&mut buf)).await??;
             if size == 0 {
                 break Ok(());
             }
-            timeout(write_timeout, conn1_clone.write_all(&buf[..size])).await?;
+            timeout(write_timeout, conn1_write.write_all(&buf[..size])).await??;
         }
     };
-    f1.race(f2).await
+    tokio::select! {
+        result = f1 => result,
+        result = f2 => result,
+    }
 }

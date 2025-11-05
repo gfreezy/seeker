@@ -10,15 +10,14 @@ use std::{
     task::Poll,
 };
 
-use async_std::{
-    io::{Read, Write},
+use nanorand::{tls_rng, Rng};
+use tokio::{
+    io::{AsyncRead, AsyncWrite},
     net::TcpStream,
 };
-use nanorand::{tls_rng, Rng};
 
 use crate::Connection;
 
-#[derive(Clone)]
 pub(crate) struct ObfsHttpTcpStream {
     addr: SocketAddr,
     conn: TcpStream,
@@ -80,20 +79,20 @@ impl ObfsHttpTcpStream {
     }
 }
 
-impl Read for ObfsHttpTcpStream {
+impl AsyncRead for ObfsHttpTcpStream {
     fn poll_read(
         mut self: Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
-        buf: &mut [u8],
-    ) -> std::task::Poll<Result<usize>> {
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> std::task::Poll<Result<()>> {
         {
             let mut recv_buf = self.recv_buf.lock().unwrap();
             // If we have data in the buffer, copy it to the user's buffer.
             if !recv_buf.is_empty() {
-                let consumed = recv_buf.len().min(buf.len());
-                buf[..consumed].copy_from_slice(&recv_buf[..consumed]);
+                let consumed = recv_buf.len().min(buf.remaining());
+                buf.put_slice(&recv_buf[..consumed]);
                 recv_buf.drain(0..consumed);
-                return Poll::Ready(Ok(consumed));
+                return Poll::Ready(Ok(()));
             }
         }
 
@@ -104,26 +103,28 @@ impl Read for ObfsHttpTcpStream {
             recv_buf.resize(1024, 0);
 
             // Read the first response from the server.
-            return match Pin::new(&mut this.conn).poll_read(cx, &mut recv_buf) {
-                Poll::Ready(Ok(total_read_size)) => {
+            let mut read_buf = tokio::io::ReadBuf::new(&mut recv_buf);
+            return match Pin::new(&mut this.conn).poll_read(cx, &mut read_buf) {
+                Poll::Ready(Ok(())) => {
                     this.recvd_first_response.store(true, Ordering::SeqCst);
+                    let total_read_size = read_buf.filled().len();
 
                     // Find the end of the headers.
-                    let index = memchr::memmem::find(&recv_buf, b"\r\n\r\n");
+                    let index = memchr::memmem::find(read_buf.filled(), b"\r\n\r\n");
                     match index {
                         Some(i) => {
                             // Offset of the real data.
                             let content_offset = i + 4;
                             let content_size = total_read_size - content_offset;
-                            let consumed = content_size.min(buf.len());
-                            buf[..consumed].copy_from_slice(
-                                &recv_buf[content_offset..content_offset + consumed],
+                            let consumed = content_size.min(buf.remaining());
+                            buf.put_slice(
+                                &read_buf.filled()[content_offset..content_offset + consumed],
                             );
                             // Remove the copied data from the buffer.
                             recv_buf.drain(0..content_offset + consumed);
                             // Truncate the buffer to the real size.
                             recv_buf.truncate(total_read_size - content_offset - consumed);
-                            Poll::Ready(Ok(consumed))
+                            Poll::Ready(Ok(()))
                         }
                         None => Poll::Ready(Err(ErrorKind::UnexpectedEof.into())),
                     }
@@ -143,7 +144,7 @@ impl Read for ObfsHttpTcpStream {
     }
 }
 
-impl Write for ObfsHttpTcpStream {
+impl AsyncWrite for ObfsHttpTcpStream {
     fn poll_write_vectored(
         mut self: Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
@@ -213,11 +214,11 @@ impl Write for ObfsHttpTcpStream {
         Pin::new(&mut self.conn).poll_flush(cx)
     }
 
-    fn poll_close(
+    fn poll_shutdown(
         mut self: Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Result<()>> {
-        Pin::new(&mut self.conn).poll_close(cx)
+        Pin::new(&mut self.conn).poll_shutdown(cx)
     }
 }
 
@@ -227,14 +228,14 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
-    use async_std::{
-        io::{ReadExt, WriteExt},
+    use tokio::{
+        io::{AsyncReadExt, AsyncWriteExt},
         net::TcpListener,
-        prelude::StreamExt,
-        task::{sleep, spawn},
+        time::sleep,
     };
+    // StreamExt removed as it's not available
 
-    #[async_std::test]
+    #[tokio::test]
     async fn test_obfs_http_connect() {
         const HOST: &str = "baidu.com";
         const REQ: &str = "hello";
@@ -242,9 +243,9 @@ mod tests {
 
         let listener = TcpListener::bind("localhost:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
-        let handle = spawn(async move {
-            while let Some(conn) = listener.incoming().next().await {
-                let mut stream = conn.unwrap();
+        let handle = tokio::task::spawn(async move {
+            loop {
+                let (mut stream, _) = listener.accept().await.unwrap();
                 let mut buf = [0; 1024];
                 let n = stream.read(&mut buf).await.unwrap();
                 let header_end = memchr::memmem::find(&buf, b"\r\n\r\n").unwrap();
@@ -267,12 +268,12 @@ mod tests {
         let n = stream.read(&mut buf).await.unwrap();
         assert_eq!(&buf[..n], RESP.as_bytes());
 
-        let _ = handle.cancel().await;
+        handle.abort();
     }
 
     /// This test use docker so it can only be run in linux x86_64
     #[cfg(all(target_arch = "x86_64", target_env = "gnu"))]
-    #[async_std::test]
+    #[tokio::test]
     async fn test_obfs_docker_http_read_write() {
         use crate::run_obfs_server;
         use std::str::FromStr;
@@ -285,9 +286,9 @@ mod tests {
 
         let listener = TcpListener::bind("0.0.0.0:12345").await.unwrap();
 
-        let handle = spawn(async move {
-            while let Some(conn) = listener.incoming().next().await {
-                let mut stream = conn.unwrap();
+        let handle = tokio::task::spawn(async move {
+            loop {
+                let (mut stream, _) = listener.accept().await.unwrap();
                 let mut buf = [0; 1024];
                 let n = stream.read(&mut buf).await.unwrap();
                 assert_eq!(&buf[..n], REQ.as_bytes());
@@ -310,6 +311,6 @@ mod tests {
         let n = stream.read(&mut buf).await.unwrap();
         assert_eq!(&buf[..n], RESP.as_bytes());
 
-        let _ = handle.cancel().await;
+        handle.abort();
     }
 }

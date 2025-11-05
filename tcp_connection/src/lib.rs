@@ -1,11 +1,11 @@
 mod obfs_http;
 mod obfs_tls;
 
-use async_std::{
-    io::{Read, Write},
+use tokio::{
+    io::{AsyncRead, AsyncWrite},
     net::TcpStream,
 };
-use dyn_clone::DynClone;
+// use dyn_clone::DynClone;
 
 use obfs_http::ObfsHttpTcpStream;
 use obfs_tls::ObfsTlsTcpStream;
@@ -13,18 +13,15 @@ use serde::Deserialize;
 
 use std::{
     fmt::Debug,
-    io::{IoSlice, IoSliceMut, Result},
+    io::{IoSlice, Result},
     net::SocketAddr,
     pin::Pin,
 };
 
-pub trait Connection: Read + Write + Unpin + Send + Sync + DynClone {}
-
-dyn_clone::clone_trait_object!(Connection);
+pub trait Connection: AsyncRead + AsyncWrite + Unpin + Send + Sync {}
 
 /// Combined async reader and writer, `futures 0.3` version.
 /// Note that this struct is only present in `readwrite` if "asyncstd" Cargo feature is enabled.
-#[derive(Clone)]
 pub struct TcpConnection {
     inner: Box<dyn Connection>,
 }
@@ -68,25 +65,17 @@ impl TcpConnection {
     }
 }
 
-impl Read for TcpConnection {
+impl AsyncRead for TcpConnection {
     fn poll_read(
         mut self: Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
-        buf: &mut [u8],
-    ) -> std::task::Poll<Result<usize>> {
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> std::task::Poll<Result<()>> {
         Pin::new(&mut self.inner).poll_read(cx, buf)
-    }
-
-    fn poll_read_vectored(
-        mut self: Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-        bufs: &mut [IoSliceMut<'_>],
-    ) -> std::task::Poll<Result<usize>> {
-        Pin::new(&mut self.inner).poll_read_vectored(cx, bufs)
     }
 }
 
-impl Write for TcpConnection {
+impl AsyncWrite for TcpConnection {
     fn poll_write_vectored(
         mut self: Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
@@ -110,11 +99,11 @@ impl Write for TcpConnection {
         Pin::new(&mut self.inner).poll_flush(cx)
     }
 
-    fn poll_close(
+    fn poll_shutdown(
         mut self: Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Result<()>> {
-        Pin::new(&mut self.inner).poll_close(cx)
+        Pin::new(&mut self.inner).poll_shutdown(cx)
     }
 }
 
