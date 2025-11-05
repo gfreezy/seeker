@@ -1,6 +1,6 @@
 pub mod resolver;
 
-use hickory_resolver::TokioAsyncResolver;
+use hickory_resolver::TokioResolver;
 use config::rule::ProxyRules;
 use hermesdns::DnsUdpServer;
 use resolver::RuleBasedDnsResolver;
@@ -9,7 +9,7 @@ pub async fn create_dns_server(
     listens: Vec<String>,
     bypass_direct: bool,
     rules: ProxyRules,
-    async_resolver: TokioAsyncResolver,
+    async_resolver: TokioResolver,
 ) -> (DnsUdpServer, RuleBasedDnsResolver) {
     let resolver = RuleBasedDnsResolver::new(bypass_direct, rules, async_resolver).await;
     let server = DnsUdpServer::new(listens, Box::new(resolver.clone())).await;
@@ -20,8 +20,10 @@ pub async fn create_dns_server(
 pub(crate) mod tests {
     use super::*;
     use tokio::time;
-    use hickory_resolver::config::{NameServerConfigGroup, ResolverConfig, ResolverOpts};
-    use hickory_resolver::TokioAsyncResolver;
+    use hickory_resolver::config::{NameServerConfig, NameServerConfigGroup, ResolverConfig, ResolverOpts};
+    use hickory_resolver::TokioResolver;
+    use hickory_resolver::name_server::TokioConnectionProvider;
+    use hickory_proto::xfer::Protocol;
     use hermesdns::{DnsClient, DnsNetworkClient, QueryType};
     use std::time::Duration;
 
@@ -37,15 +39,18 @@ pub(crate) mod tests {
         resp.ok().and_then(|p| p.get_random_a())
     }
 
-    pub(crate) async fn new_resolver(ip: String, port: u16) -> TokioAsyncResolver {
-        let name_servers =
-            NameServerConfigGroup::from_ips_clear(&[ip.parse().unwrap()], port, false);
+    pub(crate) async fn new_resolver(ip: String, port: u16) -> TokioResolver {
+        let mut name_servers = NameServerConfigGroup::new();
+        let socket_addr = format!("{ip}:{port}").parse().unwrap();
+        name_servers.push(NameServerConfig::new(socket_addr, Protocol::Udp));
 
         // Construct a new Resolver with default configuration options
-        TokioAsyncResolver::tokio(
+        TokioResolver::builder_with_config(
             ResolverConfig::from_parts(None, Vec::new(), name_servers),
-            ResolverOpts::default(),
+            TokioConnectionProvider::default()
         )
+        .with_options(ResolverOpts::default())
+        .build()
     }
 
     #[test]

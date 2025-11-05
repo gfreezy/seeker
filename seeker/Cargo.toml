@@ -29,6 +29,7 @@ libc = { workspace = true }
 futures-util = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 hickory-resolver = { workspace = true }
+hickory-proto = { workspace = true }
 tokio-util = { workspace = true }
 ureq = { workspace = true, features = ["json"] }
 crypto = { path = "../crypto" }

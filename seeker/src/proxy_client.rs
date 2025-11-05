@@ -11,7 +11,7 @@ use std::net::SocketAddr;
 use tokio::task::JoinHandle;
 use config::rule::Action;
 use config::{Address, Config};
-use hickory_resolver::TokioAsyncResolver;
+use hickory_resolver::TokioResolver;
 use dnsserver::create_dns_server;
 use dnsserver::resolver::RuleBasedDnsResolver;
 use parking_lot::RwLock;
@@ -347,7 +347,7 @@ pub(crate) async fn get_action_for_addr(
 
 async fn run_dns_resolver(
     config: &Config,
-    resolver: TokioAsyncResolver,
+    resolver: TokioResolver,
 ) -> (RuleBasedDnsResolver, JoinHandle<()>) {
     let (dns_server, resolver) = create_dns_server(
         config.dns_listens.clone(),
