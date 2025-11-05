@@ -157,10 +157,7 @@ async fn main() -> anyhow::Result<()> {
     // oneshot channel
     let (tx, mut rx) = tokio::sync::mpsc::channel(1);
     ctrlc::set_handler(move || {
-        let tx = tx.clone();
-        tokio::runtime::Handle::current().spawn(async move {
-            tx.send(()).await.expect("send signal")
-        });
+        let _ = tx.blocking_send(());
     })
     .expect("Error setting Ctrl-C handler");
 
