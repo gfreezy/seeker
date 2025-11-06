@@ -10,6 +10,7 @@ use std::collections::HashMap;
 use std::io::Result;
 use std::io::{Read, Write};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::SystemTime;
@@ -17,6 +18,30 @@ use std::time::SystemTime;
 const BEGIN_PORT: u16 = 50000;
 const END_PORT: u16 = 60000;
 const EXPIRE_SECONDS: u64 = 24 * 60 * 60;
+
+pub struct NatJoinHandle {
+    handle: Option<JoinHandle<()>>,
+    should_quit: Arc<AtomicBool>,
+}
+
+impl NatJoinHandle {
+    pub fn is_finished(&self) -> bool {
+        self.handle
+            .as_ref()
+            .map(|h| h.is_finished())
+            .unwrap_or(false)
+    }
+}
+
+impl Drop for NatJoinHandle {
+    fn drop(&mut self) {
+        self.should_quit.store(true, Ordering::Relaxed);
+        if let Some(handle) = self.handle.take() {
+            handle.join().expect("quit nat join handle");
+        }
+        tracing::info!("nat join handle dropped");
+    }
+}
 
 macro_rules! route_packet {
     ($packet_ty: tt, $ipv4_packet: expr, $session_manager: expr, $relay_addr: expr, $relay_port: expr) => {{
@@ -68,7 +93,7 @@ pub fn run_nat(
     addition_cidrs: &[Ipv4Cidr],
     queue_number: usize,
     threads_per_queue: usize,
-) -> Result<(SessionManager, JoinHandle<()>)> {
+) -> Result<(SessionManager, NatJoinHandle)> {
     const BUF_SIZE: usize = 2000;
 
     // Create TUN device with IPv4 configuration using tun-rs
@@ -113,6 +138,10 @@ pub fn run_nat(
     let session_manager = Arc::new(RwLock::new(InnerSessionManager::new(BEGIN_PORT, END_PORT)));
     let session_manager_clone = session_manager.clone();
 
+    // Create atomic bool to control shutdown
+    let should_quit = Arc::new(AtomicBool::new(false));
+    let should_quit_clone = should_quit.clone();
+
     // 创建内存池
     let pool = Arc::new(Pool::new(100, || vec![0u8; BUF_SIZE]));
 
@@ -137,10 +166,11 @@ pub fn run_nat(
             let rx = rx.clone();
             let processed_tx = processed_tx.clone();
             let sm = session_manager.clone();
+            let should_quit = should_quit_clone.clone();
             thread::Builder::new()
                 .name(format!("tun-nat-worker-{i}"))
                 .spawn(move || {
-                    process_packets(rx, processed_tx, sm, relay_addr, relay_port);
+                    process_packets(rx, processed_tx, sm, relay_addr, relay_port, should_quit);
                     println!("Exit tun-nat-worker-{i} thread");
                 })
                 .expect("Failed to spawn worker thread")
@@ -155,12 +185,16 @@ pub fn run_nat(
         let pool_clone = pool.clone();
         let tx_clone = tx.clone();
         let mut tun_clone = tun_queue.clone();
+        let should_quit_read = should_quit_clone.clone();
 
         // Read thread for each queue
         let read_handle = thread::Builder::new()
             .name(format!("tun-nat-read-{i}"))
             .spawn(move || {
                 loop {
+                    if should_quit_read.load(Ordering::Relaxed) {
+                        break;
+                    }
                     let mut buf = pool_clone.pull_owned(|| vec![0; BUF_SIZE]);
                     // 从 pool 取出的 buf 不确定是多少，需要重新设置长度。因为 pool 里面的 buf 固定是 2000，所以这里 unsafe 设置长度是 safe 的。
                     unsafe {
@@ -198,17 +232,28 @@ pub fn run_nat(
         // Write thread for each queue
         let processed_rx_clone = processed_rx.clone();
         let mut tun_clone = tun_queue.clone();
+        let should_quit_write = should_quit_clone.clone();
 
         let write_handle = thread::Builder::new()
             .name(format!("tun-nat-write-{i}"))
             .spawn(move || {
-                while let Ok(processed_buf) = processed_rx_clone.recv() {
-                    let ret = tun_clone.write(&processed_buf);
-                    if let Err(err) = ret {
-                        eprintln!("tun_nat: write packet error: {err:?}");
+                loop {
+                    if should_quit_write.load(Ordering::Relaxed) {
+                        break;
+                    }
+                    match processed_rx_clone.recv() {
+                        Ok(processed_buf) => {
+                            let ret = tun_clone.write(&processed_buf);
+                            if let Err(err) = ret {
+                                eprintln!("tun_nat: write packet error: {err:?}");
+                            }
+                        }
+                        Err(_) => {
+                            // 通道已关闭，退出循环
+                            break;
+                        }
                     }
                 }
-                // 通道已关闭，退出循环
                 println!("Exit tun-nat-write-{i} thread.");
             })
             .expect("Failed to spawn write thread");
@@ -240,7 +285,10 @@ pub fn run_nat(
         SessionManager {
             inner: session_manager_clone,
         },
-        handle,
+        NatJoinHandle {
+            handle: Some(handle),
+            should_quit,
+        },
     ))
 }
 
@@ -250,8 +298,13 @@ fn process_packets(
     session_manager: Arc<RwLock<InnerSessionManager>>,
     relay_addr: Ipv4Addr,
     relay_port: u16,
+    should_quit: Arc<AtomicBool>,
 ) {
-    while let Ok(mut buf) = rx.recv() {
+    while !should_quit.load(Ordering::Relaxed) {
+        let mut buf = match rx.recv() {
+            Ok(buf) => buf,
+            Err(_) => break,
+        };
         let Ok(mut ipv4_packet) = Ipv4Packet::new_checked(&mut *buf) else {
             tracing::error!("tun_nat: invalid ipv4 packet");
             continue;

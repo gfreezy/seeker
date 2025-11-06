@@ -47,7 +47,7 @@ impl ProxyClient {
         let additional_cidrs = config.rules.additional_cidrs();
 
         let (session_manager, nat_join_handle) = if !config.redir_mode {
-            let (session_manager, blocking_join_handle) = run_nat(
+            let (session_manager, nat_join_handle) = run_nat(
                 &config.tun_name,
                 config.tun_ip,
                 config.tun_cidr,
@@ -57,11 +57,12 @@ impl ProxyClient {
                 config.threads_per_queue,
             )
             .expect("run nat");
-            let nat_join_handle =
-                tokio::task::spawn_blocking(move || match blocking_join_handle.join() {
-                    Ok(()) => tracing::info!("nat stopped"),
-                    Err(e) => tracing::error!("nat stopped with error: {:?}", e),
-                });
+
+            let nat_join_handle = tokio::task::spawn(async move {
+                while !nat_join_handle.is_finished() {
+                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                }
+            });
             (Some(session_manager), Some(nat_join_handle))
         } else {
             (None, None)

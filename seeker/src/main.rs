@@ -155,9 +155,9 @@ async fn main() -> anyhow::Result<()> {
     };
     eprint!(".");
     // oneshot channel
-    let (tx, mut rx) = tokio::sync::mpsc::channel(1);
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
     ctrlc::set_handler(move || {
-        let _ = tx.blocking_send(());
+        let _ = tx.send(());
     })
     .expect("Error setting Ctrl-C handler");
 
