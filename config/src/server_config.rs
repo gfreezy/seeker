@@ -34,22 +34,131 @@ pub enum ServerProtocol {
 }
 
 /// Configuration for a server
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ServerConfig {
     /// Server address
     name: String,
-    #[serde(alias = "server")]
-    #[serde(with = "server_addr")]
     addr: Address,
-    #[serde(alias = "type")]
     protocol: ServerProtocol,
     username: Option<String>,
     password: Option<String>,
-    #[serde(default)]
-    #[serde(alias = "cipher")]
-    #[serde(with = "cipher_type")]
     method: Option<CipherType>,
     obfs: Option<Obfs>,
+}
+
+// Internal struct for deserializing both Seeker and Clash formats
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum ServerConfigHelper {
+    // Clash format with separate server and port (must come first to avoid conflicts)
+    Clash {
+        name: String,
+        #[serde(alias = "type")]
+        protocol: ClashProtocol,
+        server: String,
+        port: u16,
+        username: Option<String>,
+        password: Option<String>,
+        #[serde(default)]
+        #[serde(alias = "cipher")]
+        #[serde(with = "cipher_type")]
+        method: Option<CipherType>,
+        #[serde(default)]
+        obfs: Option<Obfs>,
+        // Clash-specific fields we ignore
+        #[serde(default)]
+        _udp: Option<bool>,
+    },
+    // Seeker format
+    Seeker {
+        name: String,
+        #[serde(alias = "server")]
+        #[serde(with = "server_addr")]
+        addr: Address,
+        #[serde(alias = "type")]
+        protocol: ServerProtocol,
+        username: Option<String>,
+        password: Option<String>,
+        #[serde(default)]
+        #[serde(alias = "cipher")]
+        #[serde(with = "cipher_type")]
+        method: Option<CipherType>,
+        #[serde(default)]
+        obfs: Option<Obfs>,
+    },
+}
+
+// Clash protocol types map to our ServerProtocol
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum ClashProtocol {
+    Ss,
+    Socks5,
+    Http,
+    Https,
+}
+
+impl From<ClashProtocol> for ServerProtocol {
+    fn from(clash: ClashProtocol) -> Self {
+        match clash {
+            ClashProtocol::Ss => ServerProtocol::Shadowsocks,
+            ClashProtocol::Socks5 => ServerProtocol::Socks5,
+            ClashProtocol::Http => ServerProtocol::Http,
+            ClashProtocol::Https => ServerProtocol::Https,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for ServerConfig {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        use serde::de::Error;
+
+        match ServerConfigHelper::deserialize(deserializer)? {
+            ServerConfigHelper::Clash {
+                name,
+                protocol,
+                server,
+                port,
+                username,
+                password,
+                method,
+                obfs,
+                _udp: _,
+            } => {
+                let addr = Address::from_str(&format!("{server}:{port}"))
+                    .map_err(|_| Error::custom(format!("invalid server address: {server}:{port}")))?;
+                Ok(ServerConfig {
+                    name,
+                    addr,
+                    protocol: protocol.into(),
+                    username,
+                    password,
+                    method,
+                    obfs,
+                })
+            }
+            ServerConfigHelper::Seeker {
+                name,
+                addr,
+                protocol,
+                username,
+                password,
+                method,
+                obfs,
+            } => Ok(ServerConfig {
+                name,
+                addr,
+                protocol,
+                username,
+                password,
+                method,
+                obfs,
+            }),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
@@ -393,5 +502,206 @@ mod tests {
         assert_eq!(server_config.name, "[SS] Hong Kong-02");
         assert_eq!(server_config.protocol(), ServerProtocol::Shadowsocks);
         Ok(())
+    }
+
+    #[test]
+    fn test_parse_clash_format() {
+        let yaml = r#"
+name: "[SS] Hong Kong-20"
+type: ss
+server: example.com
+port: 56020
+cipher: chacha20-ietf-poly1305
+password: password
+udp: true
+"#;
+        let server_config: ServerConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(server_config.name(), "[SS] Hong Kong-20");
+        assert_eq!(server_config.protocol(), ServerProtocol::Shadowsocks);
+        assert_eq!(
+            server_config.addr(),
+            &Address::from_str("example.com:56020").unwrap()
+        );
+        assert_eq!(
+            server_config.method(),
+            Some(CipherType::ChaCha20IetfPoly1305)
+        );
+        assert_eq!(server_config.password(), Some("password"));
+    }
+
+    #[test]
+    fn test_parse_seeker_format() {
+        let yaml = r#"
+name: server-ss1
+addr: domain-to-ss-server.com:8388
+protocol: Shadowsocks
+method: chacha20-ietf
+password: password
+"#;
+        let server_config: ServerConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(server_config.name(), "server-ss1");
+        assert_eq!(server_config.protocol(), ServerProtocol::Shadowsocks);
+        assert_eq!(
+            server_config.addr(),
+            &Address::from_str("domain-to-ss-server.com:8388").unwrap()
+        );
+        assert_eq!(server_config.method(), Some(CipherType::ChaCha20Ietf));
+        assert_eq!(server_config.password(), Some("password"));
+    }
+
+    #[test]
+    fn test_parse_clash_socks5_format() {
+        let yaml = r#"
+name: "My SOCKS5"
+type: socks5
+server: 127.0.0.1
+port: 1080
+username: myuser
+password: mypass
+"#;
+        let server_config: ServerConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(server_config.name(), "My SOCKS5");
+        assert_eq!(server_config.protocol(), ServerProtocol::Socks5);
+        assert_eq!(
+            server_config.addr(),
+            &Address::from_str("127.0.0.1:1080").unwrap()
+        );
+        assert_eq!(server_config.username(), Some("myuser"));
+        assert_eq!(server_config.password(), Some("mypass"));
+    }
+
+    #[test]
+    fn test_parse_seeker_format_with_server_alias() {
+        // Test using 'server' alias instead of 'addr'
+        let yaml = r#"
+name: server-ss-alias
+server: example.com:8388
+protocol: Shadowsocks
+method: aes-256-gcm
+password: mypassword
+"#;
+        let server_config: ServerConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(server_config.name(), "server-ss-alias");
+        assert_eq!(server_config.protocol(), ServerProtocol::Shadowsocks);
+        assert_eq!(
+            server_config.addr(),
+            &Address::from_str("example.com:8388").unwrap()
+        );
+        assert_eq!(server_config.method(), Some(CipherType::Aes256Gcm));
+        assert_eq!(server_config.password(), Some("mypassword"));
+    }
+
+    #[test]
+    fn test_parse_seeker_format_with_type_alias() {
+        // Test using 'type' alias instead of 'protocol'
+        let yaml = r#"
+name: server-http
+addr: 127.0.0.1:1087
+type: Http
+username: user
+password: pass
+"#;
+        let server_config: ServerConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(server_config.name(), "server-http");
+        assert_eq!(server_config.protocol(), ServerProtocol::Http);
+        assert_eq!(
+            server_config.addr(),
+            &Address::from_str("127.0.0.1:1087").unwrap()
+        );
+        assert_eq!(server_config.username(), Some("user"));
+        assert_eq!(server_config.password(), Some("pass"));
+    }
+
+    #[test]
+    fn test_parse_seeker_format_with_cipher_alias() {
+        // Test using 'cipher' alias instead of 'method'
+        let yaml = r#"
+name: server-ss-cipher
+addr: server.example.com:8388
+protocol: Shadowsocks
+cipher: chacha20-ietf-poly1305
+password: secret
+"#;
+        let server_config: ServerConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(server_config.name(), "server-ss-cipher");
+        assert_eq!(server_config.protocol(), ServerProtocol::Shadowsocks);
+        assert_eq!(
+            server_config.addr(),
+            &Address::from_str("server.example.com:8388").unwrap()
+        );
+        assert_eq!(
+            server_config.method(),
+            Some(CipherType::ChaCha20IetfPoly1305)
+        );
+        assert_eq!(server_config.password(), Some("secret"));
+    }
+
+    #[test]
+    fn test_parse_seeker_format_with_all_aliases() {
+        // Test using all aliases together
+        let yaml = r#"
+name: server-all-alias
+server: test.com:9999
+type: Shadowsocks
+cipher: aes-128-gcm
+password: test123
+"#;
+        let server_config: ServerConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(server_config.name(), "server-all-alias");
+        assert_eq!(server_config.protocol(), ServerProtocol::Shadowsocks);
+        assert_eq!(
+            server_config.addr(),
+            &Address::from_str("test.com:9999").unwrap()
+        );
+        assert_eq!(server_config.method(), Some(CipherType::Aes128Gcm));
+        assert_eq!(server_config.password(), Some("test123"));
+    }
+
+    #[test]
+    fn test_parse_mixed_aliases_and_original() {
+        // Test mixing aliases and original field names
+        let yaml = r#"
+name: server-mixed
+server: mixed.com:7777
+protocol: Shadowsocks
+cipher: aes-256-gcm
+password: mixed123
+"#;
+        let server_config: ServerConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(server_config.name(), "server-mixed");
+        assert_eq!(server_config.protocol(), ServerProtocol::Shadowsocks);
+        assert_eq!(
+            server_config.addr(),
+            &Address::from_str("mixed.com:7777").unwrap()
+        );
+        assert_eq!(server_config.method(), Some(CipherType::Aes256Gcm));
+        assert_eq!(server_config.password(), Some("mixed123"));
+    }
+
+    #[test]
+    fn test_parse_protocol_aliases() {
+        // Test protocol alias variations
+        let test_cases = vec![
+            ("http", ServerProtocol::Http),
+            ("https", ServerProtocol::Https),
+            ("socks5", ServerProtocol::Socks5),
+            ("ss", ServerProtocol::Shadowsocks),
+        ];
+
+        for (alias, expected) in test_cases {
+            let yaml = format!(
+                r#"
+name: test-{alias}
+addr: 127.0.0.1:8080
+protocol: {alias}
+"#
+            );
+            let server_config: ServerConfig = serde_yaml::from_str(&yaml).unwrap();
+            assert_eq!(
+                server_config.protocol(),
+                expected,
+                "Failed for alias: {alias}"
+            );
+        }
     }
 }
