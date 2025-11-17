@@ -62,13 +62,24 @@ ping_urls:
     port: 80
     path: /
 
-# ss 订阅地址，启动时自动拉群配置，并将配置的服务器地址自动加入服务器列表
-# 可以通过 `./seeker -c config.yml --encrypt --key password` 命令来生成加密后的配置。
-# 通过 `./seeker --config-url http://addr-to-ss-subscribe-url.com --key password` 命令来读取远程配置启动。
+# SS 订阅地址，启动时自动拉取配置，并将配置的服务器地址自动加入服务器列表
+# 订阅 URL 返回的内容必须是 Base64 编码的文本，解码后每行一个 ss:// 格式的 URL
+# 示例：https://your-ss-provider.com/subscribe
 remote_config_urls:
   - https://addr-to-ss-subscribe-url.com
 
+# 注意：remote_config_urls 和命令行的 --config-url 是不同的功能：
+# - remote_config_urls: 订阅 SS 服务器列表（Base64 编码的 ss:// URL）
+# - --config-url: 加载完整的加密配置文件（需配合 --key 参数）
+#   生成加密配置：./seeker --config config.yml --encrypt --key password
+#   使用加密配置：./seeker --config-url https://example.com/config --key password
+
 # 服务器列表
+# 支持两种格式：
+# 1. Seeker 原生格式（使用 servers）
+# 2. Clash 格式（使用 proxies，与 servers 等价）
+# 两种格式可以混合使用
+
 servers:
   - name: server-http
     addr: 127.0.0.1:1087  # 替换成 http 代理的地址
@@ -78,9 +89,9 @@ servers:
     protocol: Http
   - name: server-ss1
     addr: domain-to-ss-server.com # 替换成 ss 服务器的地址
-    method: chacha20-ietf
+    method: chacha20-ietf         # 也可以使用 cipher
     password: password
-    protocol: Shadowsocks
+    protocol: Shadowsocks         # 也可以使用 type
   - name: server-ss2
     addr: 128.113.23.12:12312
     method: chacha20-ietf
@@ -89,6 +100,22 @@ servers:
     obfs:  # 不设置默认不使用 obfs
       mode: Http  # 目前只支持 Http
       host: c61be5399e.microsoft.com
+
+# Clash 格式示例（与上面的 servers 等价，可以混合使用）
+# proxies:
+#   - name: "[SS] Hong Kong"
+#     type: ss                    # 支持: ss, socks5, http, https
+#     server: example.com         # 服务器地址（不含端口）
+#     port: 56020                 # 端口号
+#     cipher: chacha20-ietf-poly1305  # 加密方式
+#     password: your-password
+#     udp: true                   # 可选，会被忽略
+#   - name: "SOCKS5 Proxy"
+#     type: socks5
+#     server: 127.0.0.1
+#     port: 1080
+#     username: user              # 可选
+#     password: pass              # 可选
 
 # 代理组，可以指定多个代理组，每个代理组可以指定多个代理服务器。
 proxy_groups:
