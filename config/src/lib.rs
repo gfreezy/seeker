@@ -505,4 +505,126 @@ mod tests {
         assert_eq!(servers.len(), 13);
         Ok(())
     }
+
+    #[test]
+    fn test_parse_clash_proxies_format() {
+        let yaml = r#"
+verbose: false
+dns_start_ip: 11.0.0.10
+dns_servers:
+  - 223.5.5.5:53
+dns_timeout: 1s
+tun_bypass_direct: true
+redir_mode: false
+queue_number: 2
+threads_per_queue: 3
+tun_name: utun4
+tun_ip: 11.0.0.1
+tun_cidr: 11.0.0.0/16
+dns_listens:
+  - 0.0.0.0:53
+gateway_mode: false
+probe_timeout: 200ms
+ping_timeout: 2s
+connect_timeout: 2s
+read_timeout: 300s
+write_timeout: 300s
+max_connect_errors: 2
+ping_urls:
+  - host: www.google.com
+    port: 80
+    path: /
+
+proxies:
+  - name: "[SS] Hong Kong-20"
+    type: ss
+    server: fbxt0765gh0pielsss.ftisthebest.com
+    port: 56020
+    cipher: chacha20-ietf-poly1305
+    password: e1v3fy6lnmh
+    udp: true
+  - name: "SOCKS5 Proxy"
+    type: socks5
+    server: 127.0.0.1
+    port: 1080
+
+proxy_groups:
+  - name: proxy-group-1
+    proxies:
+      - "[SS] Hong Kong-20"
+      - "SOCKS5 Proxy"
+
+rules:
+  - 'DOMAIN,google.com,PROXY(proxy-group-1)'
+  - 'MATCH,DIRECT'
+"#;
+        let config: Config = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(config.servers.len(), 2);
+        assert_eq!(config.servers[0].name(), "[SS] Hong Kong-20");
+        assert_eq!(config.servers[0].protocol(), ServerProtocol::Shadowsocks);
+        assert_eq!(config.servers[1].name(), "SOCKS5 Proxy");
+        assert_eq!(config.servers[1].protocol(), ServerProtocol::Socks5);
+    }
+
+    #[test]
+    fn test_parse_servers_with_mixed_formats() {
+        // Test parsing a single servers list with both Seeker and Clash formats
+        let yaml = r#"
+verbose: false
+dns_start_ip: 11.0.0.10
+dns_servers:
+  - 223.5.5.5:53
+dns_timeout: 1s
+tun_bypass_direct: true
+redir_mode: false
+queue_number: 2
+threads_per_queue: 3
+tun_name: utun4
+tun_ip: 11.0.0.1
+tun_cidr: 11.0.0.0/16
+dns_listens:
+  - 0.0.0.0:53
+gateway_mode: false
+probe_timeout: 200ms
+ping_timeout: 2s
+connect_timeout: 2s
+read_timeout: 300s
+write_timeout: 300s
+max_connect_errors: 2
+ping_urls:
+  - host: www.google.com
+    port: 80
+    path: /
+
+servers:
+  - name: server-ss1
+    addr: domain-to-ss-server.com:8388
+    protocol: Shadowsocks
+    method: chacha20-ietf
+    password: password
+  - name: "[SS] Hong Kong-20"
+    type: ss
+    server: example.com
+    port: 56020
+    cipher: chacha20-ietf-poly1305
+    password: e1v3fy6lnmh
+
+proxy_groups:
+  - name: proxy-group-1
+    proxies:
+      - server-ss1
+      - "[SS] Hong Kong-20"
+
+rules:
+  - 'DOMAIN,google.com,PROXY(proxy-group-1)'
+  - 'MATCH,DIRECT'
+"#;
+        let config: Config = serde_yaml::from_str(yaml).unwrap();
+        // Both formats can be in the same list
+        assert_eq!(config.servers.len(), 2);
+        assert_eq!(config.servers[0].name(), "server-ss1");
+        assert_eq!(config.servers[0].protocol(), ServerProtocol::Shadowsocks);
+        assert_eq!(config.servers[1].name(), "[SS] Hong Kong-20");
+        assert_eq!(config.servers[1].protocol(), ServerProtocol::Shadowsocks);
+    }
 }

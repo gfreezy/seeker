@@ -79,6 +79,129 @@ sudo seeker --config path/to/config.yml --encrypt --key encrypt-key
 * `seeker` 支持 socks5 代理、http 代理和 shadowsocks 代理。优先级为 socks5 代理 > shadowsocks 代理 > http 代理。
 * `redir` 模式下使用 iptables 的 redirect 功能，只支持 tcp 流量。
 
+=== 服务器配置格式
+
+`seeker` 支持两种服务器配置格式：
+
+1. **Seeker 原生格式**（使用 `servers` 字段）:
++
+[source,yaml]
+----
+servers:
+  - name: server-ss1
+    addr: domain-to-ss-server.com:8388  # 也可以使用 server
+    protocol: Shadowsocks                # 也可以使用 type
+    method: chacha20-ietf                # 也可以使用 cipher
+    password: password
+----
+
+2. **Clash 格式**（使用 `proxies` 字段，与 `servers` 等价）:
++
+[source,yaml]
+----
+proxies:
+  - name: "[SS] Hong Kong-20"
+    type: ss                             # 支持: ss, socks5, http, https
+    server: fbxt0765gh0pielsss.ftisthebest.com
+    port: 56020
+    cipher: chacha20-ietf-poly1305
+    password: e1v3fy6lnmh
+    udp: true                            # 可选字段，会被忽略
+----
+
+两种格式可以混合使用，在同一个 `servers` (或 `proxies`) 列表中可以包含两种格式的配置。
+
+注意：`servers` 和 `proxies` 是同一个字段的不同名称（别名），不能在同一个配置文件中同时使用两者。
+
+=== 远程配置
+
+`seeker` 提供两种方式从远程加载配置：
+
+==== 1. SS 订阅链接 (remote_config_urls)
+
+在配置文件中使用 `remote_config_urls` 字段，从远程 URL 加载 Shadowsocks 服务器列表。
+
+**配置方式：**
++
+[source,yaml]
+----
+# 在配置文件中添加 SS 订阅地址
+remote_config_urls:
+  - https://your-ss-provider.com/subscription-url-1
+  - https://your-ss-provider.com/subscription-url-2
+----
+
+**订阅格式要求：**
+
+* 远程 URL 返回的内容必须是 **Base64 编码**的文本
+* Base64 解码后，每行一个 `ss://` 格式的 Shadowsocks URL
+* 示例原始内容（解码前）：
++
+[source]
+----
+c3M6Ly9ZV1Z6TFRJMU5pMW5ZMjA2TVRFeEB0ZXN0LnNzLmNvbTozMDAwMi8jSEsrMDE=
+c3M6Ly9ZV1Z6TFRJMU5pMW5ZMjA2TVRFeEB0ZXN0LnNzLmNvbTozMDAwMy8jSEsrMDI=
+----
+* 解码后内容：
++
+[source]
+----
+ss://YWVzLTI1Ni1nY206MTEx@test.ss.com:30002/#HK+01
+ss://YWVzLTI1Ni1nY206MTEx@test.ss.com:30003/#HK+02
+----
+
+**工作流程：**
+
+. `seeker` 启动时自动从 `remote_config_urls` 拉取订阅内容
+. Base64 解码后，解析每个 `ss://` URL 为服务器配置
+. 远程订阅的服务器会自动添加到本地 `servers` 列表中
+. 本地配置和远程订阅的服务器会合并使用
+
+**示例：**
++
+[source,yaml]
+----
+# config.yml
+dns_start_ip: 11.0.0.10
+tun_ip: 11.0.0.1
+# ... 其他配置 ...
+
+# 本地服务器配置
+servers:
+  - name: local-socks5
+    addr: 127.0.0.1:1080
+    protocol: Socks5
+
+# SS 订阅链接（会自动拉取并合并到 servers 中）
+remote_config_urls:
+  - https://your-ss-provider.com/subscribe
+----
+
+==== 2. 加密配置文件 (--config-url)
+
+使用命令行参数从远程 URL 加载完整的加密配置文件（整个 YAML 配置）。
+
+**使用方式：**
++
+[source,bash]
+----
+# 1. 生成加密配置（使用 ChaCha20-IETF 加密）
+seeker --config config.yml --encrypt --key mypassword > encrypted-config.txt
+
+# 2. 将 encrypted-config.txt 上传到你的服务器
+# 例如：https://your-server.com/encrypted-config.txt
+
+# 3. 使用远程加密配置启动 seeker
+sudo seeker --config-url https://your-server.com/encrypted-config.txt --key mypassword
+----
+
+**特点：**
+
+* 使用 **ChaCha20-IETF** 加密算法保护配置内容
+* 必须配合 `--key` 参数使用
+* 远程配置是完整的 YAML 配置文件（加密后 Base64 编码）
+* 适合需要保密配置的场景
+
 
 === Sample Config
 https://github.com/gfreezy/seeker/blob/master/sample_config.yml
