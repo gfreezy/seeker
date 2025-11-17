@@ -22,6 +22,7 @@ const EXPIRE_SECONDS: u64 = 24 * 60 * 60;
 pub struct NatJoinHandle {
     handle: Option<JoinHandle<()>>,
     should_quit: Arc<AtomicBool>,
+    tun: TunDevice,
 }
 
 impl NatJoinHandle {
@@ -36,6 +37,7 @@ impl NatJoinHandle {
 impl Drop for NatJoinHandle {
     fn drop(&mut self) {
         self.should_quit.store(true, Ordering::Relaxed);
+        self.tun.trigger_interrupt().expect("trigger interrupt");
         if let Some(handle) = self.handle.take() {
             handle.join().expect("quit nat join handle");
         }
@@ -158,7 +160,7 @@ pub fn run_nat(
     let mut tun_queues = (0..(queue_num - 1))
         .map(|_| tun.new_queue())
         .collect::<Result<Vec<_>>>()?;
-    tun_queues.push(tun);
+    tun_queues.push(tun.clone());
     // 创建处理线程
     let num_workers = queue_num * threads_per_queue;
     let workers: Vec<_> = (0..num_workers)
@@ -170,8 +172,9 @@ pub fn run_nat(
             thread::Builder::new()
                 .name(format!("tun-nat-worker-{i}"))
                 .spawn(move || {
+                    // println!("Start tun-nat-worker-{i} thread.");
                     process_packets(rx, processed_tx, sm, relay_addr, relay_port, should_quit);
-                    println!("Exit tun-nat-worker-{i} thread");
+                    // println!("Exit tun-nat-worker-{i} thread");
                 })
                 .expect("Failed to spawn worker thread")
         })
@@ -191,6 +194,7 @@ pub fn run_nat(
         let read_handle = thread::Builder::new()
             .name(format!("tun-nat-read-{i}"))
             .spawn(move || {
+                // println!("Start tun-nat-read-{i} thread.");
                 loop {
                     if should_quit_read.load(Ordering::Relaxed) {
                         break;
@@ -206,6 +210,9 @@ pub fn run_nat(
                             break;
                         }
                         Ok(size) => size,
+                        Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {
+                            continue;
+                        }
                         Err(e) => {
                             eprintln!("tun read error: {e:?}");
                             continue;
@@ -223,7 +230,7 @@ pub fn run_nat(
 
                 drop(tx_clone); // 关闭发送端，通知所有工作线程退出
 
-                println!("Exit tun-nat-read-{i} thread.");
+                // println!("Exit tun-nat-read-{i} thread.");
             })
             .expect("Failed to spawn read thread");
 
@@ -237,6 +244,7 @@ pub fn run_nat(
         let write_handle = thread::Builder::new()
             .name(format!("tun-nat-write-{i}"))
             .spawn(move || {
+                // println!("Start tun-nat-write-{i} thread.");
                 loop {
                     if should_quit_write.load(Ordering::Relaxed) {
                         break;
@@ -245,7 +253,9 @@ pub fn run_nat(
                         Ok(processed_buf) => {
                             let ret = tun_clone.write(&processed_buf);
                             if let Err(err) = ret {
-                                eprintln!("tun_nat: write packet error: {err:?}");
+                                if err.kind() != std::io::ErrorKind::Interrupted {
+                                    eprintln!("tun_nat: write packet error: {err:?}");
+                                }
                             }
                         }
                         Err(_) => {
@@ -254,7 +264,7 @@ pub fn run_nat(
                         }
                     }
                 }
-                println!("Exit tun-nat-write-{i} thread.");
+                // println!("Exit tun-nat-write-{i} thread.");
             })
             .expect("Failed to spawn write thread");
 
@@ -277,7 +287,7 @@ pub fn run_nat(
                 write_handle.join().expect("Failed to join write thread");
             }
 
-            println!("All tun-nat threads have exited.");
+            // println!("All tun-nat threads have exited.");
         })
         .expect("Failed to spawn main thread");
 
@@ -288,6 +298,7 @@ pub fn run_nat(
         NatJoinHandle {
             handle: Some(handle),
             should_quit,
+            tun,
         },
     ))
 }
