@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::io::Result;
 
 fn to_io_error(e: ProcError) -> std::io::Error {
-    std::io::Error::new(std::io::ErrorKind::Other, e)
+    std::io::Error::other(e)
 }
 pub fn list_system_proc_socks() -> Result<HashMap<i32, Vec<SocketInfo>>> {
     _list_system_proc_socks().map_err(to_io_error)

@@ -1,12 +1,13 @@
 use std::io::{Read, Result, Write};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::sync::Arc;
-use tun_rs::{DeviceBuilder, SyncDevice};
+use tun_rs::{DeviceBuilder, InterruptEvent, SyncDevice};
 
 /// A wrapper around tun-rs SyncDevice that provides compatibility with the original TunSocket interface
 pub struct TunDevice {
     device: Arc<SyncDevice>,
     name: String,
+    interrupt_event: Arc<InterruptEvent>,
 }
 
 impl Clone for TunDevice {
@@ -14,6 +15,7 @@ impl Clone for TunDevice {
         TunDevice {
             device: Arc::clone(&self.device),
             name: self.name.clone(),
+            interrupt_event: Arc::clone(&self.interrupt_event),
         }
     }
 }
@@ -33,6 +35,7 @@ impl TunDevice {
         Ok(TunDevice {
             device: Arc::new(device),
             name: actual_name,
+            interrupt_event: Arc::new(InterruptEvent::new()?),
         })
     }
 
@@ -56,6 +59,7 @@ impl TunDevice {
         Ok(TunDevice {
             device: Arc::new(device),
             name: actual_name,
+            interrupt_event: Arc::new(InterruptEvent::new()?),
         })
     }
 
@@ -74,6 +78,7 @@ impl TunDevice {
         Ok(TunDevice {
             device: Arc::new(device),
             name: actual_name,
+            interrupt_event: Arc::new(InterruptEvent::new()?),
         })
     }
 
@@ -92,6 +97,7 @@ impl TunDevice {
         Ok(TunDevice {
             device: Arc::new(device),
             name: actual_name,
+            interrupt_event: Arc::new(InterruptEvent::new()?),
         })
     }
 
@@ -103,7 +109,20 @@ impl TunDevice {
         Ok(TunDevice {
             device: new_device,
             name: self.name.clone(),
+            interrupt_event: Arc::clone(&self.interrupt_event),
         })
+    }
+
+    /// Trigger the interrupt event, wake up the thread that is waiting on read()
+    pub fn trigger_interrupt(&self) -> Result<()> {
+        self.interrupt_event.reset()?;
+        self.interrupt_event.trigger()?;
+        Ok(())
+    }
+
+    /// Get the interrupt event
+    pub fn interrupt_event(&self) -> Arc<InterruptEvent> {
+        Arc::clone(&self.interrupt_event)
     }
 
     /// Get the name of the TUN device
@@ -182,13 +201,13 @@ impl TunDevice {
 
 impl Read for TunDevice {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
-        self.device.recv(buf)
+        self.device.recv_intr(buf, &self.interrupt_event)
     }
 }
 
 impl Write for TunDevice {
     fn write(&mut self, buf: &[u8]) -> Result<usize> {
-        self.device.send(buf)
+        self.device.send_intr(buf, &self.interrupt_event)
     }
 
     fn flush(&mut self) -> Result<()> {
@@ -198,13 +217,13 @@ impl Write for TunDevice {
 
 impl Read for &TunDevice {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
-        self.device.recv(buf)
+        self.device.recv_intr(buf, &self.interrupt_event)
     }
 }
 
 impl Write for &TunDevice {
     fn write(&mut self, buf: &[u8]) -> Result<usize> {
-        self.device.send(buf)
+        self.device.send_intr(buf, &self.interrupt_event)
     }
 
     fn flush(&mut self) -> Result<()> {

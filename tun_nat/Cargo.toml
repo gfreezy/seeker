@@ -7,7 +7,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-tun-rs = "2.5.7"
+tun-rs = { version = "2.5.7", features = ["interruptible"]}
 route_manager = "0.2.6"
 sysconfig = { path = "../sysconfig" }
 parking_lot = { workspace = true }
