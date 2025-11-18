@@ -1,5 +1,6 @@
 use crate::REDIR_LISTEN_PORT;
 use crate::dns_client::DnsClient;
+use crate::network_monitor::spawn_network_monitor;
 use crate::probe_connectivity::ProbeConnectivity;
 use crate::relay_tcp_stream::relay_tcp_stream;
 use crate::relay_udp_socket::relay_udp_socket;
@@ -8,6 +9,7 @@ use config::rule::Action;
 use config::{Address, Config};
 use dnsserver::create_dns_server;
 use dnsserver::resolver::RuleBasedDnsResolver;
+use futures_util::FutureExt;
 use hickory_resolver::TokioResolver;
 use parking_lot::RwLock;
 use std::collections::HashMap;
@@ -15,6 +17,7 @@ use std::future::pending;
 use std::io::{Error, Result};
 use std::net::SocketAddr;
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
+use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use tokio::time::timeout;
 
@@ -40,6 +43,7 @@ pub struct ProxyClient {
     nat_join_handle: Option<JoinHandle<()>>,
     dns_server_join_handle: Option<JoinHandle<()>>,
     chooser_join_handle: Option<JoinHandle<()>>,
+    network_change_rx: Option<mpsc::UnboundedReceiver<()>>,
 }
 
 impl ProxyClient {
@@ -83,6 +87,10 @@ impl ProxyClient {
                 .unwrap()
         });
 
+        // Start network monitor
+        let (network_change_tx, network_change_rx) = mpsc::unbounded_channel();
+        spawn_network_monitor(network_change_tx);
+
         Self {
             resolver,
             connectivity: ProbeConnectivity::new(chooser.clone(), config.probe_timeout),
@@ -95,6 +103,7 @@ impl ProxyClient {
             nat_join_handle,
             dns_server_join_handle: Some(dns_server_join_handle),
             chooser_join_handle: Some(chooser_join_handle),
+            network_change_rx: Some(network_change_rx),
         }
     }
 
@@ -184,6 +193,10 @@ impl ProxyClient {
         let dns_server_join_handle = self.dns_server_join_handle.take();
         let nat_join_handle = self.nat_join_handle.take();
 
+        // Clone references needed for network change handler
+        let server_chooser = self.server_chooser.clone();
+        let udp_manager = self.udp_manager.clone();
+
         let chooser_task = async move {
             if let Some(chooser_join_handle) = chooser_join_handle {
                 chooser_join_handle.await.unwrap();
@@ -211,6 +224,24 @@ impl ProxyClient {
             Ok::<(), std::io::Error>(())
         };
 
+        let network_change_task = if let Some(mut network_change_rx) = self.network_change_rx.take() {
+            async move {
+                while let Some(()) = network_change_rx.recv().await {
+                    println!("Network change detected, resetting all connections");
+
+                    // Reset all server choosers
+                    server_chooser.reset_all();
+
+                    // Clear UDP manager
+                    udp_manager.write().clear();
+
+                    tracing::info!("Connection reset completed");
+                }
+            }.boxed()
+        } else {
+            pending().boxed()
+        };
+
         let ret = tokio::select! {
             r = self.run_tcp_relay_server().instrument(tracing::trace_span!("ProxyClient.run_tcp_relay_server")) => r,
             r = async {
@@ -230,6 +261,10 @@ impl ProxyClient {
             r = chooser_task => r,
             r = dns_task => r,
             r = nat_task => r,
+            _ = network_change_task => {
+                tracing::info!("Network change handler exited");
+                Ok(())
+            }
         };
         ret.expect("run proxy client");
     }

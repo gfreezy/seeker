@@ -166,4 +166,9 @@ impl ServerPerformanceTracker {
             })
             .collect()
     }
+
+    /// Reset all performance history
+    pub fn reset(&self) {
+        self.performance_history.lock().clear();
+    }
 }
