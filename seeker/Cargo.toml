@@ -43,6 +43,9 @@ nix = { workspace = true, features = ["socket", "net"] }
 os_socketaddr = { workspace = true }
 notify-debouncer-mini = { workspace = true }
 
+[target.'cfg(target_os = "macos")'.dependencies]
+system-configuration = "0.6"
+
 [dev-dependencies]
 tempfile = { workspace = true }
 

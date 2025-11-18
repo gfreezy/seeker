@@ -157,4 +157,14 @@ impl ServerChooser {
             .get(proxy_group_name)
             .map(|chooser| chooser.get_performance_tracker())
     }
+
+    /// Reset all group servers choosers
+    pub fn reset_all(&self) {
+        tracing::info!("Resetting all server choosers");
+        for (name, chooser) in &self.group_servers_chooser {
+            tracing::info!(group = name, "Resetting group");
+            chooser.reset();
+        }
+        tracing::info!("All server choosers reset completed");
+    }
 }

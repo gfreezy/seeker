@@ -6,6 +6,7 @@ mod config_watcher;
 mod dns_client;
 mod group_servers_chooser;
 mod logger;
+mod network_monitor;
 mod probe_connectivity;
 mod proxy_client;
 mod proxy_connection;

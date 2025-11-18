@@ -327,6 +327,25 @@ impl GroupServersChooser {
     pub fn get_performance_tracker(&self) -> ServerPerformanceTracker {
         self.performance_tracker.clone()
     }
+
+    /// Reset all connections and performance data
+    pub fn reset(&self) {
+        info!(group = self.name, "Resetting group servers chooser");
+
+        // Shutdown all live connections
+        let mut live_connections = self.live_connections.write();
+        for conn in live_connections.iter() {
+            conn.shutdown();
+        }
+
+        // Clear all connections
+        live_connections.clear();
+
+        // Reset performance tracker
+        self.performance_tracker.reset();
+
+        info!(group = self.name, "Group servers chooser reset completed");
+    }
 }
 
 async fn ping_server(
