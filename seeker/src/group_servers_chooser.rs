@@ -54,7 +54,7 @@ impl GroupServersChooser {
             show_stats,
             performance_tracker: ServerPerformanceTracker::new(100, Duration::from_secs(300)),
         };
-        chooser.ping_servers().await;
+        chooser.ping_servers(false).await;
         chooser
     }
 
@@ -178,7 +178,7 @@ impl GroupServersChooser {
         let mut last_updated = Instant::now();
         loop {
             if last_updated.elapsed() > Duration::from_secs(10) {
-                self.ping_servers().await;
+                self.ping_servers(true).await;
                 self.print_connection_stats(self.show_stats);
                 last_updated = Instant::now();
             }
@@ -270,7 +270,7 @@ impl GroupServersChooser {
         }
     }
 
-    pub async fn ping_servers(&self) {
+    pub async fn ping_servers(&self, wait_for_all: bool) {
         if self.ping_urls.is_empty() || self.servers.len() <= 1 {
             return;
         }
@@ -292,11 +292,20 @@ impl GroupServersChooser {
                         result.ok(),
                         is_success,
                     );
+                    is_success
                 })
             })
             .collect();
 
-        while fut.next().await.is_some() {}
+        if wait_for_all {
+            while fut.next().await.is_some() {}
+        } else {
+            while let Some(ret) = fut.next().await {
+                if let Ok(true) = ret {
+                    break;
+                }
+            }
+        }
 
         self.move_to_next_server();
     }
