@@ -2,7 +2,7 @@
 mod macos {
     use std::sync::Arc;
     use system_configuration::core_foundation::array::CFArray;
-    use system_configuration::core_foundation::runloop::{kCFRunLoopCommonModes, CFRunLoop};
+    use system_configuration::core_foundation::runloop::{CFRunLoop, kCFRunLoopCommonModes};
     use system_configuration::core_foundation::string::CFString;
     use system_configuration::dynamic_store::{
         SCDynamicStore, SCDynamicStoreBuilder, SCDynamicStoreCallBackContext,
