@@ -324,7 +324,11 @@ fn process_packets(
         let relay_addr_bytes = relay_addr.octets();
         let dst_addr = ipv4_packet.dst_addr();
         if dst_addr.octets().as_slice() == relay_addr_bytes.as_slice() || dst_addr.is_broadcast() {
-            tracing::info!("tun_nat: drop packet to relay_addr or broadcast, dst_addr: {:?}, relay_addr: {:?}", dst_addr, relay_addr);
+            tracing::info!(
+                "tun_nat: drop packet to relay_addr or broadcast, dst_addr: {:?}, relay_addr: {:?}",
+                dst_addr,
+                relay_addr
+            );
             continue;
         }
 

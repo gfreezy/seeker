@@ -224,7 +224,8 @@ impl ProxyClient {
             Ok::<(), std::io::Error>(())
         };
 
-        let network_change_task = if let Some(mut network_change_rx) = self.network_change_rx.take() {
+        let network_change_task = if let Some(mut network_change_rx) = self.network_change_rx.take()
+        {
             async move {
                 while let Some(()) = network_change_rx.recv().await {
                     println!("Network change detected, resetting all connections");
@@ -237,7 +238,8 @@ impl ProxyClient {
 
                     tracing::info!("Connection reset completed");
                 }
-            }.boxed()
+            }
+            .boxed()
         } else {
             pending().boxed()
         };

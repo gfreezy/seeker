@@ -128,8 +128,9 @@ impl<'de> Deserialize<'de> for ServerConfig {
                 obfs,
                 _udp: _,
             } => {
-                let addr = Address::from_str(&format!("{server}:{port}"))
-                    .map_err(|_| Error::custom(format!("invalid server address: {server}:{port}")))?;
+                let addr = Address::from_str(&format!("{server}:{port}")).map_err(|_| {
+                    Error::custom(format!("invalid server address: {server}:{port}"))
+                })?;
                 Ok(ServerConfig {
                     name,
                     addr,
