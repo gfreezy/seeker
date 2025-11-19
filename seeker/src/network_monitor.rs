@@ -50,12 +50,25 @@ mod macos {
 
     fn network_change_callback(
         _store: SCDynamicStore,
-        _changed_keys: CFArray<CFString>,
+        changed_keys: CFArray<CFString>,
         info: &mut Arc<mpsc::UnboundedSender<()>>,
     ) {
-        tracing::info!("Network change detected");
-        if let Err(e) = info.send(()) {
-            tracing::error!("Failed to send network change notification: {}", e);
+        let mut meaningful_change = false;
+        for key in changed_keys.iter() {
+            let key_str = format!("{}", &*key);
+            if key_str.contains("vmenet") || key_str.contains("bridge") || key_str.contains("utun")
+            {
+                tracing::debug!("Ignored network change for virtual interface: {}", key_str);
+                continue;
+            }
+            tracing::info!("Network change detected: {}", key_str);
+            meaningful_change = true;
+        }
+
+        if meaningful_change {
+            if let Err(e) = info.send(()) {
+                tracing::error!("Failed to send network change notification: {}", e);
+            }
         }
     }
 }
