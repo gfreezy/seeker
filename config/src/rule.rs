@@ -299,10 +299,8 @@ fn did_geo_ip_matches_name(reader: &maxminddb::Reader<Vec<u8>>, ip: IpAddr, name
 }
 
 fn default_geo_ip_path() -> PathBuf {
-    let current_exe_path = std::env::current_exe().expect("failed to get current exe path");
-    current_exe_path
-        .parent()
-        .expect("failed to get parent dir")
+    std::env::current_dir()
+        .expect("failed to get current working directory")
         .join("geoip.mmdb")
 }
 
