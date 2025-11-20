@@ -79,12 +79,14 @@ struct SeekerArgs {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    eprint!("Starting.");
     let args = SeekerArgs::parse();
-
     let path = args.config.as_ref().map(String::as_ref);
     let key = args.key.as_ref().map(String::as_ref);
     let to_encrypt = args.encrypt;
     let to_trace = args.trace;
+    let log_path = args.log;
+    let _guard = setup_logger(log_path.as_deref(), to_trace)?;
 
     if to_encrypt {
         println!(
@@ -140,11 +142,8 @@ async fn main() -> anyhow::Result<()> {
     let mut dns_setup = DNSSetup::new(dns);
 
     let uid = args.user_id;
-    let log_path = args.log;
     let show_stats = args.stats;
 
-    eprint!("Starting.");
-    let _guard = setup_logger(log_path.as_deref(), to_trace)?;
     eprint!(".");
     set_rlimit_no_file(10240)?;
     eprint!(".");
