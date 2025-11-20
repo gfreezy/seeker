@@ -65,10 +65,9 @@ mod macos {
             meaningful_change = true;
         }
 
-        if meaningful_change
-            && let Err(e) = info.send(()) {
-                tracing::error!("Failed to send network change notification: {}", e);
-            }
+        if meaningful_change && let Err(e) = info.send(()) {
+            tracing::error!("Failed to send network change notification: {}", e);
+        }
     }
 }
 
