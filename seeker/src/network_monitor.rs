@@ -73,9 +73,7 @@ mod macos {
 
 #[cfg(target_os = "linux")]
 mod linux {
-    use futures::stream::TryStreamExt;
     use netlink_packet_route::link::LinkAttribute;
-    use rtnetlink::new_connection;
     use tokio::sync::mpsc;
     use tracing::{error, info};
 
@@ -84,8 +82,17 @@ mod linux {
         tokio::spawn(async move {
             info!("Starting Linux network monitor");
 
-            if let Err(e) = monitor_network_changes(tx).await {
-                error!("Network monitor error: {}", e);
+            // Keep retrying if the monitor fails or stream ends
+            loop {
+                match monitor_network_changes(tx.clone()).await {
+                    Ok(()) => {
+                        info!("Network monitor stream ended, restarting in 1 second");
+                    }
+                    Err(e) => {
+                        error!("Network monitor error: {}, restarting in 1 second", e);
+                    }
+                }
+                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
             }
         });
     }
@@ -93,76 +100,76 @@ mod linux {
     async fn monitor_network_changes(
         tx: mpsc::UnboundedSender<()>,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let (connection, handle, _messages) = new_connection()?;
+        use bytes::BytesMut;
+        use netlink_packet_core::{NetlinkMessage, NetlinkPayload};
+        use netlink_packet_route::RouteNetlinkMessage;
+        use netlink_sys::{AsyncSocket, AsyncSocketExt, SocketAddr, TokioSocket};
+        use netlink_sys::protocols::NETLINK_ROUTE;
 
-        // Spawn the connection to process messages
-        tokio::spawn(connection);
-
-        // Subscribe to link and address changes
-        let mut link_stream = handle.link().get().execute();
-        let mut addr_stream = handle.address().get().execute();
+        // Create a netlink socket subscribed to network change events
+        // RTMGRP_LINK: link state changes (interface up/down)
+        // RTMGRP_IPV4_IFADDR: IPv4 address changes
+        // RTMGRP_IPV6_IFADDR: IPv6 address changes
+        let groups = (libc::RTMGRP_LINK | libc::RTMGRP_IPV4_IFADDR | libc::RTMGRP_IPV6_IFADDR) as u32;
+        let mut socket = TokioSocket::new(NETLINK_ROUTE)?;
+        let addr = SocketAddr::new(0, groups);
+        socket.socket_mut().bind(&addr)?;
 
         info!("Linux network monitor started, listening for network changes");
 
+        // Continuously listen for Netlink messages
         loop {
-            tokio::select! {
-                // Listen for link changes (interface up/down)
-                link_msg = link_stream.try_next() => {
-                    match link_msg {
-                        Ok(Some(link)) => {
-                            let ifname = link.attributes.iter()
-                                .find_map(|attr| {
-                                    if let LinkAttribute::IfName(name) = attr {
-                                        Some(name.clone())
-                                    } else {
-                                        None
-                                    }
-                                })
-                                .unwrap_or_else(|| "unknown".to_string());
+            let mut buf = BytesMut::with_capacity(4096);
 
-                            // Ignore virtual interfaces
-                            if ifname.contains("docker") || ifname.contains("veth")
-                                || ifname.contains("br-") || ifname.starts_with("tun")
-                                || ifname.starts_with("utun") {
-                                tracing::debug!("Ignored network change for virtual interface: {}", ifname);
-                                continue;
-                            }
-
-                            info!("Network link change detected: {}", ifname);
-                            let _ = tx.send(());
-                        }
-                        Ok(None) => {
-                            // Stream ended, reconnect
-                            info!("Link stream ended, restarting monitor");
-                            break;
-                        }
-                        Err(e) => {
-                            error!("Error receiving link message: {}", e);
-                        }
-                    }
+            match socket.recv(&mut buf).await {
+                Ok(_) => {},
+                Err(e) => {
+                    error!("Error receiving netlink message: {}", e);
+                    continue;
                 }
+            };
 
-                // Listen for address changes (IP added/removed)
-                addr_msg = addr_stream.try_next() => {
-                    match addr_msg {
-                        Ok(Some(_addr)) => {
-                            info!("Network address change detected");
-                            let _ = tx.send(());
+            // Parse netlink messages
+            let msg = match NetlinkMessage::<RouteNetlinkMessage>::deserialize(&buf[..]) {
+                Ok(msg) => msg,
+                Err(e) => {
+                    tracing::debug!("Failed to parse netlink message: {}", e);
+                    continue;
+                }
+            };
+
+            if let NetlinkPayload::InnerMessage(route_msg) = msg.payload {
+                match route_msg {
+                    RouteNetlinkMessage::NewLink(link) | RouteNetlinkMessage::DelLink(link) => {
+                        let ifname = link.attributes.iter()
+                            .find_map(|attr| {
+                                if let LinkAttribute::IfName(name) = attr {
+                                    Some(name.clone())
+                                } else {
+                                    None
+                                }
+                            })
+                            .unwrap_or_else(|| "unknown".to_string());
+
+                        // Ignore virtual interfaces
+                        if ifname.contains("docker") || ifname.contains("veth")
+                            || ifname.contains("br-") || ifname.starts_with("tun")
+                            || ifname.starts_with("utun") || ifname.starts_with("lo") {
+                            tracing::debug!("Ignored network change for virtual interface: {}", ifname);
+                            continue;
                         }
-                        Ok(None) => {
-                            // Stream ended, reconnect
-                            info!("Address stream ended, restarting monitor");
-                            break;
-                        }
-                        Err(e) => {
-                            error!("Error receiving address message: {}", e);
-                        }
+
+                        info!("Network link change detected: {}", ifname);
+                        let _ = tx.send(());
                     }
+                    RouteNetlinkMessage::NewAddress(_) | RouteNetlinkMessage::DelAddress(_) => {
+                        info!("Network address change detected");
+                        let _ = tx.send(());
+                    }
+                    _ => {}
                 }
             }
         }
-
-        Ok(())
     }
 }
 
