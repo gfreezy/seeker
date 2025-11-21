@@ -71,18 +71,116 @@ mod macos {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
+mod linux {
+    use futures::stream::TryStreamExt;
+    use netlink_packet_route::link::LinkAttribute;
+    use rtnetlink::new_connection;
+    use tokio::sync::mpsc;
+    use tracing::{error, info};
+
+    /// Monitor network changes on Linux using Netlink
+    pub fn spawn_network_monitor(tx: mpsc::UnboundedSender<()>) {
+        tokio::spawn(async move {
+            info!("Starting Linux network monitor");
+
+            if let Err(e) = monitor_network_changes(tx).await {
+                error!("Network monitor error: {}", e);
+            }
+        });
+    }
+
+    async fn monitor_network_changes(
+        tx: mpsc::UnboundedSender<()>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let (connection, handle, _messages) = new_connection()?;
+
+        // Spawn the connection to process messages
+        tokio::spawn(connection);
+
+        // Subscribe to link and address changes
+        let mut link_stream = handle.link().get().execute();
+        let mut addr_stream = handle.address().get().execute();
+
+        info!("Linux network monitor started, listening for network changes");
+
+        loop {
+            tokio::select! {
+                // Listen for link changes (interface up/down)
+                link_msg = link_stream.try_next() => {
+                    match link_msg {
+                        Ok(Some(link)) => {
+                            let ifname = link.attributes.iter()
+                                .find_map(|attr| {
+                                    if let LinkAttribute::IfName(name) = attr {
+                                        Some(name.clone())
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .unwrap_or_else(|| "unknown".to_string());
+
+                            // Ignore virtual interfaces
+                            if ifname.contains("docker") || ifname.contains("veth")
+                                || ifname.contains("br-") || ifname.starts_with("tun")
+                                || ifname.starts_with("utun") {
+                                tracing::debug!("Ignored network change for virtual interface: {}", ifname);
+                                continue;
+                            }
+
+                            info!("Network link change detected: {}", ifname);
+                            let _ = tx.send(());
+                        }
+                        Ok(None) => {
+                            // Stream ended, reconnect
+                            info!("Link stream ended, restarting monitor");
+                            break;
+                        }
+                        Err(e) => {
+                            error!("Error receiving link message: {}", e);
+                        }
+                    }
+                }
+
+                // Listen for address changes (IP added/removed)
+                addr_msg = addr_stream.try_next() => {
+                    match addr_msg {
+                        Ok(Some(_addr)) => {
+                            info!("Network address change detected");
+                            let _ = tx.send(());
+                        }
+                        Ok(None) => {
+                            // Stream ended, reconnect
+                            info!("Address stream ended, restarting monitor");
+                            break;
+                        }
+                        Err(e) => {
+                            error!("Error receiving address message: {}", e);
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
 mod stub {
     use tokio::sync::mpsc;
 
-    /// Stub implementation for non-macOS platforms
+    /// Stub implementation for unsupported platforms
     pub fn spawn_network_monitor(_tx: mpsc::UnboundedSender<()>) {
-        tracing::info!("Network monitoring is only supported on macOS");
+        tracing::info!("Network monitoring is only supported on macOS and Linux");
     }
 }
 
 #[cfg(target_os = "macos")]
 pub use macos::spawn_network_monitor;
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
+pub use linux::spawn_network_monitor;
+
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
 pub use stub::spawn_network_monitor;

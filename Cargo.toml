@@ -112,5 +112,8 @@ url = "2.3"
 async-tls = "0.13"
 base64 = "0.20"
 notify-debouncer-mini = "0.5"
+rtnetlink = "0.14"
+netlink-packet-route = "0.19"
+futures = "0.3"
 [patch.crates-io]
 tracing-chrome = { git = "https://github.com/gfreezy/tracing-chrome", rev = "2a3dbfe" }
