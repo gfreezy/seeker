@@ -83,16 +83,13 @@ mod linux {
             info!("Starting Linux network monitor");
 
             // Keep retrying if the monitor fails or stream ends
-            loop {
-                match monitor_network_changes(tx.clone()).await {
-                    Ok(()) => {
-                        info!("Network monitor stream ended, restarting in 1 second");
-                    }
-                    Err(e) => {
-                        error!("Network monitor error: {}, restarting in 1 second", e);
-                    }
+            match monitor_network_changes(tx.clone()).await {
+                Ok(()) => {
+                    info!("Network monitor stream ended, restarting in 1 second");
                 }
-                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                Err(e) => {
+                    error!("Network monitor error: {}, restarting in 1 second", e);
+                }
             }
         });
     }
@@ -103,14 +100,15 @@ mod linux {
         use bytes::BytesMut;
         use netlink_packet_core::{NetlinkMessage, NetlinkPayload};
         use netlink_packet_route::RouteNetlinkMessage;
-        use netlink_sys::{AsyncSocket, AsyncSocketExt, SocketAddr, TokioSocket};
         use netlink_sys::protocols::NETLINK_ROUTE;
+        use netlink_sys::{AsyncSocket, AsyncSocketExt, SocketAddr, TokioSocket};
 
         // Create a netlink socket subscribed to network change events
         // RTMGRP_LINK: link state changes (interface up/down)
         // RTMGRP_IPV4_IFADDR: IPv4 address changes
         // RTMGRP_IPV6_IFADDR: IPv6 address changes
-        let groups = (libc::RTMGRP_LINK | libc::RTMGRP_IPV4_IFADDR | libc::RTMGRP_IPV6_IFADDR) as u32;
+        let groups =
+            (libc::RTMGRP_LINK | libc::RTMGRP_IPV4_IFADDR | libc::RTMGRP_IPV6_IFADDR) as u32;
         let mut socket = TokioSocket::new(NETLINK_ROUTE)?;
         let addr = SocketAddr::new(0, groups);
         socket.socket_mut().bind(&addr)?;
@@ -122,7 +120,7 @@ mod linux {
             let mut buf = BytesMut::with_capacity(4096);
 
             match socket.recv(&mut buf).await {
-                Ok(_) => {},
+                Ok(_) => {}
                 Err(e) => {
                     error!("Error receiving netlink message: {}", e);
                     continue;
@@ -141,7 +139,9 @@ mod linux {
             if let NetlinkPayload::InnerMessage(route_msg) = msg.payload {
                 match route_msg {
                     RouteNetlinkMessage::NewLink(link) | RouteNetlinkMessage::DelLink(link) => {
-                        let ifname = link.attributes.iter()
+                        let ifname = link
+                            .attributes
+                            .iter()
                             .find_map(|attr| {
                                 if let LinkAttribute::IfName(name) = attr {
                                     Some(name.clone())
@@ -152,10 +152,17 @@ mod linux {
                             .unwrap_or_else(|| "unknown".to_string());
 
                         // Ignore virtual interfaces
-                        if ifname.contains("docker") || ifname.contains("veth")
-                            || ifname.contains("br-") || ifname.starts_with("tun")
-                            || ifname.starts_with("utun") || ifname.starts_with("lo") {
-                            tracing::debug!("Ignored network change for virtual interface: {}", ifname);
+                        if ifname.contains("docker")
+                            || ifname.contains("veth")
+                            || ifname.contains("br-")
+                            || ifname.starts_with("tun")
+                            || ifname.starts_with("utun")
+                            || ifname.starts_with("lo")
+                        {
+                            tracing::debug!(
+                                "Ignored network change for virtual interface: {}",
+                                ifname
+                            );
                             continue;
                         }
 
