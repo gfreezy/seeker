@@ -9,7 +9,6 @@ use config::rule::Action;
 use config::{Address, Config};
 use dnsserver::create_dns_server;
 use dnsserver::resolver::RuleBasedDnsResolver;
-use futures_util::FutureExt;
 use hickory_resolver::TokioResolver;
 use parking_lot::RwLock;
 use std::collections::HashMap;
@@ -30,80 +29,51 @@ use tun_nat::{SessionManager, run_nat};
 
 pub(crate) type UdpManager = Arc<RwLock<HashMap<u16, (CandidateUdpSocket, SocketAddr, Address)>>>;
 
+struct BackgroundTasks {
+    nat: Option<JoinHandle<()>>,
+    dns: JoinHandle<()>,
+    chooser: JoinHandle<()>,
+    network_change_rx: mpsc::UnboundedReceiver<()>,
+}
+
 pub struct ProxyClient {
     config: Config,
     uid: Option<u32>,
     connectivity: ProbeConnectivity,
-    // When in redir mode, session_manager is None
     session_manager: Option<SessionManager>,
     udp_manager: UdpManager,
     resolver: RuleBasedDnsResolver,
     dns_client: DnsClient,
     server_chooser: ServerChooser,
-    nat_join_handle: Option<JoinHandle<()>>,
-    dns_server_join_handle: Option<JoinHandle<()>>,
-    chooser_join_handle: Option<JoinHandle<()>>,
-    network_change_rx: Option<mpsc::UnboundedReceiver<()>>,
+    background_tasks: Option<BackgroundTasks>,
 }
 
 impl ProxyClient {
     pub async fn new(config: Config, uid: Option<u32>, show_stats: bool) -> Self {
-        let additional_cidrs = config.rules.additional_cidrs();
-
-        let (session_manager, nat_join_handle) = if !config.redir_mode {
-            let (session_manager, nat_join_handle) = run_nat(
-                &config.tun_name,
-                config.tun_ip,
-                config.tun_cidr,
-                REDIR_LISTEN_PORT,
-                &additional_cidrs,
-                config.queue_number,
-                config.threads_per_queue,
-            )
-            .expect("run nat");
-
-            let nat_join_handle = tokio::task::spawn(async move {
-                while !nat_join_handle.is_finished() {
-                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                }
-            });
-            (Some(session_manager), Some(nat_join_handle))
-        } else {
-            (None, None)
-        };
-
+        let (session_manager, nat_handle) = setup_nat(&config);
         let dns_client = DnsClient::new(&config.dns_servers, config.dns_timeout).await;
+        let (resolver, dns_handle) = setup_dns_server(&config, dns_client.resolver()).await;
+        let (server_chooser, chooser_handle) =
+            setup_server_chooser(config.clone(), dns_client.clone(), show_stats).await;
 
-        let (resolver, dns_server_join_handle) =
-            run_dns_resolver(&config, dns_client.resolver()).await;
-
-        let chooser = ServerChooser::new(config.clone(), dns_client.clone(), show_stats).await;
-        let chooser_clone = chooser.clone();
-        let chooser_join_handle = tokio::task::spawn(async move {
-            chooser_clone
-                .run_background_tasks()
-                .instrument(tracing::trace_span!("ServerChooser.run_background_tasks"))
-                .await
-                .unwrap()
-        });
-
-        // Start network monitor
         let (network_change_tx, network_change_rx) = mpsc::unbounded_channel();
         spawn_network_monitor(network_change_tx);
 
         Self {
-            resolver,
-            connectivity: ProbeConnectivity::new(chooser.clone(), config.probe_timeout),
+            connectivity: ProbeConnectivity::new(server_chooser.clone(), config.probe_timeout),
             udp_manager: Arc::new(RwLock::new(HashMap::new())),
+            resolver,
             dns_client,
             config,
             uid,
             session_manager,
-            server_chooser: chooser,
-            nat_join_handle,
-            dns_server_join_handle: Some(dns_server_join_handle),
-            chooser_join_handle: Some(chooser_join_handle),
-            network_change_rx: Some(network_change_rx),
+            server_chooser,
+            background_tasks: Some(BackgroundTasks {
+                nat: nat_handle,
+                dns: dns_handle,
+                chooser: chooser_handle,
+                network_change_rx,
+            }),
         }
     }
 
@@ -189,86 +159,39 @@ impl ProxyClient {
     }
 
     pub async fn run(mut self) {
-        let chooser_join_handle = self.chooser_join_handle.take();
-        let dns_server_join_handle = self.dns_server_join_handle.take();
-        let nat_join_handle = self.nat_join_handle.take();
-
-        // Clone references needed for network change handler
-        let server_chooser = self.server_chooser.clone();
-        let udp_manager = self.udp_manager.clone();
-
-        let chooser_task = async move {
-            if let Some(chooser_join_handle) = chooser_join_handle {
-                chooser_join_handle.await.unwrap();
-            } else {
-                pending::<()>().await;
-            }
-            Ok::<(), std::io::Error>(())
+        let Some(tasks) = self.background_tasks.take() else {
+            panic!("run() called without background tasks");
         };
 
-        let dns_task = async move {
-            if let Some(dns_server_join_handle) = dns_server_join_handle {
-                dns_server_join_handle.await.unwrap();
-            } else {
-                pending::<()>().await;
-            };
-            Ok::<(), std::io::Error>(())
-        };
-
-        let nat_task = async move {
-            if let Some(nat_join_handle) = nat_join_handle {
-                nat_join_handle.await.unwrap();
-            } else {
-                pending::<()>().await;
-            }
-            Ok::<(), std::io::Error>(())
-        };
-
-        let network_change_task = if let Some(mut network_change_rx) = self.network_change_rx.take()
-        {
-            async move {
-                while let Some(()) = network_change_rx.recv().await {
-                    println!("Network change detected, resetting all connections");
-
-                    // Reset all server choosers
-                    server_chooser.reset_all();
-
-                    // Clear UDP manager
-                    udp_manager.write().clear();
-
-                    tracing::info!("Connection reset completed");
-                }
-            }
-            .boxed()
-        } else {
-            pending().boxed()
-        };
+        let network_change_task = run_network_change_handler(
+            tasks.network_change_rx,
+            self.server_chooser.clone(),
+            self.udp_manager.clone(),
+            self.session_manager.clone(),
+        );
 
         let ret = tokio::select! {
-            r = self.run_tcp_relay_server().instrument(tracing::trace_span!("ProxyClient.run_tcp_relay_server")) => r,
-            r = async {
-                if !self.config.redir_mode {
-                    let ret = self
-                        .run_udp_relay_server()
-                        .instrument(tracing::trace_span!("ProxyClient.run_udp_relay_server"))
-                        .await;
-                    if let Err(e) = &ret {
-                        tracing::error!(?e, "run udp relay server error");
-                    }
-                    ret
-                } else {
-                    pending::<Result<()>>().await
-                }
-            } => r,
-            r = chooser_task => r,
-            r = dns_task => r,
-            r = nat_task => r,
+            r = self.run_tcp_relay_server().instrument(trace_span!("run_tcp_relay_server")) => r,
+            r = self.run_udp_relay_server_if_enabled() => r,
+            r = wait_for_handle(Some(tasks.chooser)) => r,
+            r = wait_for_handle(Some(tasks.dns)) => r,
+            r = wait_for_handle(tasks.nat) => r,
             _ = network_change_task => {
                 tracing::info!("Network change handler exited");
                 Ok(())
             }
         };
         ret.expect("run proxy client");
+    }
+
+    async fn run_udp_relay_server_if_enabled(&self) -> Result<()> {
+        if self.config.redir_mode {
+            return pending::<Result<()>>().await;
+        }
+        self.run_udp_relay_server()
+            .instrument(trace_span!("run_udp_relay_server"))
+            .await
+            .inspect_err(|e| tracing::error!(?e, "run udp relay server error"))
     }
 
     async fn get_proxy_udp_socket(
@@ -384,7 +307,33 @@ pub(crate) async fn get_action_for_addr(
     Ok(action)
 }
 
-async fn run_dns_resolver(
+fn setup_nat(config: &Config) -> (Option<SessionManager>, Option<JoinHandle<()>>) {
+    if config.redir_mode {
+        return (None, None);
+    }
+
+    let additional_cidrs = config.rules.additional_cidrs();
+    let (session_manager, nat_join_handle) = run_nat(
+        &config.tun_name,
+        config.tun_ip,
+        config.tun_cidr,
+        REDIR_LISTEN_PORT,
+        &additional_cidrs,
+        config.queue_number,
+        config.threads_per_queue,
+    )
+    .expect("run nat");
+
+    let handle = tokio::task::spawn(async move {
+        while !nat_join_handle.is_finished() {
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        }
+    });
+
+    (Some(session_manager), Some(handle))
+}
+
+async fn setup_dns_server(
     config: &Config,
     resolver: TokioResolver,
 ) -> (RuleBasedDnsResolver, JoinHandle<()>) {
@@ -402,6 +351,62 @@ async fn run_dns_resolver(
             .await
     });
     (resolver, handle)
+}
+
+async fn setup_server_chooser(
+    config: Config,
+    dns_client: DnsClient,
+    show_stats: bool,
+) -> (ServerChooser, JoinHandle<()>) {
+    let chooser = ServerChooser::new(config, dns_client, show_stats).await;
+    let chooser_clone = chooser.clone();
+    let handle = tokio::task::spawn(async move {
+        chooser_clone
+            .run_background_tasks()
+            .instrument(trace_span!("ServerChooser.run_background_tasks"))
+            .await
+            .unwrap()
+    });
+    (chooser, handle)
+}
+
+async fn run_network_change_handler(
+    mut rx: mpsc::UnboundedReceiver<()>,
+    server_chooser: ServerChooser,
+    udp_manager: UdpManager,
+    session_manager: Option<SessionManager>,
+) {
+    const DEBOUNCE_DURATION: std::time::Duration = std::time::Duration::from_secs(1);
+
+    while let Some(()) = rx.recv().await {
+        // Debounce: wait and drain any additional events
+        loop {
+            tokio::select! {
+                _ = tokio::time::sleep(DEBOUNCE_DURATION) => break,
+                result = rx.recv() => {
+                    if result.is_none() {
+                        return;
+                    }
+                }
+            }
+        }
+
+        println!("Network change detected, resetting all connections");
+        server_chooser.reset_all();
+        udp_manager.write().clear();
+        if let Some(ref session_manager) = session_manager {
+            session_manager.reset();
+        }
+        tracing::info!("Connection reset completed");
+    }
+}
+
+async fn wait_for_handle(handle: Option<JoinHandle<()>>) -> Result<()> {
+    match handle {
+        Some(h) => h.await.unwrap(),
+        None => pending::<()>().await,
+    }
+    Ok(())
 }
 
 #[cfg(target_arch = "x86_64")]

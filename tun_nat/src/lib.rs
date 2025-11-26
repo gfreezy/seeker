@@ -389,6 +389,10 @@ impl SessionManager {
     pub fn recycle_port(&self, port: u16) {
         self.inner.write().recycle_port(port);
     }
+
+    pub fn reset(&self) {
+        self.inner.write().reset();
+    }
 }
 
 struct InnerSessionManager {
@@ -486,6 +490,17 @@ impl InnerSessionManager {
             tracing::warn!("recycle_port: port {} not exists", port);
         }
         self.clear_expired();
+    }
+
+    fn reset(&mut self) {
+        tracing::info!(
+            "resetting session manager, clearing {} sessions",
+            self.map.len()
+        );
+        self.map.clear();
+        self.reverse_map.clear();
+        self.available_ports.fill(true);
+        self.next_index = 0;
     }
 
     pub fn get_or_create_session(
