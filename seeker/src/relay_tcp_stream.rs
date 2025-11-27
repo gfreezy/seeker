@@ -49,6 +49,7 @@ pub(crate) async fn relay_tcp_stream(
         conn,
         remote_conn,
         config.read_timeout,
+        config.idle_timeout,
         config.write_timeout,
         on_update_activity,
     )
@@ -114,6 +115,7 @@ async fn tunnel_tcp_stream<
     conn1: T1,
     conn2: T2,
     read_timeout: Duration,
+    idle_timeout: Duration,
     write_timeout: Duration,
     on_update_activity: impl Fn() -> bool + Send + 'static,
 ) -> std::io::Result<()> {
@@ -125,11 +127,18 @@ async fn tunnel_tcp_stream<
 
     let f1 = async move {
         let mut buf = vec![0; 1600];
+        let mut first_read = true;
         loop {
             if !on_update_activity() {
                 break Err(std::io::ErrorKind::ConnectionAborted.into());
             }
-            let size = timeout(read_timeout, conn1_read.read(&mut buf)).await??;
+            let current_timeout = if first_read {
+                first_read = false;
+                read_timeout
+            } else {
+                idle_timeout
+            };
+            let size = timeout(current_timeout, conn1_read.read(&mut buf)).await??;
             if size == 0 {
                 break Ok(());
             }
@@ -138,11 +147,18 @@ async fn tunnel_tcp_stream<
     };
     let f2 = async move {
         let mut buf = vec![0; 1600];
+        let mut first_read = true;
         loop {
             if !on_update_activity_clone() {
                 break Err(std::io::ErrorKind::ConnectionAborted.into());
             }
-            let size = timeout(read_timeout, conn2_read.read(&mut buf)).await??;
+            let current_timeout = if first_read {
+                first_read = false;
+                read_timeout
+            } else {
+                idle_timeout
+            };
+            let size = timeout(current_timeout, conn2_read.read(&mut buf)).await??;
             if size == 0 {
                 break Ok(());
             }

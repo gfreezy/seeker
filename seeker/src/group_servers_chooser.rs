@@ -12,6 +12,7 @@ use futures_util::stream::FuturesUnordered;
 use parking_lot::{Mutex, RwLock};
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, Instant};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::task;
@@ -19,6 +20,13 @@ use tokio::time::sleep;
 use tokio::time::timeout;
 use tokio_native_tls::TlsConnector;
 use tracing::info;
+
+// 切换阈值：新服务器分数需比当前低 10% 以上才切换
+const SWITCH_THRESHOLD_RATIO: f64 = 0.9;
+// 最小切换间隔：60秒
+const MIN_SWITCH_INTERVAL: Duration = Duration::from_secs(60);
+// 连续失败次数阈值：连续失败 3 次才触发切换
+const CONSECUTIVE_FAILURES_THRESHOLD: u32 = 3;
 
 #[derive(Clone)]
 pub struct GroupServersChooser {
@@ -31,6 +39,10 @@ pub struct GroupServersChooser {
     live_connections: Arc<RwLock<Vec<Box<dyn ProxyConnection + Send + Sync>>>>,
     show_stats: bool,
     performance_tracker: ServerPerformanceTracker,
+    // 上次切换时间
+    last_switch_time: Arc<Mutex<Instant>>,
+    // 连续失败计数
+    consecutive_failures: Arc<AtomicU32>,
 }
 
 impl GroupServersChooser {
@@ -53,6 +65,8 @@ impl GroupServersChooser {
             selected_server: Arc::new(Mutex::new(selected)),
             show_stats,
             performance_tracker: ServerPerformanceTracker::new(100, Duration::from_secs(300)),
+            last_switch_time: Arc::new(Mutex::new(Instant::now())),
+            consecutive_failures: Arc::new(AtomicU32::new(0)),
         };
         chooser.ping_servers(false).await;
         chooser
@@ -85,14 +99,22 @@ impl GroupServersChooser {
             ProxyTcpStream::connect(remote_addr.clone(), Some(&config), self.dns_client.clone())
                 .await;
         if stream.is_err() {
+            let failures = self.consecutive_failures.fetch_add(1, Ordering::SeqCst) + 1;
             tracing::error!(
                 group = self.name,
                 ?remote_addr,
                 action = ?Action::Proxy(self.name.clone()),
+                consecutive_failures = failures,
                 "Failed to connect to server: {}",
                 config.addr()
             );
-            self.move_to_next_server();
+            // 只有连续失败超过阈值才切换
+            if failures >= CONSECUTIVE_FAILURES_THRESHOLD {
+                self.move_to_next_server(true);
+            }
+        } else {
+            // 连接成功，重置失败计数
+            self.consecutive_failures.store(0, Ordering::SeqCst);
         }
         Ok(CandidateTcpStream {
             stream: stream?,
@@ -116,12 +138,18 @@ impl GroupServersChooser {
                 tracing::info!(group = self.name, "Using server: {}", config.addr());
                 let socket = ProxyUdpSocket::new(Some(&config), self.dns_client.clone()).await;
                 if socket.is_err() {
+                    let failures = self.consecutive_failures.fetch_add(1, Ordering::SeqCst) + 1;
                     tracing::info!(
                         group = self.name,
+                        consecutive_failures = failures,
                         "Failed to connect to server: {}",
                         config.addr()
                     );
-                    self.move_to_next_server();
+                    if failures >= CONSECUTIVE_FAILURES_THRESHOLD {
+                        self.move_to_next_server(true);
+                    }
+                } else {
+                    self.consecutive_failures.store(0, Ordering::SeqCst);
                 }
                 (socket?, self.name.clone(), Some(config))
             }
@@ -136,8 +164,29 @@ impl GroupServersChooser {
         })
     }
 
-    pub fn move_to_next_server(&self) {
+    /// 切换到下一个最佳服务器
+    /// force: 是否强制切换（连续失败时使用），强制切换时跳过阈值检查但仍检查间隔时间
+    pub fn move_to_next_server(&self, force: bool) {
         let now = Instant::now();
+
+        // 检查最小切换间隔
+        {
+            let last_switch = self.last_switch_time.lock();
+            let elapsed = now.duration_since(*last_switch);
+            if elapsed < MIN_SWITCH_INTERVAL {
+                tracing::debug!(
+                    group = self.name,
+                    elapsed_secs = elapsed.as_secs(),
+                    min_interval_secs = MIN_SWITCH_INTERVAL.as_secs(),
+                    "Skipping server switch: minimum interval not reached"
+                );
+                return;
+            }
+        }
+
+        let current_server = self.selected_server.lock().clone();
+        let current_score = self.performance_tracker.get_server_score(&current_server, now);
+
         let mut best_score = DEFAULT_SCORE;
         let mut best_server = None;
 
@@ -151,21 +200,42 @@ impl GroupServersChooser {
         }
 
         if let Some(new_server) = best_server {
-            if new_server.addr() == self.selected_server.lock().addr() {
+            // 如果最佳服务器就是当前服务器，不切换
+            if new_server.addr() == current_server.addr() {
                 return;
             }
-            let old = self.selected_server.lock().clone();
-            self.set_server_down(&old);
+
+            // 非强制切换时，检查阈值：新服务器分数需要比当前低 10% 以上才切换
+            if !force {
+                let threshold = current_score * SWITCH_THRESHOLD_RATIO;
+                if best_score >= threshold {
+                    tracing::debug!(
+                        group = self.name,
+                        current_score = current_score,
+                        best_score = best_score,
+                        threshold = threshold,
+                        "Skipping server switch: score improvement not significant enough"
+                    );
+                    return;
+                }
+            }
+
+            self.set_server_down(&current_server);
             info!(
                 group = self.name,
-                old_name = old.name(),
-                old_server = ?old.addr(),
+                old_name = current_server.name(),
+                old_server = ?current_server.addr(),
+                old_score = current_score,
                 new_name = new_server.name(),
                 new_server = ?new_server.addr(),
-                score = best_score,
+                new_score = best_score,
+                force = force,
                 "Change shadowsocks server"
             );
             *self.selected_server.lock() = new_server;
+            *self.last_switch_time.lock() = now;
+            // 切换后重置失败计数
+            self.consecutive_failures.store(0, Ordering::SeqCst);
         } else {
             tracing::error!(
                 group = self.name,
@@ -307,7 +377,8 @@ impl GroupServersChooser {
             }
         }
 
-        self.move_to_next_server();
+        // ping 后的切换不是强制切换，需要满足阈值条件
+        self.move_to_next_server(!wait_for_all);
     }
 
     async fn ping_server(&self, server_config: ServerConfig) -> std::io::Result<Duration> {
