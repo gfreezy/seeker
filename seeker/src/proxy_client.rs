@@ -167,7 +167,6 @@ impl ProxyClient {
             tasks.network_change_rx,
             self.server_chooser.clone(),
             self.udp_manager.clone(),
-            self.session_manager.clone(),
         );
 
         let ret = tokio::select! {
@@ -374,7 +373,6 @@ async fn run_network_change_handler(
     mut rx: mpsc::UnboundedReceiver<()>,
     server_chooser: ServerChooser,
     udp_manager: UdpManager,
-    session_manager: Option<SessionManager>,
 ) {
     const DEBOUNCE_DURATION: std::time::Duration = std::time::Duration::from_secs(1);
 
@@ -394,9 +392,6 @@ async fn run_network_change_handler(
         println!("Network change detected, resetting all connections");
         server_chooser.reset_all();
         udp_manager.write().clear();
-        if let Some(ref session_manager) = session_manager {
-            session_manager.reset();
-        }
         tracing::info!("Connection reset completed");
     }
 }
