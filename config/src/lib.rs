@@ -86,6 +86,8 @@ pub struct Config {
     pub read_timeout: Duration,
     #[serde(with = "duration", default = "default_write_timeout")]
     pub write_timeout: Duration,
+    #[serde(with = "duration", default = "default_idle_timeout")]
+    pub idle_timeout: Duration,
     pub max_connect_errors: usize,
 }
 
@@ -113,6 +115,7 @@ impl Debug for Config {
             .field("connect_timeout", &self.connect_timeout)
             .field("read_timeout", &self.read_timeout)
             .field("write_timeout", &self.write_timeout)
+            .field("idle_timeout", &self.idle_timeout)
             .field("max_connect_errors", &self.max_connect_errors)
             .finish()
     }
@@ -153,10 +156,13 @@ impl Display for PingURL {
 }
 
 fn default_read_timeout() -> Duration {
-    Duration::from_secs(30)
+    Duration::from_secs(10)
 }
 fn default_write_timeout() -> Duration {
     Duration::from_secs(30)
+}
+fn default_idle_timeout() -> Duration {
+    Duration::from_secs(300)
 }
 fn default_connect_timeout() -> Duration {
     Duration::from_millis(100)
