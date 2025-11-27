@@ -185,7 +185,9 @@ impl GroupServersChooser {
         }
 
         let current_server = self.selected_server.lock().clone();
-        let current_score = self.performance_tracker.get_server_score(&current_server, now);
+        let current_score = self
+            .performance_tracker
+            .get_server_score(&current_server, now);
 
         let mut best_score = DEFAULT_SCORE;
         let mut best_server = None;
