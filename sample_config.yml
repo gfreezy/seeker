@@ -40,8 +40,10 @@ probe_timeout: 200ms
 ping_timeout: 2s
 # 连接超时时间
 connect_timeout: 2s
-# 读取超时时间，多久没有数据读取则认为超时
-read_timeout: 300s
+# 读取超时时间，用于首次读取数据的超时（默认 10s）
+read_timeout: 10s
+# 空闲超时时间，连接建立后，后续读取数据的空闲超时（默认 300s）
+idle_timeout: 300s
 # 写入超时时间，多久没有数据写入则认为超时
 write_timeout: 300s
 # ss 服务器重试次数，到达重试次数后会自动选择下一个最快的服务器
