@@ -1,5 +1,7 @@
+pub mod icmp;
 pub mod tun_device;
 
+use crate::icmp::parse_icmp_echo_request;
 use crate::tun_device::TunDevice;
 use bitvec::vec::BitVec;
 use object_pool::{Pool, ReusableOwned};
@@ -14,6 +16,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::SystemTime;
+
+pub use icmp::IcmpEchoRequest;
 
 const BEGIN_PORT: u16 = 50000;
 const END_PORT: u16 = 60000;
@@ -87,6 +91,7 @@ macro_rules! route_packet {
     }};
 }
 
+/// Run NAT without ICMP support (backward compatible).
 pub fn run_nat(
     tun_name: &str,
     tun_ip: Ipv4Addr,
@@ -95,6 +100,34 @@ pub fn run_nat(
     addition_cidrs: &[Ipv4Cidr],
     queue_number: usize,
     threads_per_queue: usize,
+) -> Result<(SessionManager, NatJoinHandle)> {
+    run_nat_with_icmp(
+        tun_name,
+        tun_ip,
+        tun_cidr,
+        relay_port,
+        addition_cidrs,
+        queue_number,
+        threads_per_queue,
+        None,
+    )
+}
+
+/// Run NAT with optional ICMP channel support.
+///
+/// # Arguments
+/// * `icmp_request_tx` - Optional channel for sending ICMP Echo Requests to external handler.
+///   Replies are handled directly by the kernel (not routed through TUN).
+#[allow(clippy::too_many_arguments)]
+pub fn run_nat_with_icmp(
+    tun_name: &str,
+    tun_ip: Ipv4Addr,
+    tun_cidr: Ipv4Cidr,
+    relay_port: u16,
+    addition_cidrs: &[Ipv4Cidr],
+    queue_number: usize,
+    threads_per_queue: usize,
+    icmp_request_tx: Option<crossbeam_channel::Sender<IcmpEchoRequest>>,
 ) -> Result<(SessionManager, NatJoinHandle)> {
     const BUF_SIZE: usize = 2000;
 
@@ -149,7 +182,12 @@ pub fn run_nat(
 
     // 创建通道用于发送和接收数据包
     let (tx, rx) = crossbeam_channel::unbounded();
-    let (processed_tx, processed_rx) = crossbeam_channel::unbounded();
+    let (processed_tx, processed_rx) = crossbeam_channel::unbounded::<ReusableOwned<Vec<u8>>>();
+
+    // Log ICMP support status
+    if icmp_request_tx.is_some() {
+        tracing::info!("ICMP channel support enabled (direct reply mode)");
+    }
 
     let queue_num = if cfg!(target_os = "linux") {
         queue_number.max(1)
@@ -169,12 +207,19 @@ pub fn run_nat(
             let processed_tx = processed_tx.clone();
             let sm = session_manager.clone();
             let should_quit = should_quit_clone.clone();
+            let icmp_tx = icmp_request_tx.clone();
             thread::Builder::new()
                 .name(format!("tun-nat-worker-{i}"))
                 .spawn(move || {
-                    // println!("Start tun-nat-worker-{i} thread.");
-                    process_packets(rx, processed_tx, sm, relay_addr, relay_port, should_quit);
-                    // println!("Exit tun-nat-worker-{i} thread");
+                    process_packets(
+                        rx,
+                        processed_tx,
+                        sm,
+                        relay_addr,
+                        relay_port,
+                        should_quit,
+                        icmp_tx,
+                    );
                 })
                 .expect("Failed to spawn worker thread")
         })
@@ -243,28 +288,21 @@ pub fn run_nat(
 
         let write_handle = thread::Builder::new()
             .name(format!("tun-nat-write-{i}"))
-            .spawn(move || {
-                // println!("Start tun-nat-write-{i} thread.");
-                loop {
-                    if should_quit_write.load(Ordering::Relaxed) {
-                        break;
-                    }
-                    match processed_rx_clone.recv() {
-                        Ok(processed_buf) => {
-                            let ret = tun_clone.write(&processed_buf);
-                            if let Err(err) = ret {
-                                if err.kind() != std::io::ErrorKind::Interrupted {
-                                    eprintln!("tun_nat: write packet error: {err:?}");
-                                }
+            .spawn(move || loop {
+                if should_quit_write.load(Ordering::Relaxed) {
+                    break;
+                }
+
+                match processed_rx_clone.recv() {
+                    Ok(processed_buf) => {
+                        if let Err(err) = tun_clone.write(&processed_buf) {
+                            if err.kind() != std::io::ErrorKind::Interrupted {
+                                eprintln!("tun_nat: write packet error: {err:?}");
                             }
                         }
-                        Err(_) => {
-                            // 通道已关闭，退出循环
-                            break;
-                        }
                     }
+                    Err(_) => break,
                 }
-                // println!("Exit tun-nat-write-{i} thread.");
             })
             .expect("Failed to spawn write thread");
 
@@ -310,6 +348,7 @@ fn process_packets(
     relay_addr: Ipv4Addr,
     relay_port: u16,
     should_quit: Arc<AtomicBool>,
+    icmp_request_tx: Option<crossbeam_channel::Sender<IcmpEchoRequest>>,
 ) {
     while !should_quit.load(Ordering::Relaxed) {
         let mut buf = match rx.recv() {
@@ -347,6 +386,18 @@ fn process_packets(
                 relay_addr,
                 relay_port
             ),
+            IpProtocol::Icmp => {
+                // Send ICMP Echo Request to external handler if channel is available
+                if let Some(ref tx) = icmp_request_tx {
+                    if let Some(request) = parse_icmp_echo_request(&buf) {
+                        if let Err(e) = tx.send(request) {
+                            tracing::debug!("Failed to send ICMP request: {:?}", e);
+                        }
+                    }
+                }
+                // ICMP packets are handled externally, don't route through normal path
+                continue;
+            }
             _ => {
                 continue;
             }

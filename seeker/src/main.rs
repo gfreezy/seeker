@@ -5,6 +5,7 @@ mod config_encryptor;
 mod config_watcher;
 mod dns_client;
 mod group_servers_chooser;
+mod icmp_relay;
 mod logger;
 mod network_monitor;
 mod probe_connectivity;

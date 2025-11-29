@@ -1,5 +1,6 @@
 use crate::REDIR_LISTEN_PORT;
 use crate::dns_client::DnsClient;
+use crate::icmp_relay::IcmpRelay;
 use crate::network_monitor::spawn_network_monitor;
 use crate::probe_connectivity::ProbeConnectivity;
 use crate::relay_tcp_stream::relay_tcp_stream;
@@ -25,7 +26,7 @@ use std::net::IpAddr;
 use std::sync::Arc;
 use tracing::{error, instrument, trace, trace_span};
 use tracing_futures::Instrument;
-use tun_nat::{SessionManager, run_nat};
+use tun_nat::{SessionManager, run_nat_with_icmp};
 
 pub(crate) type UdpManager = Arc<RwLock<HashMap<u16, (CandidateUdpSocket, SocketAddr, Address)>>>;
 
@@ -46,12 +47,14 @@ pub struct ProxyClient {
     dns_client: DnsClient,
     server_chooser: ServerChooser,
     background_tasks: Option<BackgroundTasks>,
+    #[allow(dead_code)]
+    icmp_relay: Option<IcmpRelay>,
 }
 
 impl ProxyClient {
     pub async fn new(config: Config, uid: Option<u32>, show_stats: bool) -> Self {
-        let (session_manager, nat_handle) = setup_nat(&config);
         let dns_client = DnsClient::new(&config.dns_servers, config.dns_timeout).await;
+        let (session_manager, nat_handle, icmp_relay) = setup_nat(&config, &dns_client);
         let (resolver, dns_handle) = setup_dns_server(&config, dns_client.resolver()).await;
         let (server_chooser, chooser_handle) =
             setup_server_chooser(config.clone(), dns_client.clone(), show_stats).await;
@@ -74,6 +77,7 @@ impl ProxyClient {
                 chooser: chooser_handle,
                 network_change_rx,
             }),
+            icmp_relay,
         }
     }
 
@@ -306,13 +310,24 @@ pub(crate) async fn get_action_for_addr(
     Ok(action)
 }
 
-fn setup_nat(config: &Config) -> (Option<SessionManager>, Option<JoinHandle<()>>) {
+fn setup_nat(
+    config: &Config,
+    dns_client: &DnsClient,
+) -> (
+    Option<SessionManager>,
+    Option<JoinHandle<()>>,
+    Option<IcmpRelay>,
+) {
     if config.redir_mode {
-        return (None, None);
+        return (None, None, None);
     }
 
     let additional_cidrs = config.rules.additional_cidrs();
-    let (session_manager, nat_join_handle) = run_nat(
+
+    // Create ICMP channel for ping support (only request, reply goes directly)
+    let (icmp_request_tx, icmp_request_rx) = crossbeam_channel::unbounded();
+
+    let (session_manager, nat_join_handle) = run_nat_with_icmp(
         &config.tun_name,
         config.tun_ip,
         config.tun_cidr,
@@ -320,8 +335,21 @@ fn setup_nat(config: &Config) -> (Option<SessionManager>, Option<JoinHandle<()>>
         &additional_cidrs,
         config.queue_number,
         config.threads_per_queue,
+        Some(icmp_request_tx),
     )
     .expect("run nat");
+
+    // Start ICMP relay (replies go directly to client, not through TUN)
+    let icmp_relay = match IcmpRelay::start(icmp_request_rx, dns_client.clone()) {
+        Ok(relay) => {
+            tracing::info!("ICMP relay started for ping support");
+            Some(relay)
+        }
+        Err(e) => {
+            tracing::warn!("Failed to start ICMP relay: {}. Ping will not work.", e);
+            None
+        }
+    };
 
     let handle = tokio::task::spawn(async move {
         while !nat_join_handle.is_finished() {
@@ -329,7 +357,7 @@ fn setup_nat(config: &Config) -> (Option<SessionManager>, Option<JoinHandle<()>>
         }
     });
 
-    (Some(session_manager), Some(handle))
+    (Some(session_manager), Some(handle), icmp_relay)
 }
 
 async fn setup_dns_server(

@@ -9,7 +9,6 @@ use std::io::{Error, ErrorKind, Result};
 use std::net::IpAddr;
 use std::net::SocketAddr;
 use std::time::Duration;
-
 #[derive(Clone)]
 pub struct DnsClient {
     resolver: TokioResolver,
