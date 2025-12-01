@@ -4,7 +4,7 @@ image::https://github.com/gfreezy/seeker/actions/workflows/release.yml/badge.svg
 image::https://github.com/gfreezy/seeker/actions/workflows/ci.yml/badge.svg?branch=master[]
 
 
-使用 Tun 实现透明代理（支持 Mac & Linux 系统），支持 TCP、UDP。
+使用 Tun 实现透明代理（支持 Mac & Linux 系统），支持 TCP、UDP、ICMP（ping）。
 
 == Slack
 https://join.slack.com/t/allsunday/shared_invite/zt-f8xw3uzl-qchMa2jQOfQF1T89w3lfiw
@@ -350,13 +350,26 @@ docker run -v $PWD:/volume -e OPENSSL_STATIC=yes --rm -t clux/muslrust cargo bui
 会在 `target/x86_64-unknown-linux-musl/release` 目录下生成 `seeker` 文件。
 
 
+== ICMP (Ping) 支持
+`seeker` 支持 ICMP Echo Request（ping）的透明代理。由于 `seeker` 使用 Fake IP 模式，直接 ping 域名会 ping 到 Fake IP（如 `11.0.0.x`），无法得到真实的 ping 结果。
+
+`seeker` 通过以下方式解决这个问题：
+
+. 当 TUN 设备收到 ICMP Echo Request 时，`seeker` 会拦截该请求
+. 根据目标 Fake IP 查找对应的原始域名
+. 解析域名获取真实 IP 地址
+. 使用原始的 ICMP identifier 和 sequence number 向真实 IP 发送 ping 请求
+. 真实服务器的响应会直接返回给发起 ping 的应用
+
+这样，即使在透明代理模式下，`ping github.com` 也能正确返回 GitHub 服务器的真实响应时间。
+
 == 实现原理
 `seeker` 参考了 `Surge for Mac` 的实现原理，基本如下：
 
 . `seeker` 会在本地启动一个 DNS server，并自动将本机 DNS 修改为 `seeker` 的 DNS 服务器地址
 . `seeker` 会创建一个 TUN 设备，并将 IP 设置为 `10.0.0.1`，系统路由表设置 `10.0.0.0/16` 网段都路由到 TUN 设备
 . 有应用请求 DNS 的时候， `seeker` 会为这个域名返回 `10.0.0.0/16` 网段内一个唯一的 IP
-. `seeker` 从 TUN 接受到 IP 包后，会在内部组装成 TCP/UDP 数据
+. `seeker` 从 TUN 接受到 IP 包后，会在内部组装成 TCP/UDP/ICMP 数据
 . `seeker` 会根据规则和网络连接的 uid 判断走代理还是直连
 . 如果需要走代理，将 TCP/UDP 数据转发到 SS 服务器/ socks5 代理，从代理接受到数据后，在返回给应用；如果直连，则本地建立直接将数据发送到目标地址
 
