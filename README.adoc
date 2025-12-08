@@ -119,7 +119,7 @@ proxies:
 
 ==== 1. SS 订阅链接 (remote_config_urls)
 
-在配置文件中使用 `remote_config_urls` 字段，从远程 URL 加载 Shadowsocks 服务器列表。
+在配置文件中使用 `remote_config_urls` 字段，从远程 URL 加载 Shadowsocks 服务器列表。支持**标准 SS 订阅格式**，兼容大多数 SS 服务商提供的订阅链接。
 
 **配置方式：**
 +
