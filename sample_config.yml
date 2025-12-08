@@ -64,11 +64,20 @@ ping_urls:
     port: 80
     path: /
 
-# SS 订阅地址，启动时自动拉取配置，并将配置的服务器地址自动加入服务器列表
-# 订阅 URL 返回的内容必须是 Base64 编码的文本，解码后每行一个 ss:// 格式的 URL
-# 示例：https://your-ss-provider.com/subscribe
+# SS 订阅地址（标准 SS 订阅格式），启动时自动拉取配置，并将配置的服务器地址自动加入服务器列表
+# 支持大多数 SS 服务商提供的订阅链接
+#
+# 订阅格式要求：
+# - 远程 URL 返回的内容必须是 Base64 编码的文本
+# - Base64 解码后，每行一个 ss:// 格式的 Shadowsocks URL
+# - 示例解码后内容：
+#   ss://YWVzLTI1Ni1nY206cGFzc3dvcmQ=@server.example.com:8388/#Server-Name
+#   ss://Y2hhY2hhMjAtaWV0Zi1wb2x5MTMwNTpwd2Q=@another.example.com:443/#HK-01
+#
+# 可以配置多个订阅地址，所有订阅的服务器会合并使用
 remote_config_urls:
-  - https://addr-to-ss-subscribe-url.com
+  - https://your-ss-provider.com/subscribe
+  - https://another-provider.com/subscription
 
 # 注意：remote_config_urls 和命令行的 --config-url 是不同的功能：
 # - remote_config_urls: 订阅 SS 服务器列表（Base64 编码的 ss:// URL）
