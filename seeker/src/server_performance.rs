@@ -105,7 +105,9 @@ impl ServerPerformance {
             0.0
         };
 
-        let score = self.calculate_score(now);
+        let raw_score = self.calculate_score(now);
+        // 转换为越大越好的分数 (0-100)，raw_score 是延迟毫秒数
+        let score = (100.0 * (1.0 - raw_score / DEFAULT_SCORE)).clamp(0.0, 100.0);
 
         ServerPerformanceStats {
             score,

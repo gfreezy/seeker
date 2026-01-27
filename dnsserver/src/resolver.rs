@@ -254,7 +254,7 @@ mod tests {
                 Some("baidu.com".to_string())
             );
             assert!(resolver
-                .resolve("mycookbook.allsunday.io", QueryType::TXT)
+                .resolve("allsunday.io", QueryType::TXT)
                 .await
                 .unwrap()
                 .get_txt()
