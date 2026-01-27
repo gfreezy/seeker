@@ -283,6 +283,9 @@ impl GroupServersChooser {
 
         info!("Group \"{}\", Connections:", self.name);
         if show_stats {
+            println!(
+                "╔══════════════════════════════════════════════════════════════════════════════╗"
+            );
             println!("Group \"{}\", Connections:", self.name);
         }
         let mut v: Vec<_> = map.into_iter().collect();
@@ -338,7 +341,9 @@ impl GroupServersChooser {
             );
         }
         if show_stats {
-            println!();
+            println!(
+                "╚══════════════════════════════════════════════════════════════════════════════╝"
+            );
         }
     }
 
