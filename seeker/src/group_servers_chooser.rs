@@ -503,7 +503,7 @@ async fn ping_server(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "integration-tests"))]
 mod tests {
     use config::ServerProtocol;
     use crypto::CipherType;

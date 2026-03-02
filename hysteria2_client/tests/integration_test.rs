@@ -1,3 +1,5 @@
+#![cfg(feature = "integration-tests")]
+
 use hysteria2_client::{Hy2Client, Hy2Config, Hy2TcpStream, Hy2UdpSocket};
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicU16, Ordering};
