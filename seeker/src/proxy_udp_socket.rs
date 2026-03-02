@@ -1,10 +1,12 @@
 use crate::dns_client::DnsClient;
+use crate::hy2_pool::get_hy2_client;
 use crate::proxy_connection::{
     ProxyConnection, ProxyConnectionEventListener, StoreListener, next_connection_id,
 };
 use crate::traffic::Traffic;
 use config::rule::Action;
 use config::{ServerConfig, ServerProtocol};
+use hysteria2_client::Hy2UdpSocket;
 use socks5_client::Socks5UdpSocket;
 use ssclient::SSUdpSocket;
 use std::io;
@@ -20,6 +22,7 @@ enum ProxyUdpSocketInner {
     Direct(Arc<UdpSocket>),
     Socks5(Arc<Socks5UdpSocket>),
     Shadowsocks(Arc<SSUdpSocket>),
+    Hysteria2(Arc<Hy2UdpSocket>),
 }
 
 #[derive(Clone)]
@@ -55,6 +58,12 @@ impl ProxyUdpSocket {
 
                     let udp = SSUdpSocket::new(server, method, key).await?;
                     ProxyUdpSocketInner::Shadowsocks(Arc::new(udp))
+                }
+                ServerProtocol::Hysteria2 => {
+                    let server = dns_client.lookup_address(config.addr()).await?;
+                    let client = get_hy2_client(config, server)?;
+                    let udp = Hy2UdpSocket::new(client).await?;
+                    ProxyUdpSocketInner::Hysteria2(Arc::new(udp))
                 }
                 protocol => {
                     return Err(Error::new(
@@ -94,6 +103,7 @@ impl ProxyUdpSocket {
             ProxyUdpSocketInner::Direct(socket) => socket.send_to(buf, addr).await,
             ProxyUdpSocketInner::Socks5(socket) => socket.send_to(buf, addr).await,
             ProxyUdpSocketInner::Shadowsocks(socket) => socket.send_to(buf, addr).await,
+            ProxyUdpSocketInner::Hysteria2(socket) => socket.send_to(buf, addr).await,
         };
         match ret {
             Err(_) => {
@@ -120,6 +130,7 @@ impl ProxyUdpSocket {
             ProxyUdpSocketInner::Direct(socket) => socket.recv_from(buf).await,
             ProxyUdpSocketInner::Socks5(socket) => socket.recv_from(buf).await,
             ProxyUdpSocketInner::Shadowsocks(socket) => socket.recv_from(buf).await,
+            ProxyUdpSocketInner::Hysteria2(socket) => socket.recv_from(buf).await,
         };
         match ret {
             Err(_) => {
@@ -147,9 +158,9 @@ impl ProxyConnection for ProxyUdpSocket {
     fn action(&self) -> config::rule::Action {
         match self.inner {
             ProxyUdpSocketInner::Direct(_) => Action::Direct,
-            ProxyUdpSocketInner::Socks5(_) | ProxyUdpSocketInner::Shadowsocks(_) => {
-                Action::Proxy("".to_string())
-            }
+            ProxyUdpSocketInner::Socks5(_)
+            | ProxyUdpSocketInner::Shadowsocks(_)
+            | ProxyUdpSocketInner::Hysteria2(_) => Action::Proxy("".to_string()),
         }
     }
 
@@ -185,6 +196,7 @@ impl ProxyConnection for ProxyUdpSocket {
             ProxyUdpSocketInner::Direct(_) => "direct",
             ProxyUdpSocketInner::Socks5(_) => "socks5",
             ProxyUdpSocketInner::Shadowsocks(_) => "shadowsocks",
+            ProxyUdpSocketInner::Hysteria2(_) => "hy2",
         }
     }
 

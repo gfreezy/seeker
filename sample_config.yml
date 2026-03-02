@@ -111,6 +111,14 @@ servers:
     obfs:  # 不设置默认不使用 obfs
       mode: Http  # 目前只支持 Http
       host: c61be5399e.microsoft.com
+  - name: server-hy2
+    addr: example.com:443          # Hysteria 2 服务器地址
+    protocol: Hysteria2            # 也可以使用 hy2
+    password: my-auth-password
+    sni: example.com               # 可选，默认使用 addr 的域名
+    # obfs_password: my-obfs-key   # 可选，Salamander 混淆密码
+    # insecure: false              # 可选，跳过 TLS 证书验证
+    # recv_window: 0               # 可选，接收窗口带宽提示（Hysteria-CC-RX）
 
 # Clash 格式示例（与上面的 servers 等价，可以混合使用）
 # proxies:

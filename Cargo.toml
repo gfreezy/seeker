@@ -12,6 +12,7 @@ members = [
     "http_proxy_client",
     "tcp_connection",
     "store",
+    "hysteria2_client",
 ]
 resolver = "2"
 

@@ -150,7 +150,7 @@ fn build_dns_query(domain: &str, qtype: u16) -> Vec<u8> {
         buf.extend_from_slice(label.as_bytes());
     }
     buf.push(0x00); // root label
-    // QTYPE
+                    // QTYPE
     buf.push((qtype >> 8) as u8);
     buf.push(qtype as u8);
     // QCLASS = IN
