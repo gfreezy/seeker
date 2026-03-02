@@ -26,6 +26,25 @@ impl HttpsProxyTcpStream {
         password: Option<&str>,
     ) -> Result<Self> {
         let connector = TlsConnector::from(native_tls::TlsConnector::new().unwrap());
+        Self::connect_with_connector(
+            proxy_server,
+            proxy_server_domain,
+            addr,
+            username,
+            password,
+            connector,
+        )
+        .await
+    }
+
+    pub async fn connect_with_connector(
+        proxy_server: SocketAddr,
+        proxy_server_domain: &str,
+        addr: Address,
+        username: Option<&str>,
+        password: Option<&str>,
+        connector: TlsConnector,
+    ) -> Result<Self> {
         let stream = TcpStream::connect(proxy_server).await?;
         let mut conn = connector
             .connect(proxy_server_domain, stream)
@@ -76,54 +95,5 @@ impl AsyncWrite for HttpsProxyTcpStream {
 
     fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<()>> {
         Pin::new(&mut *self.get_mut().conn.lock()).poll_shutdown(cx)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::net::ToSocketAddrs;
-
-    #[ignore]
-    #[tokio::test]
-    async fn test_req_twitter() -> Result<()> {
-        let proxy_domain = "";
-        let port = 443;
-        let proxy_server = format!("{}:{}", proxy_domain, port);
-        let username = Some("");
-        let password = Some("");
-        let target_host = "twitter.com";
-        let stream = HttpsProxyTcpStream::connect(
-            proxy_server.to_socket_addrs().unwrap().next().unwrap(),
-            proxy_domain,
-            Address::DomainNameAddress(target_host.to_string(), 443),
-            username,
-            password,
-        )
-        .await
-        .expect("connect proxy error");
-
-        let connector: TlsConnector = TlsConnector::from(native_tls::TlsConnector::new().unwrap());
-
-        let mut conn = connector
-            .connect(target_host, stream)
-            .await
-            .expect("connect proxy domain");
-
-        conn.write_all(
-            format!(
-                "GET / HTTP/1.1\r\nHost: {}\r\nUser-Agent: curl/7.64.1\r\nAccept: */*\r\n\r\n",
-                target_host
-            )
-            .as_bytes(),
-        )
-        .await?;
-        let mut resp = vec![0; 1024];
-        let size = conn.read(&mut resp).await?;
-
-        let resp_text = String::from_utf8_lossy(&resp[..size]).to_string();
-        eprintln!("{}", &resp_text);
-        assert!(resp_text.contains("HTTP/1.1"));
-        Ok(())
     }
 }

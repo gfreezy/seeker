@@ -12,3 +12,10 @@ config = { path = "../config" }
 base64 = { workspace = true }
 tokio-native-tls = "0.3"
 parking_lot = { workspace = true }
+
+[dev-dependencies]
+testcontainers = { workspace = true }
+tokio = { workspace = true }
+tokio-native-tls = "0.3"
+native-tls = "0.2"
+rcgen = "0.13"

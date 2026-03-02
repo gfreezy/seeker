@@ -17,6 +17,7 @@ dnsserver = { path = "../dnsserver" }
 ssclient = { path = "../ssclient" }
 socks5_client = { path = "../socks5_client" }
 http_proxy_client = { path = "../http_proxy_client" }
+hysteria2_client = { path = "../hysteria2_client" }
 sysconfig = { path = "../sysconfig" }
 tun_nat = { path = "../tun_nat" }
 file-rotate = { workspace = true }
@@ -55,6 +56,8 @@ netlink-sys = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+testcontainers = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
 [features]
 tracing-chrome = ["dep:tracing-chrome"]
