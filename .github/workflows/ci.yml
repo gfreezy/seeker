@@ -20,18 +20,25 @@ jobs:
         include:
           - target: aarch64-unknown-linux-musl
             os: ubuntu-latest
+            cross: true
           - target: x86_64-unknown-linux-musl
             os: ubuntu-latest
+            cross: true
           - target: armv5te-unknown-linux-musleabi
             os: ubuntu-latest
+            cross: true
           - target: armv7-unknown-linux-musleabi
             os: ubuntu-latest
+            cross: true
           # - target: x86_64-unknown-freebsd
           #   os: ubuntu-latest
+          #   cross: true
           - target: x86_64-apple-darwin
             os: macos-latest
+            cross: false
           - target: aarch64-apple-darwin
             os: macos-latest
+            cross: false
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -45,8 +52,17 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all -- --check
 
+      # Cross-compile targets: only check lib and bin targets to avoid
+      # dev-dependencies that may not compile on all architectures
+      # (e.g. tokio-tar uses AtomicU64 unsupported on 32-bit ARM).
+      - name: Check clippy (cross)
+        if: matrix.cross
+        run: cargo clippy --all --lib --bins
+
       - name: Check clippy
+        if: ${{ !matrix.cross }}
         run: cargo clippy --all
 
       - name: Run tests
+        if: ${{ !matrix.cross }}
         run: cargo test --all
