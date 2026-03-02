@@ -45,6 +45,7 @@ os_socketaddr = { workspace = true }
 notify-debouncer-mini = { workspace = true }
 socket2 = { version = "0.5", features = ["all"] }
 crossbeam-channel = "0.5"
+testcontainers = { workspace = true, optional = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 system-configuration = "0.6"
@@ -56,11 +57,10 @@ netlink-sys = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
-testcontainers = { workspace = true }
-tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
 [features]
 tracing-chrome = ["dep:tracing-chrome"]
+integration-tests = ["dep:testcontainers"]
 
 
 [package.metadata.bundle]

@@ -111,8 +111,7 @@ impl AsyncWrite for TcpConnection {
 /// The server listens on port 8388 and forwards all traffic to
 /// 127.0.0.1:12345
 /// The server will be stopped when the returned container is dropped.
-#[cfg(test)]
-#[cfg(all(target_arch = "x86_64", target_env = "gnu"))]
+#[cfg(all(test, feature = "integration-tests"))]
 fn run_obfs_server(
     mode: &str,
     server_port: usize,

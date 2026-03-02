@@ -1,3 +1,5 @@
+#![cfg(feature = "integration-tests")]
+
 use config::Address;
 use http_proxy_client::{HttpProxyTcpStream, HttpsProxyTcpStream};
 use std::net::SocketAddr;

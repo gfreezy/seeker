@@ -337,7 +337,7 @@ mod tests {
         handle.abort();
     }
 
-    #[cfg(all(target_arch = "x86_64", target_env = "gnu"))]
+    #[cfg(feature = "integration-tests")]
     #[tokio::test]
     async fn test_obfs_docker_tls_read_write() {
         use crate::run_obfs_server;
@@ -347,7 +347,10 @@ mod tests {
         const REQ: &str = "hello";
         const RESP: &str = "world";
 
-        let _c = run_obfs_server("tls", 8389, 12346);
+        let container = tokio::task::spawn_blocking(|| run_obfs_server("tls", 8389, 12346))
+            .await
+            .unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
 
         let listener = TcpListener::bind("0.0.0.0:12346").await.unwrap();
 
@@ -380,5 +383,9 @@ mod tests {
         assert_eq!(&buf[..n], RESP.as_bytes());
 
         handle.abort();
+        // Drop container outside async context to avoid runtime panic
+        tokio::task::spawn_blocking(move || drop(container))
+            .await
+            .ok();
     }
 }

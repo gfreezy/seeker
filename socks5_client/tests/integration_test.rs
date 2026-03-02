@@ -1,3 +1,5 @@
+#![cfg(feature = "integration-tests")]
+
 use socks5_client::{Address, Socks5TcpStream, Socks5UdpSocket};
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicU16, Ordering};
