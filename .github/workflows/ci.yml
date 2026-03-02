@@ -20,10 +20,10 @@ jobs:
         include:
           - target: aarch64-unknown-linux-musl
             os: ubuntu-latest
-            cross: true
+            cross: false
           - target: x86_64-unknown-linux-musl
             os: ubuntu-latest
-            cross: true
+            cross: false
           - target: armv5te-unknown-linux-musleabi
             os: ubuntu-latest
             cross: true
@@ -35,7 +35,7 @@ jobs:
           #   cross: true
           - target: x86_64-apple-darwin
             os: macos-latest
-            cross: false
+            cross: true
           - target: aarch64-apple-darwin
             os: macos-latest
             cross: false
