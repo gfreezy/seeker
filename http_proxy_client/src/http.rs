@@ -64,31 +64,3 @@ impl AsyncWrite for HttpProxyTcpStream {
         Pin::new(&mut self.get_mut().conn).poll_shutdown(cx)
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::net::ToSocketAddrs;
-
-    #[ignore]
-    #[tokio::test]
-    async fn test_req_baidu() -> Result<()> {
-        let proxy_server = "";
-        let username = Some("");
-        let password = Some("");
-        let mut conn = HttpProxyTcpStream::connect(
-            proxy_server.to_socket_addrs().unwrap().next().unwrap(),
-            Address::DomainNameAddress("twitter.com".to_string(), 80),
-            username,
-            password,
-        )
-        .await?;
-        conn.write_all(r#"GET / HTTP/1.1\r\nHost: twitter.com\r\n\r\n"#.as_bytes())
-            .await?;
-        let mut resp = vec![0; 1024];
-        let size = conn.read(&mut resp).await?;
-        let resp_text = String::from_utf8_lossy(&resp[..size]).to_string();
-        assert!(dbg!(resp_text).contains("HTTP/1.1"));
-        Ok(())
-    }
-}

@@ -89,23 +89,3 @@ impl Socks5UdpSocket {
         self.socket.local_addr()
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[ignore]
-    #[tokio::test]
-    async fn test_udp() -> Result<()> {
-        let server = "127.0.0.1:1086".parse().unwrap();
-        let udp = Socks5UdpSocket::new(server).await?;
-        let mut buf = vec![0; 1500];
-        let to_addr: SocketAddr = "118.145.8.14:10240".parse().unwrap();
-        let size = udp.send_to(b"hello", to_addr).await?;
-        let (s, addr) = udp.recv_from(&mut buf).await?;
-        assert_eq!(s, size);
-        assert_eq!(addr, to_addr);
-        assert_eq!(&buf[..s], b"hello");
-        Ok(())
-    }
-}

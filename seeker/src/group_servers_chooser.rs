@@ -507,40 +507,113 @@ async fn ping_server(
 mod tests {
     use config::ServerProtocol;
     use crypto::CipherType;
-    use tracing::Level;
+    use std::sync::atomic::{AtomicU16, Ordering};
+    use testcontainers::core::WaitFor;
+    use testcontainers::runners::SyncRunner;
+    use testcontainers::{Container, GenericImage, ImageExt};
 
     use super::*;
 
+    static NEXT_PORT: AtomicU16 = AtomicU16::new(28388);
+
+    fn next_port() -> u16 {
+        NEXT_PORT.fetch_add(1, Ordering::Relaxed)
+    }
+
+    struct TestContainer(Option<Container<GenericImage>>);
+
+    impl TestContainer {
+        fn new(c: Container<GenericImage>) -> Self {
+            Self(Some(c))
+        }
+
+        async fn cleanup(mut self) {
+            if let Some(c) = self.0.take() {
+                tokio::task::spawn_blocking(move || drop(c)).await.ok();
+            }
+        }
+    }
+
+    impl Drop for TestContainer {
+        fn drop(&mut self) {
+            if let Some(c) = self.0.take() {
+                std::mem::forget(c);
+            }
+        }
+    }
+
+    const TEST_PASSWORD: &str = "test-password";
+    const TEST_METHOD: &str = "aes-256-gcm";
+
+    fn start_ss_server(port: u16) -> Container<GenericImage> {
+        GenericImage::new("shadowsocks/shadowsocks-libev", "latest")
+            .with_wait_for(WaitFor::message_on_stdout("listening"))
+            .with_startup_timeout(Duration::from_secs(30))
+            .with_network("host")
+            .with_cmd([
+                "ss-server",
+                "-s",
+                "0.0.0.0",
+                "-p",
+                &port.to_string(),
+                "-k",
+                TEST_PASSWORD,
+                "-m",
+                TEST_METHOD,
+                "-v",
+            ])
+            .start()
+            .expect("failed to start shadowsocks container")
+    }
+
+    async fn start_ss_server_async(port: u16) -> TestContainer {
+        let container = tokio::task::spawn_blocking(move || start_ss_server(port))
+            .await
+            .expect("failed to spawn blocking task for container start");
+        // Brief delay to ensure the server is fully accepting connections
+        sleep(Duration::from_millis(500)).await;
+        TestContainer::new(container)
+    }
+
     #[tokio::test]
-    #[ignore]
-    async fn test_ping_server() -> Result<()> {
+    async fn test_ping_server() {
         store::Store::setup_global_for_test();
-        tracing_subscriber::fmt::Subscriber::builder()
-            .with_max_level(Level::INFO)
-            .init();
+        tracing_subscriber::fmt()
+            .with_env_filter("seeker=debug")
+            .try_init()
+            .ok();
+
+        let port = next_port();
+        let container = start_ss_server_async(port).await;
+
         let server_config = ServerConfig::new(
-            "HK".to_string(),
-            "xxx:2232".parse().unwrap(),
+            "test-ss".to_string(),
+            format!("127.0.0.1:{port}").parse().unwrap(),
             ServerProtocol::Shadowsocks,
             None,
-            Some("sssss".to_string()),
+            Some(TEST_PASSWORD.to_string()),
             Some(CipherType::Aes256Gcm),
             None,
         );
+
         let dns_client = DnsClient::new(
             &[config::DnsServerAddr::UdpSocketAddr(
-                "114.114.114.114:53".parse().unwrap(),
+                "8.8.8.8:53".parse().unwrap(),
             )],
-            Duration::from_secs(1),
+            Duration::from_secs(5),
         )
         .await;
-        ping_server(
+
+        let result = ping_server(
             server_config,
-            &PingURL::new("github.com".to_string(), 443, "/".to_string()),
-            Duration::from_secs(5),
+            &PingURL::new("httpbin.org".to_string(), 80, "/ip".to_string()),
+            Duration::from_secs(10),
             dns_client,
         )
-        .await?;
-        Ok(())
+        .await;
+
+        assert!(result.is_ok(), "ping_server failed: {:?}", result.err());
+
+        container.cleanup().await;
     }
 }
