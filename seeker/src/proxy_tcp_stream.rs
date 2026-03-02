@@ -1,6 +1,7 @@
 use config::rule::Action;
 use config::{Address, ServerConfig, ServerProtocol};
 use http_proxy_client::{HttpProxyTcpStream, HttpsProxyTcpStream};
+use hysteria2_client::Hy2TcpStream;
 use socks5_client::Socks5TcpStream;
 use ssclient::SSTcpStream;
 use std::io::Result;
@@ -13,6 +14,7 @@ use tokio::net::TcpStream;
 use tcp_connection::TcpConnection;
 
 use crate::dns_client::DnsClient;
+use crate::hy2_pool::get_hy2_client;
 use crate::proxy_connection::{
     ProxyConnection, ProxyConnectionEventListener, StoreListener, next_connection_id,
 };
@@ -29,6 +31,7 @@ enum ProxyTcpStreamInner {
     HttpProxy(HttpProxyTcpStream),
     HttpsProxy(HttpsProxyTcpStream),
     Shadowsocks(SSTcpStream),
+    Hysteria2(Hy2TcpStream),
 }
 
 // Note: tokio types don't implement Clone
@@ -106,6 +109,11 @@ impl ProxyTcpStream {
                     let stream = SSTcpStream::connect(stream, remote_addr, method, key).await?;
                     ProxyTcpStreamInner::Shadowsocks(stream)
                 }
+                ServerProtocol::Hysteria2 => {
+                    let client = get_hy2_client(config, proxy_socket_addr)?;
+                    let stream = Hy2TcpStream::connect(&client, remote_addr).await?;
+                    ProxyTcpStreamInner::Hysteria2(stream)
+                }
             }
         } else {
             let socket_addr = dns_client.lookup_address(&remote_addr).await?;
@@ -166,7 +174,8 @@ impl ProxyConnection for ProxyTcpStream {
             ProxyTcpStreamInner::Socks5(_)
             | ProxyTcpStreamInner::HttpProxy(_)
             | ProxyTcpStreamInner::HttpsProxy(_)
-            | ProxyTcpStreamInner::Shadowsocks(_) => Action::Proxy("".to_string()),
+            | ProxyTcpStreamInner::Shadowsocks(_)
+            | ProxyTcpStreamInner::Hysteria2(_) => Action::Proxy("".to_string()),
         }
     }
 
@@ -189,6 +198,7 @@ impl ProxyConnection for ProxyTcpStream {
             ProxyTcpStreamInner::HttpProxy(_) => "http",
             ProxyTcpStreamInner::HttpsProxy(_) => "https",
             ProxyTcpStreamInner::Shadowsocks(_) => "ss",
+            ProxyTcpStreamInner::Hysteria2(_) => "hy2",
         }
     }
 
@@ -224,6 +234,7 @@ impl AsyncRead for ProxyTcpStream {
             ProxyTcpStreamInner::Shadowsocks(conn) => Pin::new(conn).poll_read(cx, buf),
             ProxyTcpStreamInner::HttpProxy(conn) => Pin::new(conn).poll_read(cx, buf),
             ProxyTcpStreamInner::HttpsProxy(conn) => Pin::new(conn).poll_read(cx, buf),
+            ProxyTcpStreamInner::Hysteria2(conn) => Pin::new(conn).poll_read(cx, buf),
         });
 
         match ret {
@@ -262,6 +273,7 @@ impl AsyncWrite for ProxyTcpStream {
             ProxyTcpStreamInner::Shadowsocks(conn) => Pin::new(conn).poll_write(cx, buf),
             ProxyTcpStreamInner::HttpProxy(conn) => Pin::new(conn).poll_write(cx, buf),
             ProxyTcpStreamInner::HttpsProxy(conn) => Pin::new(conn).poll_write(cx, buf),
+            ProxyTcpStreamInner::Hysteria2(conn) => Pin::new(conn).poll_write(cx, buf),
         });
         match ret {
             Ok(size) => {
@@ -292,6 +304,7 @@ impl AsyncWrite for ProxyTcpStream {
             ProxyTcpStreamInner::Shadowsocks(conn) => Pin::new(conn).poll_flush(cx),
             ProxyTcpStreamInner::HttpProxy(conn) => Pin::new(conn).poll_flush(cx),
             ProxyTcpStreamInner::HttpsProxy(conn) => Pin::new(conn).poll_flush(cx),
+            ProxyTcpStreamInner::Hysteria2(conn) => Pin::new(conn).poll_flush(cx),
         });
         match ret {
             Ok(()) => Poll::Ready(Ok(())),
@@ -316,6 +329,7 @@ impl AsyncWrite for ProxyTcpStream {
             ProxyTcpStreamInner::Shadowsocks(conn) => Pin::new(conn).poll_shutdown(cx),
             ProxyTcpStreamInner::HttpProxy(conn) => Pin::new(conn).poll_shutdown(cx),
             ProxyTcpStreamInner::HttpsProxy(conn) => Pin::new(conn).poll_shutdown(cx),
+            ProxyTcpStreamInner::Hysteria2(conn) => Pin::new(conn).poll_shutdown(cx),
         });
         self.shutdown();
         Poll::Ready(ret)

@@ -69,8 +69,7 @@ async fn start_http_proxy_async(port: u16) -> TestContainer {
 
 fn start_https_proxy(port: u16) -> Container<GenericImage> {
     let (cert_pem, key_pem) = generate_self_signed_cert();
-    let listen_arg =
-        format!("https://:{port}?cert=/etc/gost/cert.pem&key=/etc/gost/key.pem");
+    let listen_arg = format!("https://:{port}?cert=/etc/gost/cert.pem&key=/etc/gost/key.pem");
 
     GenericImage::new("ginuerzh/gost", "latest")
         .with_wait_for(WaitFor::message_on_stderr(format!(":{port}")))
@@ -142,10 +141,16 @@ async fn test_https_proxy_tcp() {
             .expect("failed to build TLS connector"),
     );
 
-    let stream =
-        HttpsProxyTcpStream::connect_with_connector(proxy_addr, "localhost", target, None, None, tls_connector)
-            .await
-            .expect("HTTPS proxy connect failed");
+    let stream = HttpsProxyTcpStream::connect_with_connector(
+        proxy_addr,
+        "localhost",
+        target,
+        None,
+        None,
+        tls_connector,
+    )
+    .await
+    .expect("HTTPS proxy connect failed");
 
     // Layer client-side TLS on top for the target connection
     let connector = tokio_native_tls::TlsConnector::from(
