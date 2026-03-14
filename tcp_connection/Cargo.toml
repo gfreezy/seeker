@@ -5,6 +5,9 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+integration-tests = ["dep:testcontainers"]
+
 [dependencies]
 dyn-clone = { workspace = true }
 tokio = { workspace = true }
@@ -12,6 +15,4 @@ nanorand = { workspace = true }
 memchr = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 base64 = { workspace = true }
-
-[target.'cfg(target_arch = "x86_64")'.dev-dependencies]
-testcontainers = { workspace = true }
+testcontainers = { workspace = true, optional = true }

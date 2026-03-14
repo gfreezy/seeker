@@ -61,27 +61,3 @@ impl AsyncWrite for Socks5TcpStream {
         Pin::new(&mut self.get_mut().conn).poll_shutdown(cx)
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
-
-    use super::*;
-
-    #[ignore]
-    #[tokio::test]
-    async fn test_req_baidu() -> Result<()> {
-        let mut conn = Socks5TcpStream::connect(
-            "127.0.0.1:1086".parse().unwrap(),
-            Address::DomainNameAddress("t.cn".to_string(), 80),
-        )
-        .await?;
-        conn.write_all(r#"GET / HTTP/1.1\r\nHost: t.cn\r\n\r\n"#.as_bytes())
-            .await?;
-        let mut resp = vec![0; 1024];
-        let size = conn.read(&mut resp).await?;
-        let resp_text = String::from_utf8_lossy(&resp[..size]).to_string();
-        assert!(resp_text.contains("HTTP/1.1"));
-        Ok(())
-    }
-}

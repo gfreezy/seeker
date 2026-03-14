@@ -1,0 +1,40 @@
+[package]
+name = "hysteria2_client"
+version = "20260127.0.0"
+authors = ["gfreezy <gfreezy@gmail.com>"]
+edition = "2021"
+
+[features]
+integration-tests = [
+    "dep:testcontainers",
+    "dep:tracing-subscriber",
+    "dep:tokio-native-tls",
+    "dep:native-tls",
+    "dep:hickory-resolver",
+    "dep:rcgen",
+    "dep:tempfile",
+]
+
+[dependencies]
+quinn = { version = "0.11", default-features = false, features = ["runtime-tokio", "rustls-ring"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "logging", "std"] }
+h3 = "0.0.8"
+h3-quinn = "0.0.10"
+http = "1"
+blake2 = "0.10"
+tokio = { workspace = true }
+bytes = { workspace = true }
+tracing = { workspace = true }
+config = { path = "../config" }
+rand = { workspace = true }
+anyhow = { workspace = true }
+parking_lot = { workspace = true }
+futures-util = { workspace = true }
+rustls-native-certs = "0.8"
+testcontainers = { workspace = true, optional = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"], optional = true }
+tokio-native-tls = { version = "0.3", optional = true }
+native-tls = { version = "0.2", optional = true }
+hickory-resolver = { workspace = true, optional = true }
+rcgen = { version = "0.13", optional = true }
+tempfile = { workspace = true, optional = true }

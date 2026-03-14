@@ -17,6 +17,7 @@ dnsserver = { path = "../dnsserver" }
 ssclient = { path = "../ssclient" }
 socks5_client = { path = "../socks5_client" }
 http_proxy_client = { path = "../http_proxy_client" }
+hysteria2_client = { path = "../hysteria2_client" }
 sysconfig = { path = "../sysconfig" }
 tun_nat = { path = "../tun_nat" }
 file-rotate = { workspace = true }
@@ -44,6 +45,7 @@ os_socketaddr = { workspace = true }
 notify-debouncer-mini = { workspace = true }
 socket2 = { version = "0.5", features = ["all"] }
 crossbeam-channel = "0.5"
+testcontainers = { workspace = true, optional = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 system-configuration = "0.6"
@@ -58,6 +60,7 @@ tempfile = { workspace = true }
 
 [features]
 tracing-chrome = ["dep:tracing-chrome"]
+integration-tests = ["dep:testcontainers"]
 
 
 [package.metadata.bundle]

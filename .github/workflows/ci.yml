@@ -12,9 +12,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test:
-    env:
-      DNS: 8.8.8.8
+  check:
     strategy:
       matrix:
         include:
@@ -46,7 +44,17 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Check clippy
-        run: cargo clippy --all
+        run: cargo clippy --all --lib --bins
 
+  test:
+    runs-on: ubuntu-latest
+    env:
+      DNS: 8.8.8.8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        run: rustup update stable
       - name: Run tests
-        run: cargo test --all
+        run: cargo test --workspace
+      - name: Run integration tests
+        run: cargo test --workspace --features integration-tests

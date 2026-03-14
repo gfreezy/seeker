@@ -31,6 +31,8 @@ pub enum ServerProtocol {
     Socks5,
     #[serde(alias = "ss")]
     Shadowsocks,
+    #[serde(alias = "hy2")]
+    Hysteria2,
 }
 
 /// Configuration for a server
@@ -44,6 +46,14 @@ pub struct ServerConfig {
     password: Option<String>,
     method: Option<CipherType>,
     obfs: Option<Obfs>,
+    /// TLS SNI for Hysteria2 (defaults to addr hostname)
+    sni: Option<String>,
+    /// Salamander obfuscation password for Hysteria2
+    obfs_password: Option<String>,
+    /// Skip TLS certificate verification for Hysteria2
+    insecure: Option<bool>,
+    /// Receive window bandwidth hint for Hysteria2 (Hysteria-CC-RX)
+    recv_window: Option<u64>,
 }
 
 // Internal struct for deserializing both Seeker and Clash formats
@@ -68,6 +78,15 @@ enum ServerConfigHelper {
         // Clash-specific fields we ignore
         #[serde(default)]
         _udp: Option<bool>,
+        // Hysteria2 fields
+        #[serde(default)]
+        sni: Option<String>,
+        #[serde(default)]
+        obfs_password: Option<String>,
+        #[serde(default)]
+        insecure: Option<bool>,
+        #[serde(default)]
+        recv_window: Option<u64>,
     },
     // Seeker format
     Seeker {
@@ -85,6 +104,15 @@ enum ServerConfigHelper {
         method: Option<CipherType>,
         #[serde(default)]
         obfs: Option<Obfs>,
+        // Hysteria2 fields
+        #[serde(default)]
+        sni: Option<String>,
+        #[serde(default)]
+        obfs_password: Option<String>,
+        #[serde(default)]
+        insecure: Option<bool>,
+        #[serde(default)]
+        recv_window: Option<u64>,
     },
 }
 
@@ -96,6 +124,8 @@ enum ClashProtocol {
     Socks5,
     Http,
     Https,
+    Hy2,
+    Hysteria2,
 }
 
 impl From<ClashProtocol> for ServerProtocol {
@@ -105,6 +135,7 @@ impl From<ClashProtocol> for ServerProtocol {
             ClashProtocol::Socks5 => ServerProtocol::Socks5,
             ClashProtocol::Http => ServerProtocol::Http,
             ClashProtocol::Https => ServerProtocol::Https,
+            ClashProtocol::Hy2 | ClashProtocol::Hysteria2 => ServerProtocol::Hysteria2,
         }
     }
 }
@@ -127,6 +158,10 @@ impl<'de> Deserialize<'de> for ServerConfig {
                 method,
                 obfs,
                 _udp: _,
+                sni,
+                obfs_password,
+                insecure,
+                recv_window,
             } => {
                 let addr = Address::from_str(&format!("{server}:{port}")).map_err(|_| {
                     Error::custom(format!("invalid server address: {server}:{port}"))
@@ -139,6 +174,10 @@ impl<'de> Deserialize<'de> for ServerConfig {
                     password,
                     method,
                     obfs,
+                    sni,
+                    obfs_password,
+                    insecure,
+                    recv_window,
                 })
             }
             ServerConfigHelper::Seeker {
@@ -149,6 +188,10 @@ impl<'de> Deserialize<'de> for ServerConfig {
                 password,
                 method,
                 obfs,
+                sni,
+                obfs_password,
+                insecure,
+                recv_window,
             } => Ok(ServerConfig {
                 name,
                 addr,
@@ -157,6 +200,10 @@ impl<'de> Deserialize<'de> for ServerConfig {
                 password,
                 method,
                 obfs,
+                sni,
+                obfs_password,
+                insecure,
+                recv_window,
             }),
         }
     }
@@ -229,6 +276,10 @@ impl ServerConfig {
             password,
             method,
             obfs,
+            sni: None,
+            obfs_password: None,
+            insecure: None,
+            recv_window: None,
         }
     }
 
@@ -267,6 +318,26 @@ impl ServerConfig {
 
     pub fn obfs(&self) -> Option<&Obfs> {
         self.obfs.as_ref()
+    }
+
+    /// Get TLS SNI for Hysteria2
+    pub fn sni(&self) -> Option<&str> {
+        self.sni.as_deref()
+    }
+
+    /// Get Salamander obfuscation password for Hysteria2
+    pub fn obfs_password(&self) -> Option<&str> {
+        self.obfs_password.as_deref()
+    }
+
+    /// Get insecure flag for Hysteria2
+    pub fn insecure(&self) -> bool {
+        self.insecure.unwrap_or(false)
+    }
+
+    /// Get receive window for Hysteria2
+    pub fn recv_window(&self) -> Option<u64> {
+        self.recv_window
     }
 
     pub fn from_url(encoded: &str) -> Result<ServerConfig, UrlParseError> {
@@ -687,6 +758,7 @@ password: mixed123
             ("https", ServerProtocol::Https),
             ("socks5", ServerProtocol::Socks5),
             ("ss", ServerProtocol::Shadowsocks),
+            ("hy2", ServerProtocol::Hysteria2),
         ];
 
         for (alias, expected) in test_cases {
@@ -704,5 +776,124 @@ protocol: {alias}
                 "Failed for alias: {alias}"
             );
         }
+    }
+
+    #[test]
+    fn test_parse_seeker_hysteria2_basic() {
+        let yaml = r#"
+name: server-hy2
+addr: example.com:443
+protocol: Hysteria2
+password: my-auth-password
+"#;
+        let server_config: ServerConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(server_config.name(), "server-hy2");
+        assert_eq!(server_config.protocol(), ServerProtocol::Hysteria2);
+        assert_eq!(
+            server_config.addr(),
+            &Address::from_str("example.com:443").unwrap()
+        );
+        assert_eq!(server_config.password(), Some("my-auth-password"));
+        assert_eq!(server_config.sni(), None);
+        assert_eq!(server_config.obfs_password(), None);
+        assert!(!server_config.insecure());
+        assert_eq!(server_config.recv_window(), None);
+    }
+
+    #[test]
+    fn test_parse_seeker_hysteria2_full() {
+        let yaml = r#"
+name: server-hy2-full
+addr: example.com:443
+protocol: Hysteria2
+password: my-auth-password
+sni: custom.example.com
+obfs_password: my-obfs-key
+insecure: true
+recv_window: 26214400
+"#;
+        let server_config: ServerConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(server_config.name(), "server-hy2-full");
+        assert_eq!(server_config.protocol(), ServerProtocol::Hysteria2);
+        assert_eq!(
+            server_config.addr(),
+            &Address::from_str("example.com:443").unwrap()
+        );
+        assert_eq!(server_config.password(), Some("my-auth-password"));
+        assert_eq!(server_config.sni(), Some("custom.example.com"));
+        assert_eq!(server_config.obfs_password(), Some("my-obfs-key"));
+        assert!(server_config.insecure());
+        assert_eq!(server_config.recv_window(), Some(26214400));
+    }
+
+    #[test]
+    fn test_parse_seeker_hysteria2_hy2_alias() {
+        let yaml = r#"
+name: server-hy2-alias
+addr: example.com:443
+protocol: hy2
+password: test-password
+"#;
+        let server_config: ServerConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(server_config.name(), "server-hy2-alias");
+        assert_eq!(server_config.protocol(), ServerProtocol::Hysteria2);
+    }
+
+    #[test]
+    fn test_parse_clash_hysteria2_format() {
+        let yaml = r#"
+name: "HY2 Server"
+type: hy2
+server: example.com
+port: 443
+password: my-auth-password
+sni: custom.example.com
+obfs_password: my-obfs-key
+insecure: true
+recv_window: 26214400
+"#;
+        let server_config: ServerConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(server_config.name(), "HY2 Server");
+        assert_eq!(server_config.protocol(), ServerProtocol::Hysteria2);
+        assert_eq!(
+            server_config.addr(),
+            &Address::from_str("example.com:443").unwrap()
+        );
+        assert_eq!(server_config.password(), Some("my-auth-password"));
+        assert_eq!(server_config.sni(), Some("custom.example.com"));
+        assert_eq!(server_config.obfs_password(), Some("my-obfs-key"));
+        assert!(server_config.insecure());
+        assert_eq!(server_config.recv_window(), Some(26214400));
+    }
+
+    #[test]
+    fn test_parse_clash_hysteria2_full_name() {
+        let yaml = r#"
+name: "HY2 Full"
+type: hysteria2
+server: example.com
+port: 443
+password: password
+"#;
+        let server_config: ServerConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(server_config.name(), "HY2 Full");
+        assert_eq!(server_config.protocol(), ServerProtocol::Hysteria2);
+    }
+
+    #[test]
+    fn test_hysteria2_fields_default_none_for_other_protocols() {
+        let yaml = r#"
+name: server-ss
+addr: example.com:8388
+protocol: Shadowsocks
+method: chacha20-ietf
+password: password
+"#;
+        let server_config: ServerConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(server_config.protocol(), ServerProtocol::Shadowsocks);
+        assert_eq!(server_config.sni(), None);
+        assert_eq!(server_config.obfs_password(), None);
+        assert!(!server_config.insecure());
+        assert_eq!(server_config.recv_window(), None);
     }
 }
