@@ -81,6 +81,10 @@ impl ProxyClient {
         }
     }
 
+    pub fn server_chooser(&self) -> &ServerChooser {
+        &self.server_chooser
+    }
+
     async fn run_tcp_relay_server(&self) -> Result<()> {
         let listener = TcpListener::bind(("0.0.0.0", REDIR_LISTEN_PORT))
             .await

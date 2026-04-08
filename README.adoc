@@ -229,6 +229,43 @@ sudo seeker --config-url https://your-server.com/encrypted-config.txt --key mypa
 
 这些优化确保了代理连接的稳定性，同时仍能在服务器真正出现问题时及时切换到更好的服务器。
 
+=== HTTP API
+
+`seeker` 支持通过 HTTP API 查询代理服务器的性能数据。在配置文件中设置 `api_addr` 即可启动 API 服务器：
+
+[source,yaml]
+----
+api_addr: "127.0.0.1:7890"
+----
+
+启动后可以通过 `GET /api/stats` 获取所有代理组的性能数据：
+
+[source,bash]
+----
+curl http://127.0.0.1:7890/api/stats
+----
+
+返回 JSON 格式：
+[source,json]
+----
+{
+  "groups": {
+    "proxy-group-1": [
+      {
+        "server": "1.2.3.4:8388",
+        "score": 85.2,
+        "latency": 120.5,
+        "success_rate": 0.95,
+        "success": 100,
+        "failure": 5
+      }
+    ]
+  }
+}
+----
+
+不配置 `api_addr` 则不会启动 API 服务器。
+
 === Sample Config
 https://github.com/gfreezy/seeker/blob/master/sample_config.yml
 

@@ -131,7 +131,7 @@ The project uses a Cargo workspace with these crates:
 
 ## Development Notes
 
-- The project uses async-std for async runtime
+- The project uses tokio for async runtime
 - DNS mappings are persisted in SQLite (`seeker.sqlite`) - delete to reset
 - Config file changes are auto-reloaded for rules (servers require restart)
 - Use `tracing` for logging (spans are used extensively for debugging)

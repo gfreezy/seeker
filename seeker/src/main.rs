@@ -1,6 +1,7 @@
 #![type_length_limit = "2374570"]
 #[macro_use]
 mod macros;
+mod api_server;
 mod config_encryptor;
 mod config_watcher;
 mod dns_client;
@@ -145,6 +146,7 @@ async fn main() -> anyhow::Result<()> {
 
     let uid = args.user_id;
     let show_stats = args.stats;
+    let api_addr = config.api_addr.clone();
 
     eprint!(".");
     set_rlimit_no_file(10240)?;
@@ -181,11 +183,20 @@ async fn main() -> anyhow::Result<()> {
             _iptables_setup = Some(setup);
         }
 
+        let api_server_handle = if let Some(ref api_addr) = api_addr {
+            let addr: std::net::SocketAddr = api_addr.parse().expect("invalid api_addr");
+            let chooser = client.server_chooser().clone();
+            Some(tokio::spawn(api_server::run_api_server(addr, chooser)))
+        } else {
+            None
+        };
+
         tokio::select! {
             _ = client.run().instrument(tracing::trace_span!("ProxyClient.run")) => {},
             _ = rx.recv().instrument(tracing::trace_span!("Signal receiver")) => {
                 println!("Received shutdown signal");
             }
+            _ = async { api_server_handle.unwrap().await }, if api_server_handle.is_some() => {},
         }
     }
 

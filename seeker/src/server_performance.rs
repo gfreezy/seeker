@@ -8,7 +8,7 @@ pub const FAILURE_LATENCY: Duration = Duration::from_secs(60); // 60秒表示服
 pub const DEFAULT_SCORE: f64 = 100000.0; // 未测试过的服务器返回无穷大
 pub const DEFAULT_LATENCY: f64 = 100000.0; // 未测试过的服务器返回无穷大
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct ServerPerformanceStats {
     pub score: f64,
     pub latency: f64,
@@ -19,6 +19,7 @@ pub struct ServerPerformanceStats {
 
 #[derive(Clone)]
 pub struct ServerPerformance {
+    name: String,
     latency_history: Vec<(Instant, Duration)>,
     success_count: u32,
     failure_count: u32,
@@ -28,8 +29,9 @@ pub struct ServerPerformance {
 }
 
 impl ServerPerformance {
-    pub fn new(max_history_size: usize, half_life: Duration) -> Self {
+    pub fn new(name: String, max_history_size: usize, half_life: Duration) -> Self {
         Self {
+            name,
             latency_history: Vec::new(),
             success_count: 0,
             failure_count: 0,
@@ -139,7 +141,13 @@ impl ServerPerformanceTracker {
         let mut history = self.performance_history.lock();
         let performance = history
             .entry(server.addr().to_string())
-            .or_insert_with(|| ServerPerformance::new(self.max_history_size, self.half_life));
+            .or_insert_with(|| {
+                ServerPerformance::new(
+                    server.name().to_string(),
+                    self.max_history_size,
+                    self.half_life,
+                )
+            });
         performance.add_result(latency, success);
     }
 
@@ -158,13 +166,13 @@ impl ServerPerformanceTracker {
             .map(|p| p.get_stats())
     }
 
-    pub fn get_all_server_stats(&self) -> Vec<(String, ServerPerformanceStats)> {
+    pub fn get_all_server_stats(&self) -> Vec<(String, String, ServerPerformanceStats)> {
         let history = self.performance_history.lock();
         history
             .iter()
             .map(|(addr, perf)| {
                 let stats = perf.get_stats();
-                (addr.clone(), stats)
+                (addr.clone(), perf.name.clone(), stats)
             })
             .collect()
     }

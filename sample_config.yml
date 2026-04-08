@@ -48,6 +48,10 @@ idle_timeout: 300s
 write_timeout: 300s
 # ss 服务器重试次数，到达重试次数后会自动选择下一个最快的服务器
 max_connect_errors: 2
+# HTTP API 地址，用于查询代理服务器的性能数据（延迟、成功率、分数等）。
+# 配置后 seeker 会启动一个 HTTP 服务器，可通过 GET /api/stats 获取 JSON 格式的性能数据。
+# 不配置则不启动 API 服务器。
+api_addr: "127.0.0.1:7890"
 # geoip 数据库路径，如果使用相对路径，相对于可执行文件的路径。默认会搜索可执行文件同级目录下的 geoip.mmdb 文件
 # 可以从 https://github.com/Hackl0us/GeoIP2-CN 下载 mmdb 格式的文件
 geo_ip: path/to/geoip.mmdb

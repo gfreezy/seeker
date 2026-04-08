@@ -158,6 +158,17 @@ impl ServerChooser {
             .map(|chooser| chooser.get_performance_tracker())
     }
 
+    pub fn get_all_performance_stats(
+        &self,
+    ) -> HashMap<String, Vec<(String, String, crate::server_performance::ServerPerformanceStats)>> {
+        let mut result = HashMap::new();
+        for (group_name, chooser) in &self.group_servers_chooser {
+            let tracker = chooser.get_performance_tracker();
+            result.insert(group_name.clone(), tracker.get_all_server_stats());
+        }
+        result
+    }
+
     /// Reset all group servers choosers
     pub fn reset_all(&self) {
         tracing::info!("Resetting all server choosers");

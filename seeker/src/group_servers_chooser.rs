@@ -318,7 +318,7 @@ impl GroupServersChooser {
         }
         info!("\nGroup \"{}\", Server Performance:", self.name);
         let server_stats = self.performance_tracker.get_all_server_stats();
-        for (addr, stats) in server_stats {
+        for (addr, _name, stats) in server_stats {
             if show_stats {
                 println!(
                     "{}: score={:.2} latency={:.1}ms, success_rate={:.2}%, success={}, failure={}",

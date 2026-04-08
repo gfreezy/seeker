@@ -89,6 +89,8 @@ pub struct Config {
     #[serde(with = "duration", default = "default_idle_timeout")]
     pub idle_timeout: Duration,
     pub max_connect_errors: usize,
+    #[serde(default)]
+    pub api_addr: Option<String>,
 }
 
 impl Debug for Config {

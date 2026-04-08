@@ -45,6 +45,9 @@ os_socketaddr = { workspace = true }
 notify-debouncer-mini = { workspace = true }
 socket2 = { version = "0.5", features = ["all"] }
 crossbeam-channel = "0.5"
+axum = { workspace = true }
+serde_json = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
 testcontainers = { workspace = true, optional = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
