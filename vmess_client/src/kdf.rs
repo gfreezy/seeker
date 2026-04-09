@@ -30,7 +30,7 @@ const OPAD: u8 = 0x5C;
 ///   ...
 ///
 /// Each level is a function that takes arbitrary data and returns 32 bytes.
-
+///
 /// Level 0: plain HMAC-SHA256 with key = KDF_SALT_CONST_VMESS_AEAD_KDF
 fn l0(data: &[u8]) -> [u8; TAG_LEN] {
     let mut mac = HmacSha256::new_from_slice(KDF_SALT_CONST_VMESS_AEAD_KDF).expect("HMAC key size");

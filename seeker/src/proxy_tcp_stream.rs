@@ -35,7 +35,7 @@ enum ProxyTcpStreamInner {
     Shadowsocks(SSTcpStream),
     Hysteria2(Hy2TcpStream),
     Trojan(TrojanTcpStream),
-    VMess(VMessTcpStream),
+    VMess(Box<VMessTcpStream>),
 }
 
 // Note: tokio types don't implement Clone
@@ -149,10 +149,10 @@ impl ProxyTcpStream {
                         )
                     })?;
                     let security = config.vmess_security().unwrap_or("auto");
-                    ProxyTcpStreamInner::VMess(
+                    ProxyTcpStreamInner::VMess(Box::new(
                         VMessTcpStream::connect(proxy_socket_addr, uuid, remote_addr, security)
                             .await?,
-                    )
+                    ))
                 }
             }
         } else {
