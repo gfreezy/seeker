@@ -161,14 +161,15 @@ impl ServerChooser {
     }
 
     /// Returns a map of group_name -> (selected_server_addr, Vec<(server_addr, server_name, stats)>)
-    pub fn get_all_performance_stats(
-        &self,
-    ) -> HashMap<String, GroupPerformanceStats> {
+    pub fn get_all_performance_stats(&self) -> HashMap<String, GroupPerformanceStats> {
         let mut result = HashMap::new();
         for (group_name, chooser) in &self.group_servers_chooser {
             let tracker = chooser.get_performance_tracker();
             let selected = chooser.get_selected_server().addr().to_string();
-            result.insert(group_name.clone(), (selected, tracker.get_all_server_stats()));
+            result.insert(
+                group_name.clone(),
+                (selected, tracker.get_all_server_stats()),
+            );
         }
         result
     }

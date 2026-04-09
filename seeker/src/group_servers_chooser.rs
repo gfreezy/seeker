@@ -369,9 +369,7 @@ impl GroupServersChooser {
                 let self_clone = self.clone();
                 let config_clone = config.clone();
                 task::spawn(async move {
-                    let (result, ping_results) = self_clone
-                        .ping_server(config_clone.clone())
-                        .await;
+                    let (result, ping_results) = self_clone.ping_server(config_clone.clone()).await;
                     let is_success = result.is_ok();
                     self_clone.performance_tracker.add_result(
                         &config_clone,
@@ -398,7 +396,10 @@ impl GroupServersChooser {
         self.move_to_next_server(!wait_for_all);
     }
 
-    async fn ping_server(&self, server_config: ServerConfig) -> (std::io::Result<Duration>, Vec<PingUrlResult>) {
+    async fn ping_server(
+        &self,
+        server_config: ServerConfig,
+    ) -> (std::io::Result<Duration>, Vec<PingUrlResult>) {
         let total_start = Instant::now();
 
         // Ping all URLs concurrently
@@ -461,7 +462,9 @@ impl GroupServersChooser {
         let result = if all_success {
             Ok(total_start.elapsed())
         } else {
-            let first_err = ping_results.iter().find(|r| !r.success)
+            let first_err = ping_results
+                .iter()
+                .find(|r| !r.success)
                 .and_then(|r| r.error.clone())
                 .unwrap_or_else(|| "ping failed".to_string());
             Err(std::io::Error::other(first_err))
@@ -521,7 +524,7 @@ async fn ping_server(
         )))?;
 
     let req = format!(
-            "GET {path} HTTP/1.1\r\n\
+        "GET {path} HTTP/1.1\r\n\
             Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7\r\n\
             Accept-Encoding: gzip, deflate, br, zstd\r\n\
             Accept-Language: en-US,en;q=0.9\r\n\
@@ -540,8 +543,8 @@ async fn ping_server(
             sec-ch-ua-mobile: ?0\r\n\
             sec-ch-ua-platform: \"macOS\"\r\n\
             \r\n",
-            ping_url.host()
-        );
+        ping_url.host()
+    );
 
     let resp_buf = if ping_url.port() == 443 {
         let cx = native_tls::TlsConnector::builder().build().unwrap();
@@ -597,11 +600,13 @@ async fn ping_server(
     let response = String::from_utf8_lossy(&resp_buf);
     if let Some(status_line) = response.lines().next()
         && let Some(status_code) = status_line.split_whitespace().nth(1)
-            && !status_code.starts_with('2') && !status_code.starts_with('3') {
-                return Err(std::io::Error::other(
-                    format!("server={server_name}({server_addr}), url={url_str}, stage=status_check, status_code={status_code}"),
-                ));
-            }
+        && !status_code.starts_with('2')
+        && !status_code.starts_with('3')
+    {
+        return Err(std::io::Error::other(format!(
+            "server={server_name}({server_addr}), url={url_str}, stage=status_check, status_code={status_code}"
+        )));
+    }
     Ok(())
 }
 

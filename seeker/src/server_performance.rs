@@ -52,7 +52,12 @@ impl ServerPerformance {
         }
     }
 
-    pub fn add_result(&mut self, latency: Option<Duration>, success: bool, ping_results: Vec<PingUrlResult>) {
+    pub fn add_result(
+        &mut self,
+        latency: Option<Duration>,
+        success: bool,
+        ping_results: Vec<PingUrlResult>,
+    ) {
         self.last_ping_results = ping_results;
         let now = Instant::now();
 
@@ -150,17 +155,21 @@ impl ServerPerformanceTracker {
         }
     }
 
-    pub fn add_result(&self, server: &ServerConfig, latency: Option<Duration>, success: bool, ping_results: Vec<PingUrlResult>) {
+    pub fn add_result(
+        &self,
+        server: &ServerConfig,
+        latency: Option<Duration>,
+        success: bool,
+        ping_results: Vec<PingUrlResult>,
+    ) {
         let mut history = self.performance_history.lock();
-        let performance = history
-            .entry(server.addr().to_string())
-            .or_insert_with(|| {
-                ServerPerformance::new(
-                    server.name().to_string(),
-                    self.max_history_size,
-                    self.half_life,
-                )
-            });
+        let performance = history.entry(server.addr().to_string()).or_insert_with(|| {
+            ServerPerformance::new(
+                server.name().to_string(),
+                self.max_history_size,
+                self.half_life,
+            )
+        });
         performance.add_result(latency, success, ping_results);
     }
 

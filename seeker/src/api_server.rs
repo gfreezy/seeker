@@ -40,10 +40,13 @@ async fn get_stats(State(chooser): State<ServerChooser>) -> Json<StatsResponse> 
                     stats,
                 })
                 .collect();
-            (group_name, GroupStats {
-                selected_server: selected,
-                servers: server_stats,
-            })
+            (
+                group_name,
+                GroupStats {
+                    selected_server: selected,
+                    servers: server_stats,
+                },
+            )
         })
         .collect();
     Json(StatsResponse { groups })
@@ -58,7 +61,5 @@ pub async fn run_api_server(addr: SocketAddr, server_chooser: ServerChooser) {
         .await
         .expect("failed to bind API server address");
     tracing::info!("API server listening on {}", addr);
-    axum::serve(listener, app)
-        .await
-        .expect("API server error");
+    axum::serve(listener, app).await.expect("API server error");
 }
