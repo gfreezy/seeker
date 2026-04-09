@@ -10,6 +10,7 @@ use std::task::{Context, Poll};
 use std::time::Instant;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::net::TcpStream;
+use trojan_client::TrojanTcpStream;
 
 use tcp_connection::TcpConnection;
 
@@ -32,6 +33,7 @@ enum ProxyTcpStreamInner {
     HttpsProxy(HttpsProxyTcpStream),
     Shadowsocks(SSTcpStream),
     Hysteria2(Hy2TcpStream),
+    Trojan(TrojanTcpStream),
 }
 
 // Note: tokio types don't implement Clone
@@ -114,6 +116,29 @@ impl ProxyTcpStream {
                     let stream = Hy2TcpStream::connect(&client, remote_addr).await?;
                     ProxyTcpStreamInner::Hysteria2(stream)
                 }
+                ServerProtocol::Trojan => {
+                    let sni = config
+                        .sni()
+                        .map(|s| s.to_string())
+                        .or_else(|| config.addr().hostname().map(|s| s.to_string()))
+                        .ok_or_else(|| {
+                            Error::new(
+                                ErrorKind::InvalidData,
+                                "sni or domain must be set for trojan protocol.",
+                            )
+                        })?;
+                    let password = config.password().unwrap_or("");
+                    ProxyTcpStreamInner::Trojan(
+                        TrojanTcpStream::connect(
+                            proxy_socket_addr,
+                            &sni,
+                            remote_addr,
+                            password,
+                            config.insecure(),
+                        )
+                        .await?,
+                    )
+                }
             }
         } else {
             let socket_addr = dns_client.lookup_address(&remote_addr).await?;
@@ -175,7 +200,8 @@ impl ProxyConnection for ProxyTcpStream {
             | ProxyTcpStreamInner::HttpProxy(_)
             | ProxyTcpStreamInner::HttpsProxy(_)
             | ProxyTcpStreamInner::Shadowsocks(_)
-            | ProxyTcpStreamInner::Hysteria2(_) => Action::Proxy("".to_string()),
+            | ProxyTcpStreamInner::Hysteria2(_)
+            | ProxyTcpStreamInner::Trojan(_) => Action::Proxy("".to_string()),
         }
     }
 
@@ -199,6 +225,7 @@ impl ProxyConnection for ProxyTcpStream {
             ProxyTcpStreamInner::HttpsProxy(_) => "https",
             ProxyTcpStreamInner::Shadowsocks(_) => "ss",
             ProxyTcpStreamInner::Hysteria2(_) => "hy2",
+            ProxyTcpStreamInner::Trojan(_) => "trojan",
         }
     }
 
@@ -235,6 +262,7 @@ impl AsyncRead for ProxyTcpStream {
             ProxyTcpStreamInner::HttpProxy(conn) => Pin::new(conn).poll_read(cx, buf),
             ProxyTcpStreamInner::HttpsProxy(conn) => Pin::new(conn).poll_read(cx, buf),
             ProxyTcpStreamInner::Hysteria2(conn) => Pin::new(conn).poll_read(cx, buf),
+            ProxyTcpStreamInner::Trojan(conn) => Pin::new(conn).poll_read(cx, buf),
         });
 
         match ret {
@@ -274,6 +302,7 @@ impl AsyncWrite for ProxyTcpStream {
             ProxyTcpStreamInner::HttpProxy(conn) => Pin::new(conn).poll_write(cx, buf),
             ProxyTcpStreamInner::HttpsProxy(conn) => Pin::new(conn).poll_write(cx, buf),
             ProxyTcpStreamInner::Hysteria2(conn) => Pin::new(conn).poll_write(cx, buf),
+            ProxyTcpStreamInner::Trojan(conn) => Pin::new(conn).poll_write(cx, buf),
         });
         match ret {
             Ok(size) => {
@@ -305,6 +334,7 @@ impl AsyncWrite for ProxyTcpStream {
             ProxyTcpStreamInner::HttpProxy(conn) => Pin::new(conn).poll_flush(cx),
             ProxyTcpStreamInner::HttpsProxy(conn) => Pin::new(conn).poll_flush(cx),
             ProxyTcpStreamInner::Hysteria2(conn) => Pin::new(conn).poll_flush(cx),
+            ProxyTcpStreamInner::Trojan(conn) => Pin::new(conn).poll_flush(cx),
         });
         match ret {
             Ok(()) => Poll::Ready(Ok(())),
@@ -330,6 +360,7 @@ impl AsyncWrite for ProxyTcpStream {
             ProxyTcpStreamInner::HttpProxy(conn) => Pin::new(conn).poll_shutdown(cx),
             ProxyTcpStreamInner::HttpsProxy(conn) => Pin::new(conn).poll_shutdown(cx),
             ProxyTcpStreamInner::Hysteria2(conn) => Pin::new(conn).poll_shutdown(cx),
+            ProxyTcpStreamInner::Trojan(conn) => Pin::new(conn).poll_shutdown(cx),
         });
         self.shutdown();
         Poll::Ready(ret)

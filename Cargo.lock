@@ -3037,6 +3037,7 @@ dependencies = [
  "tracing-chrome",
  "tracing-futures",
  "tracing-subscriber",
+ "trojan_client",
  "tun_nat",
  "ureq 2.12.1",
  "url",
@@ -3174,6 +3175,17 @@ name = "sha-1"
 version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f5058ada175748e33390e40e872bd0fe59a19f265d0158daa551c5a88a76009c"
+dependencies = [
+ "cfg-if",
+ "cpufeatures",
+ "digest",
+]
+
+[[package]]
+name = "sha2"
+version = "0.10.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a7507d819769d01a365ab707794a4084392c824f54a7a6a7862f8c3d0892b283"
 dependencies = [
  "cfg-if",
  "cpufeatures",
@@ -3805,6 +3817,22 @@ dependencies = [
  "tracing",
  "tracing-core",
  "tracing-log",
+]
+
+[[package]]
+name = "trojan_client"
+version = "20260127.0.0"
+dependencies = [
+ "bytes",
+ "config",
+ "native-tls",
+ "parking_lot",
+ "rcgen",
+ "sha2",
+ "testcontainers",
+ "tokio",
+ "tokio-native-tls",
+ "tracing",
 ]
 
 [[package]]

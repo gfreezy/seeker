@@ -33,6 +33,8 @@ pub enum ServerProtocol {
     Shadowsocks,
     #[serde(alias = "hy2")]
     Hysteria2,
+    #[serde(alias = "trojan")]
+    Trojan,
 }
 
 /// Configuration for a server
@@ -126,6 +128,7 @@ enum ClashProtocol {
     Https,
     Hy2,
     Hysteria2,
+    Trojan,
 }
 
 impl From<ClashProtocol> for ServerProtocol {
@@ -136,6 +139,7 @@ impl From<ClashProtocol> for ServerProtocol {
             ClashProtocol::Http => ServerProtocol::Http,
             ClashProtocol::Https => ServerProtocol::Https,
             ClashProtocol::Hy2 | ClashProtocol::Hysteria2 => ServerProtocol::Hysteria2,
+            ClashProtocol::Trojan => ServerProtocol::Trojan,
         }
     }
 }
@@ -343,8 +347,10 @@ impl ServerConfig {
     pub fn from_url(encoded: &str) -> Result<ServerConfig, UrlParseError> {
         let parsed = Url::parse(encoded).map_err(UrlParseError::from)?;
 
-        if parsed.scheme() != "ss" {
-            return Err(UrlParseError::InvalidScheme);
+        match parsed.scheme() {
+            "ss" => {}
+            "trojan" => return Self::from_trojan_url(&parsed),
+            _ => return Err(UrlParseError::InvalidScheme),
         }
 
         let user_info = parsed.username();
@@ -487,6 +493,58 @@ impl ServerConfig {
 
         Ok(svrconfig)
     }
+
+    /// Parse trojan:// URL
+    ///
+    /// Format: trojan://password@host:port?peer=sni&allowInsecure=1#name
+    fn from_trojan_url(parsed: &Url) -> Result<ServerConfig, UrlParseError> {
+        let host = match parsed.host_str() {
+            Some(host) => host,
+            None => return Err(UrlParseError::MissingHost),
+        };
+
+        let port = parsed.port().unwrap_or(443);
+
+        // Password is the userinfo (username part)
+        let password = parsed.username();
+        if password.is_empty() {
+            return Err(UrlParseError::InvalidAuthInfo);
+        }
+        let password = percent_encoding::percent_decode_str(password)
+            .decode_utf8_lossy()
+            .to_string();
+
+        // Name from fragment, fallback to host
+        let name_percent_encoding = parsed.fragment().unwrap_or(host);
+        let name = percent_encoding::percent_decode_str(name_percent_encoding)
+            .decode_utf8_lossy()
+            .to_string();
+
+        // Parse query parameters
+        let mut sni = None;
+        let mut insecure = None;
+        for (key, value) in parsed.query_pairs() {
+            match key.as_ref() {
+                "peer" | "sni" => sni = Some(value.to_string()),
+                "allowInsecure" => insecure = Some(value == "1" || value == "true"),
+                _ => {}
+            }
+        }
+
+        Ok(ServerConfig {
+            name,
+            addr: Address::from_str(&format!("{host}:{port}")).unwrap(),
+            protocol: ServerProtocol::Trojan,
+            username: None,
+            password: Some(password),
+            method: None,
+            obfs: None,
+            sni,
+            obfs_password: None,
+            insecure,
+            recv_window: None,
+        })
+    }
 }
 
 /// Shadowsocks URL parsing Error
@@ -564,6 +622,56 @@ mod tests {
             })
         );
         assert_eq!(server_config.method(), Some(CipherType::Aes256Gcm));
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_trojan_url() -> Result<(), UrlParseError> {
+        let url = "trojan://00000000-0000-0000-0000-000000000000@proxy.example.org:56201?peer=sni.example.net#Hong%20Kong-01";
+        let server_config = ServerConfig::from_str(url)?;
+        assert_eq!(server_config.name(), "Hong Kong-01");
+        assert_eq!(server_config.protocol(), ServerProtocol::Trojan);
+        assert_eq!(
+            server_config.addr(),
+            &Address::from_str("proxy.example.org:56201").unwrap()
+        );
+        assert_eq!(
+            server_config.password(),
+            Some("00000000-0000-0000-0000-000000000000")
+        );
+        assert_eq!(
+            server_config.sni(),
+            Some("sni.example.net")
+        );
+        assert!(!server_config.insecure());
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_trojan_url_with_insecure() -> Result<(), UrlParseError> {
+        let url = "trojan://mypassword@example.com:443?allowInsecure=1#MyServer";
+        let server_config = ServerConfig::from_str(url)?;
+        assert_eq!(server_config.name(), "MyServer");
+        assert_eq!(server_config.protocol(), ServerProtocol::Trojan);
+        assert_eq!(
+            server_config.addr(),
+            &Address::from_str("example.com:443").unwrap()
+        );
+        assert_eq!(server_config.password(), Some("mypassword"));
+        assert_eq!(server_config.sni(), None);
+        assert!(server_config.insecure());
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_trojan_url_minimal() -> Result<(), UrlParseError> {
+        let url = "trojan://pass@host.com:443";
+        let server_config = ServerConfig::from_str(url)?;
+        assert_eq!(server_config.name(), "host.com");
+        assert_eq!(server_config.protocol(), ServerProtocol::Trojan);
+        assert_eq!(server_config.password(), Some("pass"));
+        assert_eq!(server_config.sni(), None);
+        assert!(!server_config.insecure());
         Ok(())
     }
 
@@ -759,6 +867,7 @@ password: mixed123
             ("socks5", ServerProtocol::Socks5),
             ("ss", ServerProtocol::Shadowsocks),
             ("hy2", ServerProtocol::Hysteria2),
+            ("trojan", ServerProtocol::Trojan),
         ];
 
         for (alias, expected) in test_cases {
@@ -878,6 +987,65 @@ password: password
         let server_config: ServerConfig = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(server_config.name(), "HY2 Full");
         assert_eq!(server_config.protocol(), ServerProtocol::Hysteria2);
+    }
+
+    #[test]
+    fn test_parse_seeker_trojan_basic() {
+        let yaml = r#"
+name: server-trojan
+addr: example.com:443
+protocol: Trojan
+password: my-trojan-password
+"#;
+        let server_config: ServerConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(server_config.name(), "server-trojan");
+        assert_eq!(server_config.protocol(), ServerProtocol::Trojan);
+        assert_eq!(
+            server_config.addr(),
+            &Address::from_str("example.com:443").unwrap()
+        );
+        assert_eq!(server_config.password(), Some("my-trojan-password"));
+        assert_eq!(server_config.sni(), None);
+        assert!(!server_config.insecure());
+    }
+
+    #[test]
+    fn test_parse_seeker_trojan_with_sni() {
+        let yaml = r#"
+name: server-trojan-sni
+addr: example.com:443
+protocol: trojan
+password: my-trojan-password
+sni: custom.example.com
+insecure: true
+"#;
+        let server_config: ServerConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(server_config.name(), "server-trojan-sni");
+        assert_eq!(server_config.protocol(), ServerProtocol::Trojan);
+        assert_eq!(server_config.password(), Some("my-trojan-password"));
+        assert_eq!(server_config.sni(), Some("custom.example.com"));
+        assert!(server_config.insecure());
+    }
+
+    #[test]
+    fn test_parse_clash_trojan_format() {
+        let yaml = r#"
+name: "Trojan Server"
+type: trojan
+server: example.com
+port: 443
+password: my-trojan-password
+sni: custom.example.com
+"#;
+        let server_config: ServerConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(server_config.name(), "Trojan Server");
+        assert_eq!(server_config.protocol(), ServerProtocol::Trojan);
+        assert_eq!(
+            server_config.addr(),
+            &Address::from_str("example.com:443").unwrap()
+        );
+        assert_eq!(server_config.password(), Some("my-trojan-password"));
+        assert_eq!(server_config.sni(), Some("custom.example.com"));
     }
 
     #[test]

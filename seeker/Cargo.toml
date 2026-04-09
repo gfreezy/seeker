@@ -18,6 +18,7 @@ ssclient = { path = "../ssclient" }
 socks5_client = { path = "../socks5_client" }
 http_proxy_client = { path = "../http_proxy_client" }
 hysteria2_client = { path = "../hysteria2_client" }
+trojan_client = { path = "../trojan_client" }
 sysconfig = { path = "../sysconfig" }
 tun_nat = { path = "../tun_nat" }
 file-rotate = { workspace = true }

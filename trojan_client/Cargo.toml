@@ -1,0 +1,23 @@
+[package]
+name = "trojan_client"
+version = "20260127.0.0"
+authors = ["Alex.F <gfreezy@gmail.com>"]
+edition = "2021"
+
+[features]
+integration-tests = ["dep:testcontainers", "dep:native-tls", "dep:rcgen"]
+
+[dependencies]
+tokio = { workspace = true }
+tokio-native-tls = "0.3"
+config = { path = "../config" }
+bytes = { workspace = true }
+sha2 = { workspace = true }
+parking_lot = { workspace = true }
+tracing = { workspace = true }
+testcontainers = { workspace = true, optional = true }
+native-tls = { version = "0.2", optional = true }
+rcgen = { version = "0.13", optional = true }
+
+[dev-dependencies]
+tokio = { workspace = true }

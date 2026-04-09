@@ -16,6 +16,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 use tokio::net::UdpSocket;
+use trojan_client::TrojanUdpSocket;
 
 #[derive(Clone)]
 enum ProxyUdpSocketInner {
@@ -23,6 +24,7 @@ enum ProxyUdpSocketInner {
     Socks5(Arc<Socks5UdpSocket>),
     Shadowsocks(Arc<SSUdpSocket>),
     Hysteria2(Arc<Hy2UdpSocket>),
+    Trojan(Arc<TrojanUdpSocket>),
 }
 
 #[derive(Clone)]
@@ -65,6 +67,23 @@ impl ProxyUdpSocket {
                     let udp = Hy2UdpSocket::new(client).await?;
                     ProxyUdpSocketInner::Hysteria2(Arc::new(udp))
                 }
+                ServerProtocol::Trojan => {
+                    let server = dns_client.lookup_address(config.addr()).await?;
+                    let sni = config
+                        .sni()
+                        .map(|s| s.to_string())
+                        .or_else(|| config.addr().hostname().map(|s| s.to_string()))
+                        .ok_or_else(|| {
+                            Error::new(
+                                ErrorKind::InvalidData,
+                                "sni or domain must be set for trojan protocol.",
+                            )
+                        })?;
+                    let password = config.password().unwrap_or("");
+                    let udp =
+                        TrojanUdpSocket::new(server, &sni, password, config.insecure()).await?;
+                    ProxyUdpSocketInner::Trojan(Arc::new(udp))
+                }
                 protocol => {
                     return Err(Error::new(
                         ErrorKind::ConnectionRefused,
@@ -104,6 +123,7 @@ impl ProxyUdpSocket {
             ProxyUdpSocketInner::Socks5(socket) => socket.send_to(buf, addr).await,
             ProxyUdpSocketInner::Shadowsocks(socket) => socket.send_to(buf, addr).await,
             ProxyUdpSocketInner::Hysteria2(socket) => socket.send_to(buf, addr).await,
+            ProxyUdpSocketInner::Trojan(socket) => socket.send_to(buf, addr).await,
         };
         match ret {
             Err(_) => {
@@ -131,6 +151,7 @@ impl ProxyUdpSocket {
             ProxyUdpSocketInner::Socks5(socket) => socket.recv_from(buf).await,
             ProxyUdpSocketInner::Shadowsocks(socket) => socket.recv_from(buf).await,
             ProxyUdpSocketInner::Hysteria2(socket) => socket.recv_from(buf).await,
+            ProxyUdpSocketInner::Trojan(socket) => socket.recv_from(buf).await,
         };
         match ret {
             Err(_) => {
@@ -160,7 +181,8 @@ impl ProxyConnection for ProxyUdpSocket {
             ProxyUdpSocketInner::Direct(_) => Action::Direct,
             ProxyUdpSocketInner::Socks5(_)
             | ProxyUdpSocketInner::Shadowsocks(_)
-            | ProxyUdpSocketInner::Hysteria2(_) => Action::Proxy("".to_string()),
+            | ProxyUdpSocketInner::Hysteria2(_)
+            | ProxyUdpSocketInner::Trojan(_) => Action::Proxy("".to_string()),
         }
     }
 
@@ -197,6 +219,7 @@ impl ProxyConnection for ProxyUdpSocket {
             ProxyUdpSocketInner::Socks5(_) => "socks5",
             ProxyUdpSocketInner::Shadowsocks(_) => "shadowsocks",
             ProxyUdpSocketInner::Hysteria2(_) => "hy2",
+            ProxyUdpSocketInner::Trojan(_) => "trojan",
         }
     }
 
