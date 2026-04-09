@@ -23,6 +23,7 @@ struct GroupStats {
 struct ServerStats {
     name: String,
     server: String,
+    protocol: String,
     #[serde(flatten)]
     stats: ServerPerformanceStats,
 }
@@ -34,9 +35,10 @@ async fn get_stats(State(chooser): State<ServerChooser>) -> Json<StatsResponse> 
         .map(|(group_name, (selected, stats))| {
             let server_stats = stats
                 .into_iter()
-                .map(|(server, name, stats)| ServerStats {
+                .map(|(server, name, protocol, stats)| ServerStats {
                     name,
                     server,
+                    protocol,
                     stats,
                 })
                 .collect();

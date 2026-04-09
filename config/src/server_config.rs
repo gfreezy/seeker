@@ -21,7 +21,7 @@ pub enum DnsServerAddr {
     TcpSocketAddr(Url),
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Copy)]
+#[derive(Clone, Debug, Deserialize, serde::Serialize, PartialEq, Eq, Copy)]
 pub enum ServerProtocol {
     #[serde(alias = "http")]
     Http,

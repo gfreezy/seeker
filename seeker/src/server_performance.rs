@@ -29,6 +29,7 @@ pub struct ServerPerformanceStats {
 #[derive(Clone)]
 pub struct ServerPerformance {
     name: String,
+    protocol: String,
     latency_history: Vec<(Instant, Duration)>,
     success_count: u32,
     failure_count: u32,
@@ -39,9 +40,10 @@ pub struct ServerPerformance {
 }
 
 impl ServerPerformance {
-    pub fn new(name: String, max_history_size: usize, half_life: Duration) -> Self {
+    pub fn new(name: String, protocol: String, max_history_size: usize, half_life: Duration) -> Self {
         Self {
             name,
+            protocol,
             latency_history: Vec::new(),
             success_count: 0,
             failure_count: 0,
@@ -166,6 +168,7 @@ impl ServerPerformanceTracker {
         let performance = history.entry(server.addr().to_string()).or_insert_with(|| {
             ServerPerformance::new(
                 server.name().to_string(),
+                format!("{:?}", server.protocol()),
                 self.max_history_size,
                 self.half_life,
             )
@@ -188,13 +191,13 @@ impl ServerPerformanceTracker {
             .map(|p| p.get_stats())
     }
 
-    pub fn get_all_server_stats(&self) -> Vec<(String, String, ServerPerformanceStats)> {
+    pub fn get_all_server_stats(&self) -> Vec<(String, String, String, ServerPerformanceStats)> {
         let history = self.performance_history.lock();
         history
             .iter()
             .map(|(addr, perf)| {
                 let stats = perf.get_stats();
-                (addr.clone(), perf.name.clone(), stats)
+                (addr.clone(), perf.name.clone(), perf.protocol.clone(), stats)
             })
             .collect()
     }
