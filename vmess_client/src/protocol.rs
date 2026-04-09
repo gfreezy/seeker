@@ -5,11 +5,13 @@ use digest::Digest;
 use hmac::{Hmac, Mac};
 use md5::Md5;
 use openssl::symm;
+use sha2::Sha256;
 use std::io::{Error, ErrorKind, Result};
 use std::net::SocketAddr;
 use uuid::Uuid;
 
 use crate::crypto::VMessEncryptMethod;
+use crate::kdf;
 
 pub const CMD_TCP: u8 = 0x01;
 #[allow(dead_code)]
@@ -126,11 +128,18 @@ pub fn build_command(
     let padding_len: u8 = rand::random::<u8>() % 16;
     let mut buf = BytesMut::with_capacity(128);
 
+    // For AEAD modes, enable chunk masking (M) which uses ShakeSizeParser
+    let options = if method.is_aead() {
+        OPTION_S | OPTION_M
+    } else {
+        OPTION_S
+    };
+
     buf.put_u8(VMESS_VERSION);
     buf.put_slice(data_iv);
     buf.put_slice(data_key);
     buf.put_u8(resp_auth_v);
-    buf.put_u8(OPTION_S);
+    buf.put_u8(options);
     buf.put_u8((padding_len << 4) | (method as u8 & 0x0f));
     buf.put_u8(0x00); // Reserved
 
@@ -229,6 +238,209 @@ pub fn decrypt_response_header(
         cmd_instruction: plaintext[2],
         cmd_length: plaintext[3],
     })
+}
+
+// ─── AEAD Header Format ─────────────────────────────────────
+
+/// CRC32 IEEE checksum.
+pub fn crc32_ieee(data: &[u8]) -> u32 {
+    let mut crc: u32 = 0xFFFFFFFF;
+    for &byte in data {
+        crc ^= byte as u32;
+        for _ in 0..8 {
+            if crc & 1 != 0 {
+                crc = (crc >> 1) ^ 0xEDB88320;
+            } else {
+                crc >>= 1;
+            }
+        }
+    }
+    !crc
+}
+
+/// Create AEAD Auth ID (16 bytes): AES-128-ECB encrypt [timestamp(8) + random(4) + CRC32(4)].
+pub fn create_auth_id(cmd_key: &[u8; 16], timestamp: u64) -> Result<[u8; 16]> {
+    let aes_key =
+        &kdf::vmess_kdf_1_one_shot(cmd_key, kdf::KDF_SALT_CONST_AUTH_ID_ENCRYPTION_KEY)[..16];
+
+    let mut buf = [0u8; 16];
+    buf[..8].copy_from_slice(&timestamp.to_be_bytes());
+    rand::fill(&mut buf[8..12]);
+    let crc = crc32_ieee(&buf[..12]);
+    buf[12..16].copy_from_slice(&crc.to_be_bytes());
+
+    // AES-128-ECB encrypt (single block, no padding)
+    let cipher = openssl::symm::Cipher::aes_128_ecb();
+    let mut crypter =
+        openssl::symm::Crypter::new(cipher, openssl::symm::Mode::Encrypt, aes_key, None)
+            .map_err(|e| Error::other(format!("AES ECB init: {e}")))?;
+    crypter.pad(false);
+    let mut out = [0u8; 32]; // extra space for openssl
+    let n = crypter
+        .update(&buf, &mut out)
+        .map_err(|e| Error::other(format!("AES ECB encrypt: {e}")))?;
+    let n2 = crypter
+        .finalize(&mut out[n..])
+        .map_err(|e| Error::other(format!("AES ECB finalize: {e}")))?;
+    assert_eq!(n + n2, 16);
+
+    let mut auth_id = [0u8; 16];
+    auth_id.copy_from_slice(&out[..16]);
+    Ok(auth_id)
+}
+
+/// Seal the VMess AEAD header.
+///
+/// Returns: auth_id(16) + sealed_length(18) + connection_nonce(8) + sealed_command(N+16)
+pub fn seal_vmess_aead_header(cmd_key: &[u8; 16], command: &[u8]) -> Result<Vec<u8>> {
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| Error::other(format!("system time: {e}")))?
+        .as_secs();
+
+    let auth_id = create_auth_id(cmd_key, timestamp)?;
+
+    let mut connection_nonce = [0u8; 8];
+    rand::fill(&mut connection_nonce[..]);
+
+    // Seal command length: AEAD(u16(command.len()))
+    let len_key = &kdf::vmess_kdf_3_one_shot(
+        cmd_key,
+        kdf::KDF_SALT_CONST_VMESS_HEADER_PAYLOAD_LENGTH_AEAD_KEY,
+        &auth_id,
+        &connection_nonce,
+    )[..16];
+    let len_iv = &kdf::vmess_kdf_3_one_shot(
+        cmd_key,
+        kdf::KDF_SALT_CONST_VMESS_HEADER_PAYLOAD_LENGTH_AEAD_IV,
+        &auth_id,
+        &connection_nonce,
+    )[..12];
+
+    let len_bytes = (command.len() as u16).to_be_bytes();
+    let mut len_tag = [0u8; 16];
+    let sealed_len = symm::encrypt_aead(
+        symm::Cipher::aes_128_gcm(),
+        len_key,
+        Some(len_iv),
+        &auth_id,
+        &len_bytes,
+        &mut len_tag,
+    )
+    .map_err(|e| Error::other(format!("AEAD seal length: {e}")))?;
+
+    // Seal command payload: AEAD(command)
+    let payload_key = &kdf::vmess_kdf_3_one_shot(
+        cmd_key,
+        kdf::KDF_SALT_CONST_VMESS_HEADER_PAYLOAD_AEAD_KEY,
+        &auth_id,
+        &connection_nonce,
+    )[..16];
+    let payload_iv = &kdf::vmess_kdf_3_one_shot(
+        cmd_key,
+        kdf::KDF_SALT_CONST_VMESS_HEADER_PAYLOAD_AEAD_IV,
+        &auth_id,
+        &connection_nonce,
+    )[..12];
+
+    let mut payload_tag = [0u8; 16];
+    let sealed_payload = symm::encrypt_aead(
+        symm::Cipher::aes_128_gcm(),
+        payload_key,
+        Some(payload_iv),
+        &auth_id,
+        command,
+        &mut payload_tag,
+    )
+    .map_err(|e| Error::other(format!("AEAD seal payload: {e}")))?;
+
+    // Assemble: auth_id(16) + sealed_len(2) + len_tag(16) + nonce(8) + sealed_payload + payload_tag(16)
+    let mut out = Vec::with_capacity(16 + 2 + 16 + 8 + sealed_payload.len() + 16);
+    out.extend_from_slice(&auth_id);
+    out.extend_from_slice(&sealed_len);
+    out.extend_from_slice(&len_tag);
+    out.extend_from_slice(&connection_nonce);
+    out.extend_from_slice(&sealed_payload);
+    out.extend_from_slice(&payload_tag);
+
+    Ok(out)
+}
+
+/// Derive response key for AEAD mode = SHA256(request_data_key)[0:16].
+pub fn derive_response_key_aead(data_key: &[u8; 16]) -> [u8; 16] {
+    let result = Sha256::digest(data_key);
+    let mut out = [0u8; 16];
+    out.copy_from_slice(&result[..16]);
+    out
+}
+
+/// Derive response IV for AEAD mode = SHA256(request_data_iv)[0:16].
+pub fn derive_response_iv_aead(data_iv: &[u8; 16]) -> [u8; 16] {
+    let result = Sha256::digest(data_iv);
+    let mut out = [0u8; 16];
+    out.copy_from_slice(&result[..16]);
+    out
+}
+
+/// Decrypt AEAD response header.
+/// Reads: sealed_length(18) then sealed_payload(len+16).
+/// Returns the raw header bytes (typically 4 bytes: auth_v + options + cmd + cmd_len).
+pub fn decrypt_aead_response_header(
+    resp_key: &[u8; 16],
+    resp_iv: &[u8; 16],
+    data: &[u8],
+) -> Result<Vec<u8>> {
+    // Decrypt length: first 18 bytes
+    if data.len() < 18 {
+        return Err(Error::new(
+            ErrorKind::InvalidData,
+            "AEAD response header too short",
+        ));
+    }
+
+    let len_key = kdf::vmess_kdf16(resp_key, kdf::KDF_SALT_CONST_AEAD_RESP_HEADER_LEN_KEY);
+    let len_iv =
+        &kdf::vmess_kdf_1_one_shot(resp_iv, kdf::KDF_SALT_CONST_AEAD_RESP_HEADER_LEN_IV)[..12];
+
+    let (len_ct, len_tag) = data[..18].split_at(2);
+    let len_plain = symm::decrypt_aead(
+        symm::Cipher::aes_128_gcm(),
+        &len_key,
+        Some(len_iv),
+        &[],
+        len_ct,
+        len_tag,
+    )
+    .map_err(|e| Error::other(format!("AEAD resp header len decrypt: {e}")))?;
+
+    let header_len = u16::from_be_bytes([len_plain[0], len_plain[1]]) as usize;
+
+    // Decrypt payload
+    let payload_start = 18;
+    let payload_end = payload_start + header_len + 16;
+    if data.len() < payload_end {
+        return Err(Error::new(
+            ErrorKind::InvalidData,
+            "AEAD response header payload too short",
+        ));
+    }
+
+    let payload_key = kdf::vmess_kdf16(resp_key, kdf::KDF_SALT_CONST_AEAD_RESP_HEADER_PAYLOAD_KEY);
+    let payload_iv =
+        &kdf::vmess_kdf_1_one_shot(resp_iv, kdf::KDF_SALT_CONST_AEAD_RESP_HEADER_PAYLOAD_IV)[..12];
+
+    let (payload_ct, payload_tag) = data[payload_start..payload_end].split_at(header_len);
+    let payload = symm::decrypt_aead(
+        symm::Cipher::aes_128_gcm(),
+        &payload_key,
+        Some(payload_iv),
+        &[],
+        payload_ct,
+        payload_tag,
+    )
+    .map_err(|e| Error::other(format!("AEAD resp header payload decrypt: {e}")))?;
+
+    Ok(payload)
 }
 
 #[cfg(test)]
@@ -338,8 +550,8 @@ mod tests {
         assert_eq!(&cmd[17..33], &[0xAA; 16]);
         // Check response auth V
         assert_eq!(cmd[33], 0x55);
-        // Check options (S=1)
-        assert_eq!(cmd[34], OPTION_S);
+        // Check options (S=1 | M=4 for GCM)
+        assert_eq!(cmd[34], OPTION_S | OPTION_M);
         // Check encrypt method in lower 4 bits (GCM = 0x03)
         assert_eq!(cmd[35] & 0x0f, 0x03);
         // Check reserved

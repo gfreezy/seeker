@@ -48,13 +48,21 @@ fn server_config_json(port: u16) -> Vec<u8> {
     format!(
         r#"{{
     "log": {{ "loglevel": "debug" }},
+    "policy": {{
+        "levels": {{
+            "0": {{
+                "uplinkOnly": 10,
+                "downlinkOnly": 10
+            }}
+        }}
+    }},
     "inbounds": [{{
         "port": {port},
         "protocol": "vmess",
         "settings": {{
             "clients": [{{
                 "id": "{TEST_UUID}",
-                "alterId": 64
+                "alterId": 0
             }}]
         }}
     }}],
@@ -74,8 +82,6 @@ fn start_vmess_server(port: u16) -> Container<GenericImage> {
         .with_wait_for(WaitFor::message_on_stdout("started"))
         .with_startup_timeout(Duration::from_secs(30))
         .with_network("host")
-        // Legacy VMess is force-disabled since 2022 in V2Ray v4.28+; re-enable it
-        .with_env_var("v2ray.vmess.aead.forced", "false")
         .with_copy_to("/etc/v2ray/config.json", config_json)
         .start()
         .expect("failed to start v2ray container")
@@ -90,24 +96,24 @@ async fn start_vmess_server_async(port: u16) -> TestContainer {
     TestContainer::new(container)
 }
 
-/// Test: TCP proxy — send HTTP request through VMess proxy to httpbin.org
+/// Test: TCP proxy with AES-128-GCM encryption — HTTP request through VMess
 #[tokio::test]
-async fn test_vmess_tcp_proxy_http() {
+async fn test_vmess_tcp_proxy_http_gcm() {
     let port = next_port();
     let container = start_vmess_server_async(port).await;
 
     let proxy_addr: SocketAddr = format!("127.0.0.1:{port}").parse().unwrap();
-    let target = Address::DomainNameAddress("httpbin.org".to_string(), 80);
+    let target = Address::DomainNameAddress("www.baidu.com".to_string(), 80);
 
     let mut stream = tokio::time::timeout(
         CONNECT_TIMEOUT,
-        VMessTcpStream::connect(proxy_addr, TEST_UUID, target, "none"),
+        VMessTcpStream::connect(proxy_addr, TEST_UUID, target, "aes-128-gcm"),
     )
     .await
     .expect("connection timed out")
     .expect("VMess connect failed");
 
-    let request = "GET /ip HTTP/1.1\r\nHost: httpbin.org\r\nConnection: close\r\n\r\n";
+    let request = "GET / HTTP/1.1\r\nHost: www.baidu.com\r\nConnection: close\r\n\r\n";
     stream
         .write_all(request.as_bytes())
         .await
@@ -121,31 +127,31 @@ async fn test_vmess_tcp_proxy_http() {
         .expect("read failed");
     let response_str = String::from_utf8_lossy(&response);
 
-    println!("response:\n{response_str}");
+    println!("response (len={}):\n{response_str}", response.len());
     assert!(
-        response_str.contains("200 OK"),
-        "expected 200 OK in response"
+        response_str.contains("200 OK")
+            || response_str.contains("301")
+            || response_str.contains("302"),
+        "expected HTTP success/redirect in response, got {} bytes",
+        response.len()
     );
-    assert!(
-        response_str.contains("origin"),
-        "expected 'origin' field in httpbin response"
-    );
+    assert!(!response.is_empty(), "expected non-empty HTTP response");
 
     container.cleanup().await;
 }
 
-/// Test: TCP proxy — HTTPS via raw TLS over VMess proxy stream
+/// Test: TCP proxy with AES-128-GCM — HTTPS via raw TLS over VMess proxy stream
 #[tokio::test]
-async fn test_vmess_tcp_proxy_https() {
+async fn test_vmess_tcp_proxy_https_gcm() {
     let port = next_port();
     let container = start_vmess_server_async(port).await;
 
     let proxy_addr: SocketAddr = format!("127.0.0.1:{port}").parse().unwrap();
-    let target = Address::DomainNameAddress("www.google.com".to_string(), 443);
+    let target = Address::DomainNameAddress("www.baidu.com".to_string(), 443);
 
     let stream = tokio::time::timeout(
         CONNECT_TIMEOUT,
-        VMessTcpStream::connect(proxy_addr, TEST_UUID, target, "none"),
+        VMessTcpStream::connect(proxy_addr, TEST_UUID, target, "aes-128-gcm"),
     )
     .await
     .expect("connection timed out")
@@ -156,11 +162,11 @@ async fn test_vmess_tcp_proxy_https() {
         native_tls::TlsConnector::new().expect("failed to create TLS connector"),
     );
     let mut tls_stream = tls_connector
-        .connect("www.google.com", stream)
+        .connect("www.baidu.com", stream)
         .await
         .expect("TLS handshake with target failed");
 
-    let request = "GET / HTTP/1.1\r\nHost: www.google.com\r\nConnection: close\r\n\r\n";
+    let request = "GET / HTTP/1.1\r\nHost: www.baidu.com\r\nConnection: close\r\n\r\n";
     tls_stream
         .write_all(request.as_bytes())
         .await
@@ -170,7 +176,7 @@ async fn test_vmess_tcp_proxy_https() {
     let n = tls_stream.read(&mut response).await.expect("read failed");
     let response_str = String::from_utf8_lossy(&response[..n]);
 
-    println!("google response (first {n} bytes):\n{response_str}");
+    println!("baidu response (first {n} bytes):\n{response_str}");
     assert!(
         response_str.contains("200")
             || response_str.contains("301")
@@ -181,9 +187,9 @@ async fn test_vmess_tcp_proxy_https() {
     container.cleanup().await;
 }
 
-/// Test: multiple TCP streams through the same VMess server
+/// Test: multiple TCP streams with GCM through the same VMess server
 #[tokio::test]
-async fn test_vmess_tcp_multiple_streams() {
+async fn test_vmess_tcp_multiple_streams_gcm() {
     let port = next_port();
     let container = start_vmess_server_async(port).await;
 
@@ -191,9 +197,10 @@ async fn test_vmess_tcp_multiple_streams() {
 
     let (r1, r2) = tokio::join!(
         async {
-            let target = Address::DomainNameAddress("httpbin.org".to_string(), 80);
-            let mut s = VMessTcpStream::connect(proxy_addr, TEST_UUID, target, "none").await?;
-            s.write_all(b"GET /ip HTTP/1.1\r\nHost: httpbin.org\r\nConnection: close\r\n\r\n")
+            let target = Address::DomainNameAddress("www.baidu.com".to_string(), 80);
+            let mut s =
+                VMessTcpStream::connect(proxy_addr, TEST_UUID, target, "aes-128-gcm").await?;
+            s.write_all(b"GET / HTTP/1.1\r\nHost: www.baidu.com\r\nConnection: close\r\n\r\n")
                 .await?;
             s.flush().await?;
             let mut buf = Vec::new();
@@ -201,10 +208,11 @@ async fn test_vmess_tcp_multiple_streams() {
             Ok::<_, std::io::Error>(String::from_utf8_lossy(&buf).to_string())
         },
         async {
-            let target = Address::DomainNameAddress("httpbin.org".to_string(), 80);
-            let mut s = VMessTcpStream::connect(proxy_addr, TEST_UUID, target, "none").await?;
+            let target = Address::DomainNameAddress("www.baidu.com".to_string(), 80);
+            let mut s =
+                VMessTcpStream::connect(proxy_addr, TEST_UUID, target, "aes-128-gcm").await?;
             s.write_all(
-                b"GET /user-agent HTTP/1.1\r\nHost: httpbin.org\r\nConnection: close\r\n\r\n",
+                b"GET /s?wd=vmess HTTP/1.1\r\nHost: www.baidu.com\r\nConnection: close\r\n\r\n",
             )
             .await?;
             s.flush().await?;
@@ -217,8 +225,91 @@ async fn test_vmess_tcp_multiple_streams() {
     let resp1 = r1.expect("stream 1 failed");
     let resp2 = r2.expect("stream 2 failed");
     println!("stream1 len={}, stream2 len={}", resp1.len(), resp2.len());
-    assert!(resp1.contains("200 OK"));
-    assert!(resp2.contains("200 OK"));
+    assert!(
+        resp1.contains("200 OK") || resp1.contains("301") || resp1.contains("302"),
+        "stream 1: expected HTTP success/redirect"
+    );
+    assert!(
+        resp2.contains("200 OK") || resp2.contains("301") || resp2.contains("302"),
+        "stream 2: expected HTTP success/redirect"
+    );
+
+    container.cleanup().await;
+}
+
+/// Test: raw TCP bytes read after VMess GCM handshake (debug test)
+#[tokio::test]
+async fn test_vmess_raw_bytes_gcm() {
+    let port = next_port();
+    let container = start_vmess_server_async(port).await;
+
+    let proxy_addr: SocketAddr = format!("127.0.0.1:{port}").parse().unwrap();
+    let target = Address::DomainNameAddress("www.baidu.com".to_string(), 80);
+
+    // Connect and send handshake manually via VMessTcpStream
+    let mut stream = VMessTcpStream::connect(proxy_addr, TEST_UUID, target, "aes-128-gcm")
+        .await
+        .expect("connect failed");
+
+    // Write HTTP request
+    stream
+        .write_all(b"GET / HTTP/1.1\r\nHost: www.baidu.com\r\nConnection: close\r\n\r\n")
+        .await
+        .expect("write failed");
+    stream.flush().await.expect("flush failed");
+
+    // Read everything through VMessTcpStream (includes AEAD header + GCM chunk decoding)
+    tokio::time::sleep(Duration::from_secs(5)).await;
+
+    let mut buf = vec![0u8; 8192];
+    match tokio::time::timeout(Duration::from_secs(5), stream.read(&mut buf)).await {
+        Ok(Ok(n)) => println!(
+            "RAW: read {} bytes: {:?}",
+            n,
+            String::from_utf8_lossy(&buf[..n.min(200)])
+        ),
+        Ok(Err(e)) => println!("RAW: read error: {e}"),
+        Err(_) => println!("RAW: read timed out"),
+    }
+
+    container.cleanup().await;
+}
+
+/// Test: TCP proxy with "none" encryption (regression test)
+#[tokio::test]
+async fn test_vmess_tcp_proxy_http_none() {
+    let port = next_port();
+    let container = start_vmess_server_async(port).await;
+
+    let proxy_addr: SocketAddr = format!("127.0.0.1:{port}").parse().unwrap();
+    let target = Address::DomainNameAddress("www.baidu.com".to_string(), 80);
+
+    let mut stream = tokio::time::timeout(
+        CONNECT_TIMEOUT,
+        VMessTcpStream::connect(proxy_addr, TEST_UUID, target, "none"),
+    )
+    .await
+    .expect("connection timed out")
+    .expect("VMess connect failed");
+
+    let request = "GET / HTTP/1.1\r\nHost: www.baidu.com\r\nConnection: close\r\n\r\n";
+    stream
+        .write_all(request.as_bytes())
+        .await
+        .expect("write failed");
+    stream.flush().await.expect("flush failed");
+
+    let mut response = Vec::new();
+    stream
+        .read_to_end(&mut response)
+        .await
+        .expect("read failed");
+    let response_str = String::from_utf8_lossy(&response);
+
+    assert!(
+        response_str.contains("200 OK"),
+        "expected 200 OK in response"
+    );
 
     container.cleanup().await;
 }

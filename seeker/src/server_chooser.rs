@@ -5,7 +5,10 @@ use crate::proxy_udp_socket::ProxyUdpSocket;
 use crate::server_performance::{ServerPerformanceStats, ServerPerformanceTracker};
 
 /// (selected_server_addr, Vec<(server_addr, server_name, protocol, stats)>)
-type GroupPerformanceStats = (String, Vec<(String, String, String, ServerPerformanceStats)>);
+type GroupPerformanceStats = (
+    String,
+    Vec<(String, String, String, ServerPerformanceStats)>,
+);
 use anyhow::Result;
 use config::rule::Action;
 use config::{Address, Config, ServerConfig};

@@ -40,7 +40,12 @@ pub struct ServerPerformance {
 }
 
 impl ServerPerformance {
-    pub fn new(name: String, protocol: String, max_history_size: usize, half_life: Duration) -> Self {
+    pub fn new(
+        name: String,
+        protocol: String,
+        max_history_size: usize,
+        half_life: Duration,
+    ) -> Self {
         Self {
             name,
             protocol,
@@ -197,7 +202,12 @@ impl ServerPerformanceTracker {
             .iter()
             .map(|(addr, perf)| {
                 let stats = perf.get_stats();
-                (addr.clone(), perf.name.clone(), perf.protocol.clone(), stats)
+                (
+                    addr.clone(),
+                    perf.name.clone(),
+                    perf.protocol.clone(),
+                    stats,
+                )
             })
             .collect()
     }

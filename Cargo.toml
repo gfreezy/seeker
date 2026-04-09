@@ -103,6 +103,7 @@ sha-1 = "0.10"
 sha2 = "0.10"
 uuid = { version = "1", features = ["v4"] }
 hmac = "0.12"
+sha3 = "0.10"
 smoltcp = { version = "0.12", default-features = false }
 tempfile = "3.3"
 testcontainers = { version = "0.23", features = [

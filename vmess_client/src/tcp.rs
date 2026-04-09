@@ -1,7 +1,8 @@
 use crate::crypto::{VMessDataCipher, VMessEncryptMethod};
 use crate::protocol::{
-    build_command, decrypt_response_header, derive_command_iv, derive_command_key,
-    derive_response_iv, derive_response_key, encrypt_command, generate_auth, parse_uuid, CMD_TCP,
+    build_command, decrypt_aead_response_header, decrypt_response_header, derive_command_key,
+    derive_response_iv, derive_response_iv_aead, derive_response_key, derive_response_key_aead,
+    encrypt_command, generate_auth, parse_uuid, seal_vmess_aead_header, CMD_TCP,
 };
 use crate::stream::{ChunkReader, ChunkWriter};
 use config::Address;
@@ -19,6 +20,7 @@ pub struct VMessTcpStream {
     // Read state (response direction)
     reader: ChunkReader,
     response_parsed: bool,
+    is_aead: bool,
     resp_header_key: [u8; 16],
     resp_header_iv: [u8; 16],
     expected_auth_v: u8,
@@ -37,6 +39,9 @@ impl VMessTcpStream {
     ) -> Result<Self> {
         let user_id = parse_uuid(uuid)?;
         let method = VMessEncryptMethod::from_str_name(encrypt_method)?;
+        // AEAD header format is determined by alterId, not encryption method.
+        // Modern VMess (alterId=0) always uses AEAD headers regardless of data cipher.
+        let is_aead = true;
 
         // Timestamp (current UTC seconds)
         let timestamp = SystemTime::now()
@@ -51,40 +56,53 @@ impl VMessTcpStream {
         rand::fill(&mut data_key[..]);
         rand::fill(&mut data_iv[..]);
 
-        // Build auth credential
-        let auth = generate_auth(&user_id, timestamp);
-
-        // Build and encrypt command header
+        // Build command header plaintext
         let command = build_command(&data_iv, &data_key, resp_auth_v, method, CMD_TCP, &addr);
         let cmd_key = derive_command_key(&user_id);
-        let cmd_iv = derive_command_iv(timestamp);
-        let encrypted_cmd = encrypt_command(&cmd_key, &cmd_iv, &command)?;
+
+        // Build handshake bytes
+        let handshake = if is_aead {
+            // AEAD header format: auth_id + sealed_length + nonce + sealed_command
+            seal_vmess_aead_header(&cmd_key, &command)?
+        } else {
+            // Legacy header format: HMAC-MD5 auth + AES-128-CFB encrypted command
+            let auth = generate_auth(&user_id, timestamp);
+            let cmd_iv = crate::protocol::derive_command_iv(timestamp);
+            let encrypted_cmd = encrypt_command(&cmd_key, &cmd_iv, &command)?;
+            let mut h = Vec::with_capacity(16 + encrypted_cmd.len());
+            h.extend_from_slice(&auth);
+            h.extend_from_slice(&encrypted_cmd);
+            h
+        };
 
         // Connect and send handshake
         let mut tcp_stream = TcpStream::connect(server).await?;
         tcp_stream.set_nodelay(true)?;
-
-        let mut handshake = Vec::with_capacity(16 + encrypted_cmd.len());
-        handshake.extend_from_slice(&auth);
-        handshake.extend_from_slice(&encrypted_cmd);
         tcp_stream.write_all(&handshake).await?;
 
-        // Derive response key/IV
-        let resp_key = derive_response_key(&data_key);
-        let resp_iv = derive_response_iv(&data_iv);
+        // Derive response key/IV (AEAD uses SHA256, legacy uses MD5)
+        let (resp_key, resp_iv) = if is_aead {
+            (
+                derive_response_key_aead(&data_key),
+                derive_response_iv_aead(&data_iv),
+            )
+        } else {
+            (derive_response_key(&data_key), derive_response_iv(&data_iv))
+        };
 
         // Initialize write cipher (request direction: uses original data_key/data_iv)
         let write_cipher = VMessDataCipher::new_encrypt(method, &data_key, &data_iv)?;
-        let writer = ChunkWriter::new(method, write_cipher);
+        let writer = ChunkWriter::new(method, write_cipher, &data_iv);
 
         // Initialize read cipher (response direction: uses derived resp_key/resp_iv)
         let read_cipher = VMessDataCipher::new_decrypt(method, &resp_key, &resp_iv)?;
-        let reader = ChunkReader::new(method, read_cipher);
+        let reader = ChunkReader::new(method, read_cipher, &resp_iv);
 
         Ok(VMessTcpStream {
             conn: tcp_stream,
             reader,
             response_parsed: false,
+            is_aead,
             resp_header_key: resp_key,
             resp_header_iv: resp_iv,
             expected_auth_v: resp_auth_v,
@@ -93,8 +111,17 @@ impl VMessTcpStream {
         })
     }
 
-    /// Read and parse the 4-byte response header (called lazily on first read).
+    /// Read and parse the response header (called lazily on first read).
     fn poll_read_response_header(&mut self, cx: &mut Context<'_>) -> Poll<Result<()>> {
+        if self.is_aead {
+            self.poll_read_aead_response_header(cx)
+        } else {
+            self.poll_read_legacy_response_header(cx)
+        }
+    }
+
+    /// Legacy response header: 4 bytes AES-128-CFB encrypted.
+    fn poll_read_legacy_response_header(&mut self, cx: &mut Context<'_>) -> Poll<Result<()>> {
         while self.resp_header_buf.len() < 4 {
             let remaining = 4 - self.resp_header_buf.len();
             let mut buf = vec![0u8; remaining];
@@ -110,7 +137,6 @@ impl VMessTcpStream {
             self.resp_header_buf.extend_from_slice(&buf[..n]);
         }
 
-        // Decrypt and validate response header
         let header = decrypt_response_header(
             &self.resp_header_key,
             &self.resp_header_iv,
@@ -128,6 +154,127 @@ impl VMessTcpStream {
         }
 
         self.response_parsed = true;
+        Poll::Ready(Ok(()))
+    }
+
+    /// AEAD response header: sealed_length(18) + sealed_payload(len+16).
+    fn poll_read_aead_response_header(&mut self, cx: &mut Context<'_>) -> Poll<Result<()>> {
+        // Phase 1: Read sealed length (18 bytes)
+        if self.resp_header_buf.len() < 18 {
+            while self.resp_header_buf.len() < 18 {
+                let remaining = 18 - self.resp_header_buf.len();
+                let mut buf = vec![0u8; remaining];
+                let mut read_buf = ReadBuf::new(&mut buf);
+                ready!(Pin::new(&mut self.conn).poll_read(cx, &mut read_buf))?;
+                let n = read_buf.filled().len();
+                if n == 0 {
+                    return Poll::Ready(Err(Error::new(
+                        ErrorKind::UnexpectedEof,
+                        "connection closed before AEAD response header",
+                    )));
+                }
+                self.resp_header_buf.extend_from_slice(&buf[..n]);
+            }
+        }
+
+        // Once we have 18 bytes, decrypt length to know how many more bytes to read
+        if self.resp_header_buf.len() == 18 {
+            // Peek at the length to determine total header size
+            let len_key = crate::kdf::vmess_kdf16(
+                &self.resp_header_key,
+                crate::kdf::KDF_SALT_CONST_AEAD_RESP_HEADER_LEN_KEY,
+            );
+            let len_iv = &crate::kdf::vmess_kdf_1_one_shot(
+                &self.resp_header_iv,
+                crate::kdf::KDF_SALT_CONST_AEAD_RESP_HEADER_LEN_IV,
+            )[..12];
+
+            let (len_ct, len_tag) = self.resp_header_buf[..18].split_at(2);
+            let len_plain = openssl::symm::decrypt_aead(
+                openssl::symm::Cipher::aes_128_gcm(),
+                &len_key,
+                Some(len_iv),
+                &[],
+                len_ct,
+                len_tag,
+            )
+            .map_err(|e| Error::other(format!("AEAD resp header len: {e}")))?;
+
+            let header_len = u16::from_be_bytes([len_plain[0], len_plain[1]]) as usize;
+            // Reserve space for the full header: 18 + header_len + 16(tag)
+            let total = 18 + header_len + 16;
+            self.resp_header_buf.reserve(total - 18);
+            // Mark that we've decoded the length by extending the buffer to indicate we need more
+            // Continue to phase 2 below
+        }
+
+        // Phase 2: Read the remaining payload bytes
+        // Total size = 18 + header_len + 16
+        // We need to figure out header_len from what we decoded...
+        // Re-derive since we don't store it
+        let total_needed = {
+            let len_key = crate::kdf::vmess_kdf16(
+                &self.resp_header_key,
+                crate::kdf::KDF_SALT_CONST_AEAD_RESP_HEADER_LEN_KEY,
+            );
+            let len_iv = &crate::kdf::vmess_kdf_1_one_shot(
+                &self.resp_header_iv,
+                crate::kdf::KDF_SALT_CONST_AEAD_RESP_HEADER_LEN_IV,
+            )[..12];
+
+            let (len_ct, len_tag) = self.resp_header_buf[..18].split_at(2);
+            let len_plain = openssl::symm::decrypt_aead(
+                openssl::symm::Cipher::aes_128_gcm(),
+                &len_key,
+                Some(len_iv),
+                &[],
+                len_ct,
+                len_tag,
+            )
+            .map_err(|e| Error::other(format!("AEAD resp header len: {e}")))?;
+
+            let header_len = u16::from_be_bytes([len_plain[0], len_plain[1]]) as usize;
+            18 + header_len + 16
+        };
+
+        while self.resp_header_buf.len() < total_needed {
+            let remaining = total_needed - self.resp_header_buf.len();
+            let mut buf = vec![0u8; remaining];
+            let mut read_buf = ReadBuf::new(&mut buf);
+            ready!(Pin::new(&mut self.conn).poll_read(cx, &mut read_buf))?;
+            let n = read_buf.filled().len();
+            if n == 0 {
+                return Poll::Ready(Err(Error::new(
+                    ErrorKind::UnexpectedEof,
+                    "connection closed during AEAD response header payload",
+                )));
+            }
+            self.resp_header_buf.extend_from_slice(&buf[..n]);
+        }
+
+        // Decrypt the full AEAD response header
+        let header_bytes = decrypt_aead_response_header(
+            &self.resp_header_key,
+            &self.resp_header_iv,
+            &self.resp_header_buf,
+        )?;
+
+        if header_bytes.is_empty() || header_bytes[0] != self.expected_auth_v {
+            return Poll::Ready(Err(Error::new(
+                ErrorKind::InvalidData,
+                format!(
+                    "AEAD response auth mismatch: expected 0x{:02x}, got 0x{:02x}",
+                    self.expected_auth_v,
+                    header_bytes.first().copied().unwrap_or(0)
+                ),
+            )));
+        }
+
+        self.response_parsed = true;
+        tracing::debug!(
+            bytes = self.resp_header_buf.len(),
+            "AEAD response header parsed"
+        );
         Poll::Ready(Ok(()))
     }
 }
