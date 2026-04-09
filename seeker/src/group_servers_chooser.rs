@@ -715,6 +715,8 @@ mod tests {
             server_config,
             &PingURL::new("httpbin.org".to_string(), 80, "/ip".to_string()),
             Duration::from_secs(10),
+            Duration::from_secs(10),
+            Duration::from_secs(10),
             dns_client,
         )
         .await;
