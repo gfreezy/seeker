@@ -495,6 +495,7 @@ dependencies = [
  "parking_lot",
  "percent-encoding",
  "serde",
+ "serde_json",
  "serde_yaml",
  "smoltcp",
  "socks5_client",
@@ -3041,6 +3042,7 @@ dependencies = [
  "tun_nat",
  "ureq 2.12.1",
  "url",
+ "vmess_client",
 ]
 
 [[package]]
@@ -4007,6 +4009,29 @@ name = "version_check"
 version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
+
+[[package]]
+name = "vmess_client"
+version = "20260127.0.0"
+dependencies = [
+ "base64 0.20.0",
+ "bytes",
+ "config",
+ "digest",
+ "hmac",
+ "md-5",
+ "native-tls",
+ "openssl",
+ "parking_lot",
+ "rand",
+ "rcgen",
+ "serde_json",
+ "testcontainers",
+ "tokio",
+ "tokio-native-tls",
+ "tracing",
+ "uuid",
+]
 
 [[package]]
 name = "walkdir"

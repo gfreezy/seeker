@@ -35,6 +35,8 @@ pub enum ServerProtocol {
     Hysteria2,
     #[serde(alias = "trojan")]
     Trojan,
+    #[serde(alias = "vmess")]
+    Vmess,
 }
 
 /// Configuration for a server
@@ -56,6 +58,8 @@ pub struct ServerConfig {
     insecure: Option<bool>,
     /// Receive window bandwidth hint for Hysteria2 (Hysteria-CC-RX)
     recv_window: Option<u64>,
+    /// VMess encryption method (e.g., "auto", "aes-128-gcm", "chacha20-poly1305")
+    vmess_security: Option<String>,
 }
 
 // Internal struct for deserializing both Seeker and Clash formats
@@ -89,6 +93,9 @@ enum ServerConfigHelper {
         insecure: Option<bool>,
         #[serde(default)]
         recv_window: Option<u64>,
+        // VMess fields
+        #[serde(default)]
+        vmess_security: Option<String>,
     },
     // Seeker format
     Seeker {
@@ -115,6 +122,9 @@ enum ServerConfigHelper {
         insecure: Option<bool>,
         #[serde(default)]
         recv_window: Option<u64>,
+        // VMess fields
+        #[serde(default)]
+        vmess_security: Option<String>,
     },
 }
 
@@ -129,6 +139,7 @@ enum ClashProtocol {
     Hy2,
     Hysteria2,
     Trojan,
+    Vmess,
 }
 
 impl From<ClashProtocol> for ServerProtocol {
@@ -140,6 +151,7 @@ impl From<ClashProtocol> for ServerProtocol {
             ClashProtocol::Https => ServerProtocol::Https,
             ClashProtocol::Hy2 | ClashProtocol::Hysteria2 => ServerProtocol::Hysteria2,
             ClashProtocol::Trojan => ServerProtocol::Trojan,
+            ClashProtocol::Vmess => ServerProtocol::Vmess,
         }
     }
 }
@@ -166,6 +178,7 @@ impl<'de> Deserialize<'de> for ServerConfig {
                 obfs_password,
                 insecure,
                 recv_window,
+                vmess_security,
             } => {
                 let addr = Address::from_str(&format!("{server}:{port}")).map_err(|_| {
                     Error::custom(format!("invalid server address: {server}:{port}"))
@@ -182,6 +195,7 @@ impl<'de> Deserialize<'de> for ServerConfig {
                     obfs_password,
                     insecure,
                     recv_window,
+                    vmess_security,
                 })
             }
             ServerConfigHelper::Seeker {
@@ -196,6 +210,7 @@ impl<'de> Deserialize<'de> for ServerConfig {
                 obfs_password,
                 insecure,
                 recv_window,
+                vmess_security,
             } => Ok(ServerConfig {
                 name,
                 addr,
@@ -208,6 +223,7 @@ impl<'de> Deserialize<'de> for ServerConfig {
                 obfs_password,
                 insecure,
                 recv_window,
+                vmess_security,
             }),
         }
     }
@@ -284,6 +300,7 @@ impl ServerConfig {
             obfs_password: None,
             insecure: None,
             recv_window: None,
+            vmess_security: None,
         }
     }
 
@@ -344,12 +361,18 @@ impl ServerConfig {
         self.recv_window
     }
 
+    /// Get VMess encryption method
+    pub fn vmess_security(&self) -> Option<&str> {
+        self.vmess_security.as_deref()
+    }
+
     pub fn from_url(encoded: &str) -> Result<ServerConfig, UrlParseError> {
         let parsed = Url::parse(encoded).map_err(UrlParseError::from)?;
 
         match parsed.scheme() {
             "ss" => {}
             "trojan" => return Self::from_trojan_url(&parsed),
+            "vmess" => return Self::from_vmess_url(&parsed),
             _ => return Err(UrlParseError::InvalidScheme),
         }
 
@@ -543,6 +566,62 @@ impl ServerConfig {
             obfs_password: None,
             insecure,
             recv_window: None,
+            vmess_security: None,
+        })
+    }
+    /// Parse vmess:// URL
+    ///
+    /// Format: vmess://base64({json})
+    /// JSON: {"v":"2","ps":"name","add":"host","port":"443","id":"uuid","aid":"0","scy":"auto","net":"tcp","tls":"","sni":""}
+    fn from_vmess_url(parsed: &Url) -> Result<ServerConfig, UrlParseError> {
+        // vmess:// URLs have the JSON base64-encoded as the host part
+        let encoded = match parsed.host_str() {
+            Some(e) => e,
+            None => return Err(UrlParseError::MissingHost),
+        };
+
+        let decoded = decode_engine(encoded, &crate::URL_SAFE_ENGINE)
+            .or_else(|_| {
+                // Try standard base64 (with padding) as well
+                use base64::engine::fast_portable::{FastPortable, NO_PAD};
+                let standard = FastPortable::from(&base64::alphabet::STANDARD, NO_PAD);
+                decode_engine(encoded, &standard)
+            })
+            .map_err(|_| UrlParseError::InvalidServerAddr)?;
+
+        let json_str = String::from_utf8(decoded).map_err(|_| UrlParseError::InvalidServerAddr)?;
+
+        let json: serde_json::Value =
+            serde_json::from_str(&json_str).map_err(|_| UrlParseError::InvalidServerAddr)?;
+
+        let add = json["add"].as_str().ok_or(UrlParseError::MissingHost)?;
+        let port = json["port"]
+            .as_str()
+            .and_then(|s| s.parse::<u16>().ok())
+            .or_else(|| json["port"].as_u64().map(|p| p as u16))
+            .unwrap_or(443);
+        let uuid = json["id"].as_str().ok_or(UrlParseError::InvalidAuthInfo)?;
+        let name = json["ps"].as_str().unwrap_or(add).to_string();
+        let security = json["scy"].as_str().unwrap_or("auto").to_string();
+        let sni = json["sni"]
+            .as_str()
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string());
+
+        Ok(ServerConfig {
+            name,
+            addr: Address::from_str(&format!("{add}:{port}"))
+                .map_err(|_| UrlParseError::InvalidServerAddr)?,
+            protocol: ServerProtocol::Vmess,
+            username: Some(uuid.to_string()),
+            password: None,
+            method: None,
+            obfs: None,
+            sni,
+            obfs_password: None,
+            insecure: None,
+            recv_window: None,
+            vmess_security: Some(security),
         })
     }
 }
@@ -868,6 +947,7 @@ password: mixed123
             ("ss", ServerProtocol::Shadowsocks),
             ("hy2", ServerProtocol::Hysteria2),
             ("trojan", ServerProtocol::Trojan),
+            ("vmess", ServerProtocol::Vmess),
         ];
 
         for (alias, expected) in test_cases {
@@ -1046,6 +1126,77 @@ sni: custom.example.com
         );
         assert_eq!(server_config.password(), Some("my-trojan-password"));
         assert_eq!(server_config.sni(), Some("custom.example.com"));
+    }
+
+    #[test]
+    fn test_parse_seeker_vmess_basic() {
+        let yaml = r#"
+name: server-vmess
+addr: example.com:443
+protocol: vmess
+username: b831381d-6324-4d53-ad4f-8cda48b30811
+vmess_security: aes-128-gcm
+"#;
+        let server_config: ServerConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(server_config.name(), "server-vmess");
+        assert_eq!(server_config.protocol(), ServerProtocol::Vmess);
+        assert_eq!(
+            server_config.addr(),
+            &Address::from_str("example.com:443").unwrap()
+        );
+        assert_eq!(
+            server_config.username(),
+            Some("b831381d-6324-4d53-ad4f-8cda48b30811")
+        );
+        assert_eq!(server_config.vmess_security(), Some("aes-128-gcm"));
+    }
+
+    #[test]
+    fn test_parse_clash_vmess_format() {
+        let yaml = r#"
+name: "VMess Server"
+type: vmess
+server: example.com
+port: 443
+username: b831381d-6324-4d53-ad4f-8cda48b30811
+vmess_security: auto
+sni: custom.example.com
+"#;
+        let server_config: ServerConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(server_config.name(), "VMess Server");
+        assert_eq!(server_config.protocol(), ServerProtocol::Vmess);
+        assert_eq!(
+            server_config.addr(),
+            &Address::from_str("example.com:443").unwrap()
+        );
+        assert_eq!(
+            server_config.username(),
+            Some("b831381d-6324-4d53-ad4f-8cda48b30811")
+        );
+        assert_eq!(server_config.vmess_security(), Some("auto"));
+        assert_eq!(server_config.sni(), Some("custom.example.com"));
+    }
+
+    #[test]
+    fn test_parse_vmess_url() -> Result<(), UrlParseError> {
+        // vmess://base64(json)
+        let json = r#"{"v":"2","ps":"Tokyo-01","add":"server.example.com","port":"443","id":"b831381d-6324-4d53-ad4f-8cda48b30811","aid":"0","scy":"auto","net":"tcp","type":"none","host":"","path":"","tls":"tls","sni":"sni.example.com"}"#;
+        let encoded = base64::encode_engine(json.as_bytes(), &crate::URL_SAFE_ENGINE);
+        let url = format!("vmess://{encoded}");
+        let server_config = ServerConfig::from_str(&url)?;
+        assert_eq!(server_config.name(), "Tokyo-01");
+        assert_eq!(server_config.protocol(), ServerProtocol::Vmess);
+        assert_eq!(
+            server_config.addr(),
+            &Address::from_str("server.example.com:443").unwrap()
+        );
+        assert_eq!(
+            server_config.username(),
+            Some("b831381d-6324-4d53-ad4f-8cda48b30811")
+        );
+        assert_eq!(server_config.vmess_security(), Some("auto"));
+        assert_eq!(server_config.sni(), Some("sni.example.com"));
+        Ok(())
     }
 
     #[test]

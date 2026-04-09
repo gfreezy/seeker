@@ -22,6 +22,7 @@ ureq = { workspace = true }
 maxminddb = { workspace = true }
 parking_lot = { workspace = true }
 store = { path = "../store" }
+serde_json = { workspace = true }
 
 [dev-dependencies]
 tracing-subscriber = { workspace = true, features = ["env-filter"] }

@@ -466,7 +466,10 @@ impl Config {
 fn read_data_from_remote_config(url: &str) -> io::Result<Vec<u8>> {
     let mut data = Vec::new();
     let _size = ureq::get(url)
-        .set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        .set(
+            "User-Agent",
+            "Shadowrocket/1980 CFNetwork/1496.0.7 Darwin/23.5.0",
+        )
         .timeout(Duration::from_secs(5))
         .call()
         .map_err(|_| io::Error::other("read remote config"))?
