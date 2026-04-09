@@ -266,7 +266,7 @@ impl ProxyClient {
                     .get_performance_tracker(&candidate_udp_socket.proxy_group_name)
                     && let Some(server_config) = candidate_udp_socket.server_config
                 {
-                    performance_tracker.add_result(&server_config, None, false);
+                    performance_tracker.add_result(&server_config, None, false, vec![]);
                 }
                 if let Some(session_manager) = &self.session_manager {
                     session_manager.recycle_port(session_port);

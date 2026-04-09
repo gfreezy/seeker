@@ -568,6 +568,9 @@ impl InnerSessionManager {
             return *port;
         }
 
+        // Clean up expired sessions before allocating a new port
+        self.clear_expired();
+
         let port = self.fetch_next_available_port();
 
         let now = now();
@@ -590,7 +593,6 @@ impl InnerSessionManager {
             port,
             (src_addr, src_port, dest_addr, dest_port,)
         );
-        self.clear_expired();
         port
     }
 

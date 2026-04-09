@@ -10,7 +10,13 @@ use crate::server_performance::ServerPerformanceStats;
 
 #[derive(Serialize)]
 struct StatsResponse {
-    groups: HashMap<String, Vec<ServerStats>>,
+    groups: HashMap<String, GroupStats>,
+}
+
+#[derive(Serialize)]
+struct GroupStats {
+    selected_server: String,
+    servers: Vec<ServerStats>,
 }
 
 #[derive(Serialize)]
@@ -25,7 +31,7 @@ async fn get_stats(State(chooser): State<ServerChooser>) -> Json<StatsResponse> 
     let all_stats = chooser.get_all_performance_stats();
     let groups = all_stats
         .into_iter()
-        .map(|(group_name, stats)| {
+        .map(|(group_name, (selected, stats))| {
             let server_stats = stats
                 .into_iter()
                 .map(|(server, name, stats)| ServerStats {
@@ -34,7 +40,10 @@ async fn get_stats(State(chooser): State<ServerChooser>) -> Json<StatsResponse> 
                     stats,
                 })
                 .collect();
-            (group_name, server_stats)
+            (group_name, GroupStats {
+                selected_server: selected,
+                servers: server_stats,
+            })
         })
         .collect();
     Json(StatsResponse { groups })

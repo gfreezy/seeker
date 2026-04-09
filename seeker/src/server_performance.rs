@@ -9,12 +9,21 @@ pub const DEFAULT_SCORE: f64 = 100000.0; // 未测试过的服务器返回无穷
 pub const DEFAULT_LATENCY: f64 = 100000.0; // 未测试过的服务器返回无穷大
 
 #[derive(Debug, Clone, serde::Serialize)]
+pub struct PingUrlResult {
+    pub url: String,
+    pub latency_ms: Option<f64>,
+    pub success: bool,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct ServerPerformanceStats {
     pub score: f64,
     pub latency: f64,
     pub success_rate: f64,
     pub success: u32,
     pub failure: u32,
+    pub ping_results: Vec<PingUrlResult>,
 }
 
 #[derive(Clone)]
@@ -26,6 +35,7 @@ pub struct ServerPerformance {
     last_update: Instant,
     max_history_size: usize,
     half_life: Duration,
+    last_ping_results: Vec<PingUrlResult>,
 }
 
 impl ServerPerformance {
@@ -38,10 +48,12 @@ impl ServerPerformance {
             last_update: Instant::now(),
             max_history_size,
             half_life,
+            last_ping_results: Vec::new(),
         }
     }
 
-    pub fn add_result(&mut self, latency: Option<Duration>, success: bool) {
+    pub fn add_result(&mut self, latency: Option<Duration>, success: bool, ping_results: Vec<PingUrlResult>) {
+        self.last_ping_results = ping_results;
         let now = Instant::now();
 
         if success {
@@ -117,6 +129,7 @@ impl ServerPerformance {
             success_rate,
             success: self.success_count,
             failure: self.failure_count,
+            ping_results: self.last_ping_results.clone(),
         }
     }
 }
@@ -137,7 +150,7 @@ impl ServerPerformanceTracker {
         }
     }
 
-    pub fn add_result(&self, server: &ServerConfig, latency: Option<Duration>, success: bool) {
+    pub fn add_result(&self, server: &ServerConfig, latency: Option<Duration>, success: bool, ping_results: Vec<PingUrlResult>) {
         let mut history = self.performance_history.lock();
         let performance = history
             .entry(server.addr().to_string())
@@ -148,7 +161,7 @@ impl ServerPerformanceTracker {
                     self.half_life,
                 )
             });
-        performance.add_result(latency, success);
+        performance.add_result(latency, success, ping_results);
     }
 
     pub fn get_server_score(&self, server: &ServerConfig, now: Instant) -> f64 {

@@ -2,7 +2,10 @@ use crate::dns_client::DnsClient;
 use crate::group_servers_chooser::GroupServersChooser;
 use crate::proxy_tcp_stream::ProxyTcpStream;
 use crate::proxy_udp_socket::ProxyUdpSocket;
-use crate::server_performance::ServerPerformanceTracker;
+use crate::server_performance::{ServerPerformanceStats, ServerPerformanceTracker};
+
+/// (selected_server_addr, Vec<(server_addr, server_name, stats)>)
+type GroupPerformanceStats = (String, Vec<(String, String, ServerPerformanceStats)>);
 use anyhow::Result;
 use config::rule::Action;
 use config::{Address, Config, ServerConfig};
@@ -38,11 +41,7 @@ impl ServerChooser {
             } else {
                 group.ping_urls.clone()
             };
-            let ping_timeout = if let Some(ping_timeout) = group.ping_timeout {
-                ping_timeout
-            } else {
-                config.ping_timeout
-            };
+            let ping_timeout = group.ping_timeout.unwrap_or(config.ping_timeout);
             let servers = config.get_servers_by_name(&group.name);
             group_servers_chooser.insert(
                 group.name.clone(),
@@ -52,6 +51,9 @@ impl ServerChooser {
                     dns_client.clone(),
                     ping_urls,
                     ping_timeout,
+                    config.connect_timeout,
+                    config.read_timeout,
+                    config.write_timeout,
                     show_stats,
                 )
                 .await,
@@ -158,13 +160,15 @@ impl ServerChooser {
             .map(|chooser| chooser.get_performance_tracker())
     }
 
+    /// Returns a map of group_name -> (selected_server_addr, Vec<(server_addr, server_name, stats)>)
     pub fn get_all_performance_stats(
         &self,
-    ) -> HashMap<String, Vec<(String, String, crate::server_performance::ServerPerformanceStats)>> {
+    ) -> HashMap<String, GroupPerformanceStats> {
         let mut result = HashMap::new();
         for (group_name, chooser) in &self.group_servers_chooser {
             let tracker = chooser.get_performance_tracker();
-            result.insert(group_name.clone(), tracker.get_all_server_stats());
+            let selected = chooser.get_selected_server().addr().to_string();
+            result.insert(group_name.clone(), (selected, tracker.get_all_server_stats()));
         }
         result
     }

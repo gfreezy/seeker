@@ -3,7 +3,7 @@ use crate::proxy_connection::ProxyConnection;
 use crate::proxy_tcp_stream::ProxyTcpStream;
 use crate::proxy_udp_socket::ProxyUdpSocket;
 use crate::server_chooser::{CandidateTcpStream, CandidateUdpSocket};
-use crate::server_performance::{DEFAULT_SCORE, ServerPerformanceTracker};
+use crate::server_performance::{DEFAULT_SCORE, PingUrlResult, ServerPerformanceTracker};
 use anyhow::Result;
 use config::rule::Action;
 use config::{Address, PingURL, ServerConfig};
@@ -33,6 +33,9 @@ pub struct GroupServersChooser {
     name: String,
     ping_urls: Vec<PingURL>,
     ping_timeout: Duration,
+    connect_timeout: Duration,
+    read_timeout: Duration,
+    write_timeout: Duration,
     servers: Arc<Vec<ServerConfig>>,
     selected_server: Arc<Mutex<ServerConfig>>,
     dns_client: DnsClient,
@@ -46,12 +49,16 @@ pub struct GroupServersChooser {
 }
 
 impl GroupServersChooser {
+    #[allow(clippy::too_many_arguments)]
     pub async fn new(
         name: String,
         servers: Arc<Vec<ServerConfig>>,
         dns_client: DnsClient,
         ping_urls: Vec<PingURL>,
         ping_timeout: Duration,
+        connect_timeout: Duration,
+        read_timeout: Duration,
+        write_timeout: Duration,
         show_stats: bool,
     ) -> Self {
         let selected = servers.first().cloned().expect("no server available");
@@ -59,6 +66,9 @@ impl GroupServersChooser {
             name,
             ping_urls,
             ping_timeout,
+            connect_timeout,
+            read_timeout,
+            write_timeout,
             servers,
             dns_client,
             live_connections: Arc::new(RwLock::new(vec![])),
@@ -359,15 +369,15 @@ impl GroupServersChooser {
                 let self_clone = self.clone();
                 let config_clone = config.clone();
                 task::spawn(async move {
-                    let result = self_clone
+                    let (result, ping_results) = self_clone
                         .ping_server(config_clone.clone())
-                        .await
-                        .map_err(|e| (e, config_clone.clone()));
+                        .await;
                     let is_success = result.is_ok();
                     self_clone.performance_tracker.add_result(
                         &config_clone,
                         result.ok(),
                         is_success,
+                        ping_results,
                     );
                     is_success
                 })
@@ -388,31 +398,83 @@ impl GroupServersChooser {
         self.move_to_next_server(!wait_for_all);
     }
 
-    async fn ping_server(&self, server_config: ServerConfig) -> std::io::Result<Duration> {
-        let instant = Instant::now();
-        for ping_url in &self.ping_urls {
-            let ret = ping_server(
-                server_config.clone(),
-                ping_url,
-                self.ping_timeout,
-                self.dns_client.clone(),
-            )
-            .await;
-            if let Err(err) = ret {
+    async fn ping_server(&self, server_config: ServerConfig) -> (std::io::Result<Duration>, Vec<PingUrlResult>) {
+        let total_start = Instant::now();
+
+        // Ping all URLs concurrently
+        let futs: Vec<_> = self.ping_urls.iter().map(|ping_url| {
+            let server_config = server_config.clone();
+            let dns_client = self.dns_client.clone();
+            let ping_timeout = self.ping_timeout;
+            let connect_timeout = self.connect_timeout;
+            let read_timeout = self.read_timeout;
+            let write_timeout = self.write_timeout;
+            let url_str = ping_url.to_string();
+            let ping_url = ping_url.clone();
+            async move {
+                let url_start = Instant::now();
+                let ret = timeout(
+                    ping_timeout,
+                    ping_server(server_config.clone(), &ping_url, connect_timeout, read_timeout, write_timeout, dns_client),
+                ).await;
+                let elapsed = url_start.elapsed();
+                match ret {
+                    Ok(Ok(())) => PingUrlResult {
+                        url: url_str,
+                        latency_ms: Some(elapsed.as_secs_f64() * 1000.0),
+                        success: true,
+                        error: None,
+                    },
+                    Ok(Err(err)) => PingUrlResult {
+                        url: url_str,
+                        latency_ms: Some(elapsed.as_secs_f64() * 1000.0),
+                        success: false,
+                        error: Some(err.to_string()),
+                    },
+                    Err(_) => PingUrlResult {
+                        url: url_str,
+                        latency_ms: Some(elapsed.as_secs_f64() * 1000.0),
+                        success: false,
+                        error: Some(format!(
+                            "server={}({}), url={}, stage=total, error: ping timeout after {ping_timeout:?}",
+                            server_config.name(), server_config.addr(), ping_url,
+                        )),
+                    },
+                }
+            }
+        }).collect();
+
+        let ping_results = futures_util::future::join_all(futs).await;
+
+        for r in &ping_results {
+            if !r.success {
                 tracing::error!(
-                    "ping server: {}, ur: {}, err: {:?}",
+                    "ping server: {}, url: {}, err: {:?}",
                     server_config.name(),
-                    ping_url,
-                    err
+                    r.url,
+                    r.error
                 );
-                return Err(err);
             }
         }
-        Ok(instant.elapsed())
+
+        let all_success = ping_results.iter().all(|r| r.success);
+        let result = if all_success {
+            Ok(total_start.elapsed())
+        } else {
+            let first_err = ping_results.iter().find(|r| !r.success)
+                .and_then(|r| r.error.clone())
+                .unwrap_or_else(|| "ping failed".to_string());
+            Err(std::io::Error::other(first_err))
+        };
+        (result, ping_results)
     }
 
     pub fn get_performance_tracker(&self) -> ServerPerformanceTracker {
         self.performance_tracker.clone()
+    }
+
+    pub fn get_selected_server(&self) -> ServerConfig {
+        self.selected_server.lock().clone()
     }
 
     /// Reset all connections and performance data
@@ -438,69 +500,109 @@ impl GroupServersChooser {
 async fn ping_server(
     server_config: ServerConfig,
     ping_url: &PingURL,
-    ping_timeout: Duration,
+    connect_timeout: Duration,
+    read_timeout: Duration,
+    write_timeout: Duration,
     dns_client: DnsClient,
 ) -> std::io::Result<()> {
     let addr = ping_url.address();
     let path: &str = ping_url.path();
-    match timeout(ping_timeout, async {
-        let stream =
-            ProxyTcpStream::connect(addr.clone(), Some(&server_config), dns_client).await.map_err(|e| {
-                tracing::error!("Failed to connect to proxy server: {}, error: {:?}", server_config.addr(), e);
-                e
-            })?;
-        let req = format!(
-                "GET {path} HTTP/1.1\r\n\
-                Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7\r\n\
-                Accept-Encoding: gzip, deflate, br, zstd\r\n\
-                Accept-Language: en-US,en;q=0.9\r\n\
-                Cache-Control: no-cache\r\n\
-                Connection: keep-alive\r\n\
-                DNT: 1\r\n\
-                Host: {}\r\n\
-                Pragma: no-cache\r\n\
-                Sec-Fetch-Dest: document\r\n\
-                Sec-Fetch-Mode: navigate\r\n\
-                Sec-Fetch-Site: none\r\n\
-                Sec-Fetch-User: ?1\r\n\
-                Upgrade-Insecure-Requests: 1\r\n\
-                User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36\r\n\
-                sec-ch-ua: \"Google Chrome\";v=\"137\", \"Chromium\";v=\"137\", \"Not/A)Brand\";v=\"24\"\r\n\
-                sec-ch-ua-mobile: ?0\r\n\
-                sec-ch-ua-platform: \"macOS\"\r\n\
-                \r\n",
-                ping_url.host()
-            );
-        let resp_buf = if ping_url.port() == 443 {
-            let cx = native_tls::TlsConnector::builder().build().unwrap();
-            let connector = TlsConnector::from(cx);
-            let mut conn = connector.connect(ping_url.host(), stream).await.map_err(std::io::Error::other)?;
-            conn.write_all(req.as_bytes()).await?;
-            let mut buf = vec![0; 1024];
-            let size = conn.read(&mut buf).await?;
-            buf[..size].to_vec()
-        } else {
-            let mut conn = stream;
-            conn.write_all(req.as_bytes()).await?;
-            let mut buf = vec![0; 1024];
-            let size = conn.read(&mut buf).await?;
-            buf[..size].to_vec()
-        };
-        // Check if HTTP status code starts with 2 or 3
-        let response = String::from_utf8_lossy(&resp_buf);
-        if let Some(status_line) = response.lines().next()
-            && let Some(status_code) = status_line.split_whitespace().nth(1)
-                && !status_code.starts_with('2') && !status_code.starts_with('3') {
-                    return Err(std::io::Error::other(
-                        format!("Host: {}, Status code: {}", ping_url.host(), status_code),
-                    ));
-                }
-        Ok(())
-    })
-    .await {
-        Ok(result) => result,
-        Err(_) => Err(std::io::Error::new(std::io::ErrorKind::TimedOut, "ping timeout")),
-    }
+    let server_name = server_config.name().to_string();
+    let server_addr = server_config.addr().to_string();
+    let url_str = ping_url.to_string();
+
+    let stream = timeout(connect_timeout, ProxyTcpStream::connect(addr.clone(), Some(&server_config), dns_client))
+        .await
+        .map_err(|_| std::io::Error::other(format!(
+            "server={server_name}({server_addr}), url={url_str}, stage=connect, error: timeout after {connect_timeout:?}"
+        )))?
+        .map_err(|e| std::io::Error::other(format!(
+            "server={server_name}({server_addr}), url={url_str}, stage=connect, error: {e}"
+        )))?;
+
+    let req = format!(
+            "GET {path} HTTP/1.1\r\n\
+            Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7\r\n\
+            Accept-Encoding: gzip, deflate, br, zstd\r\n\
+            Accept-Language: en-US,en;q=0.9\r\n\
+            Cache-Control: no-cache\r\n\
+            Connection: keep-alive\r\n\
+            DNT: 1\r\n\
+            Host: {}\r\n\
+            Pragma: no-cache\r\n\
+            Sec-Fetch-Dest: document\r\n\
+            Sec-Fetch-Mode: navigate\r\n\
+            Sec-Fetch-Site: none\r\n\
+            Sec-Fetch-User: ?1\r\n\
+            Upgrade-Insecure-Requests: 1\r\n\
+            User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36\r\n\
+            sec-ch-ua: \"Google Chrome\";v=\"137\", \"Chromium\";v=\"137\", \"Not/A)Brand\";v=\"24\"\r\n\
+            sec-ch-ua-mobile: ?0\r\n\
+            sec-ch-ua-platform: \"macOS\"\r\n\
+            \r\n",
+            ping_url.host()
+        );
+
+    let resp_buf = if ping_url.port() == 443 {
+        let cx = native_tls::TlsConnector::builder().build().unwrap();
+        let connector = TlsConnector::from(cx);
+        let mut conn = timeout(connect_timeout, connector.connect(ping_url.host(), stream))
+            .await
+            .map_err(|_| std::io::Error::other(format!(
+                "server={server_name}({server_addr}), url={url_str}, stage=tls_handshake, error: timeout after {connect_timeout:?}"
+            )))?
+            .map_err(|e| std::io::Error::other(format!(
+                "server={server_name}({server_addr}), url={url_str}, stage=tls_handshake, error: {e}"
+            )))?;
+        timeout(write_timeout, conn.write_all(req.as_bytes()))
+            .await
+            .map_err(|_| std::io::Error::other(format!(
+                "server={server_name}({server_addr}), url={url_str}, stage=send_request, error: write timeout after {write_timeout:?}"
+            )))?
+            .map_err(|e| std::io::Error::other(format!(
+                "server={server_name}({server_addr}), url={url_str}, stage=send_request, error: {e}"
+            )))?;
+        let mut buf = vec![0; 1024];
+        let size = timeout(read_timeout, conn.read(&mut buf))
+            .await
+            .map_err(|_| std::io::Error::other(format!(
+                "server={server_name}({server_addr}), url={url_str}, stage=read_response, error: read timeout after {read_timeout:?}"
+            )))?
+            .map_err(|e| std::io::Error::other(format!(
+                "server={server_name}({server_addr}), url={url_str}, stage=read_response, error: {e}"
+            )))?;
+        buf[..size].to_vec()
+    } else {
+        let mut conn = stream;
+        timeout(write_timeout, conn.write_all(req.as_bytes()))
+            .await
+            .map_err(|_| std::io::Error::other(format!(
+                "server={server_name}({server_addr}), url={url_str}, stage=send_request, error: write timeout after {write_timeout:?}"
+            )))?
+            .map_err(|e| std::io::Error::other(format!(
+                "server={server_name}({server_addr}), url={url_str}, stage=send_request, error: {e}"
+            )))?;
+        let mut buf = vec![0; 1024];
+        let size = timeout(read_timeout, conn.read(&mut buf))
+            .await
+            .map_err(|_| std::io::Error::other(format!(
+                "server={server_name}({server_addr}), url={url_str}, stage=read_response, error: read timeout after {read_timeout:?}"
+            )))?
+            .map_err(|e| std::io::Error::other(format!(
+                "server={server_name}({server_addr}), url={url_str}, stage=read_response, error: {e}"
+            )))?;
+        buf[..size].to_vec()
+    };
+    // Check if HTTP status code starts with 2 or 3
+    let response = String::from_utf8_lossy(&resp_buf);
+    if let Some(status_line) = response.lines().next()
+        && let Some(status_code) = status_line.split_whitespace().nth(1)
+            && !status_code.starts_with('2') && !status_code.starts_with('3') {
+                return Err(std::io::Error::other(
+                    format!("server={server_name}({server_addr}), url={url_str}, stage=status_check, status_code={status_code}"),
+                ));
+            }
+    Ok(())
 }
 
 #[cfg(all(test, feature = "integration-tests"))]

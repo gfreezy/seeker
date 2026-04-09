@@ -87,7 +87,7 @@ pub(crate) async fn relay_udp_socket(
                 server_chooser.get_performance_tracker(&candidate_udp_socket_clone.proxy_group_name)
             && let Some(server_config) = &candidate_udp_socket_clone.server_config
         {
-            performance_tracker.add_result(server_config, None, false);
+            performance_tracker.add_result(server_config, None, false, vec![]);
         }
         session_manager.recycle_port(session_port);
         udp_manager_clone.write().remove(&session_port);
