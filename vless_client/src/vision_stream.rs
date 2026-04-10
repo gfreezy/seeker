@@ -234,10 +234,25 @@ impl<IO: AsyncRead + AsyncWrite + Unpin> VisionStream<IO> {
         debug!("vision: read switched to Direct");
     }
 
-    fn switch_read_to_tls_mode(&mut self) {
+    fn switch_read_to_tls_mode(&mut self) -> io::Result<()> {
         self.read_mode = VisionMode::Tls;
-        self.outer_read_deframer = None;
+
+        // Before discarding the deframer, feed any remaining buffered data to rustls
+        if let Some(deframer) = self.outer_read_deframer.take() {
+            let remaining = deframer.into_remaining_data();
+            if !remaining.is_empty() {
+                let plaintext_len = feed_and_process(&mut self.session, &remaining)?;
+                if plaintext_len > 0 {
+                    let decrypted = drain_plaintext(&mut self.session);
+                    if !decrypted.is_empty() {
+                        self.pending_read.extend_from_slice(&decrypted);
+                    }
+                }
+            }
+        }
+
         debug!("vision: read switched to Tls");
+        Ok(())
     }
 
     fn switch_write_to_direct_mode(&mut self) {
@@ -355,7 +370,7 @@ impl<IO: AsyncRead + AsyncWrite + Unpin> VisionStream<IO> {
                 if !result.content.is_empty() {
                     self.pending_read.extend_from_slice(&result.content);
                 }
-                self.switch_read_to_tls_mode();
+                self.switch_read_to_tls_mode()?;
             }
             Some(UnpadCommand::Continue) | None => {
                 if !result.content.is_empty() {
