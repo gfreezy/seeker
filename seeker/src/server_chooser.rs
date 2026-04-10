@@ -4,8 +4,10 @@ use crate::proxy_tcp_stream::ProxyTcpStream;
 use crate::proxy_udp_socket::ProxyUdpSocket;
 use crate::server_performance::{ServerPerformanceStats, ServerPerformanceTracker};
 
-/// (selected_server_addr, Vec<(server_addr, server_name, protocol, stats)>)
+/// (selected_server_name, selected_server_addr, selected_protocol, Vec<(server_addr, server_name, protocol, stats)>)
 type GroupPerformanceStats = (
+    String,
+    String,
     String,
     Vec<(String, String, String, ServerPerformanceStats)>,
 );
@@ -168,10 +170,15 @@ impl ServerChooser {
         let mut result = HashMap::new();
         for (group_name, chooser) in &self.group_servers_chooser {
             let tracker = chooser.get_performance_tracker();
-            let selected = chooser.get_selected_server().addr().to_string();
+            let selected = chooser.get_selected_server();
             result.insert(
                 group_name.clone(),
-                (selected, tracker.get_all_server_stats()),
+                (
+                    selected.name().to_string(),
+                    selected.addr().to_string(),
+                    selected.protocol().to_string(),
+                    tracker.get_all_server_stats(),
+                ),
             );
         }
         result

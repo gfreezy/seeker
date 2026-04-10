@@ -367,8 +367,9 @@ mod tests {
     #[test]
     fn test_proxy_rule() {
         tracing_subscriber::fmt()
-            .with_max_level(tracing::Level::DEBUG)
-            .init();
+            .with_max_level(tracing::Level::INFO)
+            .try_init()
+            .ok();
         let temp_path = std::env::temp_dir().join("geoip_proxy_rule_test.mmdb");
         if temp_path.exists() {
             std::fs::remove_file(&temp_path).unwrap();

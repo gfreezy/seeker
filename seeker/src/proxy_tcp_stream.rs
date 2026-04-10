@@ -11,6 +11,7 @@ use std::time::Instant;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::net::TcpStream;
 use trojan_client::TrojanTcpStream;
+use vless_client::VlessTcpStream;
 use vmess_client::VMessTcpStream;
 
 use tcp_connection::TcpConnection;
@@ -36,6 +37,7 @@ enum ProxyTcpStreamInner {
     Hysteria2(Hy2TcpStream),
     Trojan(TrojanTcpStream),
     VMess(Box<VMessTcpStream>),
+    Vless(Box<VlessTcpStream>),
 }
 
 // Note: tokio types don't implement Clone
@@ -154,6 +156,35 @@ impl ProxyTcpStream {
                             .await?,
                     ))
                 }
+                ServerProtocol::Vless => {
+                    let uuid = config.username().ok_or_else(|| {
+                        Error::new(
+                            ErrorKind::InvalidData,
+                            "uuid (username) must be set for vless protocol.",
+                        )
+                    })?;
+                    let sni = config
+                        .sni()
+                        .map(|s| s.to_string())
+                        .or_else(|| config.addr().hostname().map(|s| s.to_string()))
+                        .ok_or_else(|| {
+                            Error::new(
+                                ErrorKind::InvalidData,
+                                "sni or domain must be set for vless protocol.",
+                            )
+                        })?;
+                    ProxyTcpStreamInner::Vless(Box::new(
+                        VlessTcpStream::connect(
+                            proxy_socket_addr,
+                            &sni,
+                            remote_addr,
+                            uuid,
+                            config.flow(),
+                            config.insecure(),
+                        )
+                        .await?,
+                    ))
+                }
             }
         } else {
             let socket_addr = dns_client.lookup_address(&remote_addr).await?;
@@ -217,7 +248,8 @@ impl ProxyConnection for ProxyTcpStream {
             | ProxyTcpStreamInner::Shadowsocks(_)
             | ProxyTcpStreamInner::Hysteria2(_)
             | ProxyTcpStreamInner::Trojan(_)
-            | ProxyTcpStreamInner::VMess(_) => Action::Proxy("".to_string()),
+            | ProxyTcpStreamInner::VMess(_)
+            | ProxyTcpStreamInner::Vless(_) => Action::Proxy("".to_string()),
         }
     }
 
@@ -243,6 +275,7 @@ impl ProxyConnection for ProxyTcpStream {
             ProxyTcpStreamInner::Hysteria2(_) => "hy2",
             ProxyTcpStreamInner::Trojan(_) => "trojan",
             ProxyTcpStreamInner::VMess(_) => "vmess",
+            ProxyTcpStreamInner::Vless(_) => "vless",
         }
     }
 
@@ -281,6 +314,7 @@ impl AsyncRead for ProxyTcpStream {
             ProxyTcpStreamInner::Hysteria2(conn) => Pin::new(conn).poll_read(cx, buf),
             ProxyTcpStreamInner::Trojan(conn) => Pin::new(conn).poll_read(cx, buf),
             ProxyTcpStreamInner::VMess(conn) => Pin::new(conn).poll_read(cx, buf),
+            ProxyTcpStreamInner::Vless(conn) => Pin::new(conn).poll_read(cx, buf),
         });
 
         match ret {
@@ -322,6 +356,7 @@ impl AsyncWrite for ProxyTcpStream {
             ProxyTcpStreamInner::Hysteria2(conn) => Pin::new(conn).poll_write(cx, buf),
             ProxyTcpStreamInner::Trojan(conn) => Pin::new(conn).poll_write(cx, buf),
             ProxyTcpStreamInner::VMess(conn) => Pin::new(conn).poll_write(cx, buf),
+            ProxyTcpStreamInner::Vless(conn) => Pin::new(conn).poll_write(cx, buf),
         });
         match ret {
             Ok(size) => {
@@ -355,6 +390,7 @@ impl AsyncWrite for ProxyTcpStream {
             ProxyTcpStreamInner::Hysteria2(conn) => Pin::new(conn).poll_flush(cx),
             ProxyTcpStreamInner::Trojan(conn) => Pin::new(conn).poll_flush(cx),
             ProxyTcpStreamInner::VMess(conn) => Pin::new(conn).poll_flush(cx),
+            ProxyTcpStreamInner::Vless(conn) => Pin::new(conn).poll_flush(cx),
         });
         match ret {
             Ok(()) => Poll::Ready(Ok(())),
@@ -382,6 +418,7 @@ impl AsyncWrite for ProxyTcpStream {
             ProxyTcpStreamInner::Hysteria2(conn) => Pin::new(conn).poll_shutdown(cx),
             ProxyTcpStreamInner::Trojan(conn) => Pin::new(conn).poll_shutdown(cx),
             ProxyTcpStreamInner::VMess(conn) => Pin::new(conn).poll_shutdown(cx),
+            ProxyTcpStreamInner::Vless(conn) => Pin::new(conn).poll_shutdown(cx),
         });
         self.shutdown();
         Poll::Ready(ret)

@@ -15,7 +15,7 @@ struct StatsResponse {
 
 #[derive(Serialize)]
 struct GroupStats {
-    selected_server: String,
+    selected_server: ServerStats,
     servers: Vec<ServerStats>,
 }
 
@@ -25,31 +25,50 @@ struct ServerStats {
     server: String,
     protocol: String,
     #[serde(flatten)]
-    stats: ServerPerformanceStats,
+    stats: Option<ServerPerformanceStats>,
 }
 
 async fn get_stats(State(chooser): State<ServerChooser>) -> Json<StatsResponse> {
     let all_stats = chooser.get_all_performance_stats();
     let groups = all_stats
         .into_iter()
-        .map(|(group_name, (selected, stats))| {
-            let server_stats = stats
-                .into_iter()
-                .map(|(server, name, protocol, stats)| ServerStats {
-                    name,
-                    server,
-                    protocol,
-                    stats,
-                })
-                .collect();
-            (
-                group_name,
-                GroupStats {
-                    selected_server: selected,
-                    servers: server_stats,
-                },
-            )
-        })
+        .map(
+            |(group_name, (selected_name, selected_addr, selected_protocol, stats))| {
+                let mut server_stats: Vec<ServerStats> = stats
+                    .into_iter()
+                    .map(|(server, name, protocol, stats)| ServerStats {
+                        name,
+                        server,
+                        protocol,
+                        stats: Some(stats),
+                    })
+                    .collect();
+                server_stats.sort_by(|a, b| {
+                    let score_a = a.stats.as_ref().map(|s| s.score).unwrap_or(0.0);
+                    let score_b = b.stats.as_ref().map(|s| s.score).unwrap_or(0.0);
+                    score_b
+                        .partial_cmp(&score_a)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                });
+                let selected_stats = server_stats
+                    .iter()
+                    .find(|s| s.name == selected_name)
+                    .map(|s| s.stats.clone())
+                    .unwrap_or(None);
+                (
+                    group_name,
+                    GroupStats {
+                        selected_server: ServerStats {
+                            name: selected_name,
+                            server: selected_addr,
+                            protocol: selected_protocol,
+                            stats: selected_stats,
+                        },
+                        servers: server_stats,
+                    },
+                )
+            },
+        )
         .collect();
     Json(StatsResponse { groups })
 }

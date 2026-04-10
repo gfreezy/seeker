@@ -15,6 +15,7 @@ members = [
     "hysteria2_client",
     "trojan_client",
     "vmess_client",
+    "vless_client",
 ]
 resolver = "2"
 

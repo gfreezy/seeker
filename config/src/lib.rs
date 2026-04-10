@@ -41,6 +41,7 @@ pub struct ProxyGroup {
 #[derive(Clone, Deserialize)]
 pub struct Config {
     #[serde(alias = "proxies")]
+    #[serde(default)]
     pub servers: Arc<Vec<ServerConfig>>,
     #[serde(default)]
     pub proxy_groups: Arc<Vec<ProxyGroup>>,
@@ -359,7 +360,13 @@ impl Config {
             for server in &extra_servers {
                 tracing::info!("Load extra server: {}", server.name());
             }
-            servers.extend(extra_servers);
+            servers.extend(extra_servers.into_iter().filter(|s| {
+                let dominated = s.addr().to_string() == "8.8.8.8:12345";
+                if dominated {
+                    tracing::info!("Skip server: {} ({})", s.name(), s.addr());
+                }
+                !dominated
+            }));
         }
     }
 

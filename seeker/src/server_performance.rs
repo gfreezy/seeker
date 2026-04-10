@@ -104,23 +104,29 @@ impl ServerPerformance {
             return DEFAULT_SCORE;
         }
 
-        total_weighted_latency / total_weight
+        let avg_latency = total_weighted_latency / total_weight;
+
+        // Factor in success rate: score = latency / success_rate
+        // Lower success rate → higher (worse) score
+        let success_rate =
+            self.success_count as f64 / (self.success_count + self.failure_count).max(1) as f64;
+        avg_latency / success_rate
     }
 
     pub fn get_stats(&self) -> ServerPerformanceStats {
         let now = Instant::now();
         let mut total_latency = 0.0;
-        let mut count = 0;
+        let mut total_weight = 0.0;
 
         for (timestamp, latency) in &self.latency_history {
             let age = now.duration_since(*timestamp);
             let weight = 2.0_f64.powf(-age.as_secs_f64() / self.half_life.as_secs_f64());
             total_latency += latency.as_millis() as f64 * weight;
-            count += 1;
+            total_weight += weight;
         }
 
-        let avg_latency = if count > 0 {
-            total_latency / count as f64
+        let avg_latency = if total_weight > 0.0 {
+            total_latency / total_weight
         } else {
             DEFAULT_LATENCY
         };
@@ -132,7 +138,7 @@ impl ServerPerformance {
         };
 
         let raw_score = self.calculate_score(now);
-        // 转换为越大越好的分数 (0-100)，raw_score 是延迟毫秒数
+        // 转换为越大越好的分数 (0-100)
         let score = (100.0 * (1.0 - raw_score / DEFAULT_SCORE)).clamp(0.0, 100.0);
 
         ServerPerformanceStats {

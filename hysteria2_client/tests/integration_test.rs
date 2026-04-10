@@ -116,7 +116,7 @@ fn make_client(port: u16) -> Arc<Hy2Client> {
 #[tokio::test]
 async fn test_hy2_auth() {
     tracing_subscriber::fmt()
-        .with_env_filter("hysteria2_client=debug")
+        // .with_env_filter("hysteria2_client=debug")
         .try_init()
         .ok();
 
@@ -168,7 +168,7 @@ async fn test_hy2_connection_reuse() {
 #[tokio::test]
 async fn test_hy2_tcp_proxy_http() {
     tracing_subscriber::fmt()
-        .with_env_filter("hysteria2_client=debug")
+        // .with_env_filter("hysteria2_client=debug")
         .try_init()
         .ok();
 
@@ -217,7 +217,7 @@ async fn test_hy2_tcp_proxy_http() {
 #[tokio::test]
 async fn test_hy2_tcp_proxy_https() {
     tracing_subscriber::fmt()
-        .with_env_filter("hysteria2_client=debug")
+        // .with_env_filter("hysteria2_client=debug")
         .try_init()
         .ok();
 
@@ -313,7 +313,7 @@ async fn test_hy2_tcp_multiple_streams() {
 #[tokio::test]
 async fn test_hy2_udp_dns_query() {
     tracing_subscriber::fmt()
-        .with_env_filter("hysteria2_client=debug")
+        // .with_env_filter("hysteria2_client=debug")
         .try_init()
         .ok();
 

@@ -400,8 +400,6 @@ impl GroupServersChooser {
         &self,
         server_config: ServerConfig,
     ) -> (std::io::Result<Duration>, Vec<PingUrlResult>) {
-        let total_start = Instant::now();
-
         // Ping all URLs concurrently
         let futs: Vec<_> = self.ping_urls.iter().map(|ping_url| {
             let server_config = server_config.clone();
@@ -458,9 +456,26 @@ impl GroupServersChooser {
             }
         }
 
-        let all_success = ping_results.iter().all(|r| r.success);
-        let result = if all_success {
-            Ok(total_start.elapsed())
+        use crate::server_performance::FAILURE_LATENCY;
+
+        let success_count = ping_results.iter().filter(|r| r.success).count();
+        let failure_latency_ms = FAILURE_LATENCY.as_secs_f64() * 1000.0;
+
+        let result = if success_count > 0 {
+            // Average latency across all URLs: successful ones use real latency,
+            // failed ones use FAILURE_LATENCY as penalty.
+            let total_latency_ms: f64 = ping_results
+                .iter()
+                .map(|r| {
+                    if r.success {
+                        r.latency_ms.unwrap_or(failure_latency_ms)
+                    } else {
+                        failure_latency_ms
+                    }
+                })
+                .sum();
+            let avg_ms = total_latency_ms / ping_results.len() as f64;
+            Ok(Duration::from_secs_f64(avg_ms / 1000.0))
         } else {
             let first_err = ping_results
                 .iter()
@@ -686,7 +701,7 @@ mod tests {
     async fn test_ping_server() {
         store::Store::setup_global_for_test();
         tracing_subscriber::fmt()
-            .with_env_filter("seeker=debug")
+            // .with_env_filter("seeker=debug")
             .try_init()
             .ok();
 

@@ -406,7 +406,12 @@ async fn run_network_change_handler(
     server_chooser: ServerChooser,
     udp_manager: UdpManager,
 ) {
-    const DEBOUNCE_DURATION: std::time::Duration = std::time::Duration::from_secs(1);
+    const DEBOUNCE_DURATION: std::time::Duration = std::time::Duration::from_secs(5);
+    const STARTUP_GRACE_PERIOD: std::time::Duration = std::time::Duration::from_secs(10);
+
+    // Skip initial network events fired by SCDynamicStore/Netlink at startup
+    tokio::time::sleep(STARTUP_GRACE_PERIOD).await;
+    while rx.try_recv().is_ok() {}
 
     while let Some(()) = rx.recv().await {
         // Debounce: wait and drain any additional events
@@ -421,7 +426,7 @@ async fn run_network_change_handler(
             }
         }
 
-        println!("Network change detected, resetting all connections");
+        tracing::info!("Network change detected, resetting all connections");
         server_chooser.reset_all();
         udp_manager.write().clear();
         tracing::info!("Connection reset completed");

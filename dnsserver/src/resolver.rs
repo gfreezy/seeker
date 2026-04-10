@@ -228,7 +228,7 @@ mod tests {
     fn test_inner_resolve_ip_and_lookup_host() {
         store::Store::setup_global_for_test();
         tracing_subscriber::fmt()
-            .with_max_level(tracing::Level::DEBUG)
+            // .with_max_level(tracing::Level::DEBUG)
             .init();
         let dns = std::env::var("DNS").unwrap_or_else(|_| "223.5.5.5".to_string());
         tokio_test::block_on(async {

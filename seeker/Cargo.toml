@@ -20,6 +20,7 @@ http_proxy_client = { path = "../http_proxy_client" }
 hysteria2_client = { path = "../hysteria2_client" }
 trojan_client = { path = "../trojan_client" }
 vmess_client = { path = "../vmess_client" }
+vless_client = { path = "../vless_client" }
 sysconfig = { path = "../sysconfig" }
 tun_nat = { path = "../tun_nat" }
 file-rotate = { workspace = true }

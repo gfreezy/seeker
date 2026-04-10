@@ -37,6 +37,23 @@ pub enum ServerProtocol {
     Trojan,
     #[serde(alias = "vmess")]
     Vmess,
+    #[serde(alias = "vless")]
+    Vless,
+}
+
+impl std::fmt::Display for ServerProtocol {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ServerProtocol::Http => write!(f, "http"),
+            ServerProtocol::Https => write!(f, "https"),
+            ServerProtocol::Socks5 => write!(f, "socks5"),
+            ServerProtocol::Shadowsocks => write!(f, "ss"),
+            ServerProtocol::Hysteria2 => write!(f, "hy2"),
+            ServerProtocol::Trojan => write!(f, "trojan"),
+            ServerProtocol::Vmess => write!(f, "vmess"),
+            ServerProtocol::Vless => write!(f, "vless"),
+        }
+    }
 }
 
 /// Configuration for a server
@@ -60,6 +77,8 @@ pub struct ServerConfig {
     recv_window: Option<u64>,
     /// VMess encryption method (e.g., "auto", "aes-128-gcm", "chacha20-poly1305")
     vmess_security: Option<String>,
+    /// VLESS flow control (e.g., "xtls-rprx-vision")
+    flow: Option<String>,
 }
 
 // Internal struct for deserializing both Seeker and Clash formats
@@ -84,18 +103,29 @@ enum ServerConfigHelper {
         // Clash-specific fields we ignore
         #[serde(default)]
         _udp: Option<bool>,
-        // Hysteria2 fields
         #[serde(default)]
+        _tls: Option<bool>,
+        #[serde(default)]
+        _network: Option<String>,
+        // Hysteria2 / TLS fields
+        #[serde(default)]
+        #[serde(alias = "servername")]
         sni: Option<String>,
         #[serde(default)]
         obfs_password: Option<String>,
         #[serde(default)]
+        #[serde(alias = "skip-cert-verify")]
         insecure: Option<bool>,
         #[serde(default)]
         recv_window: Option<u64>,
         // VMess fields
         #[serde(default)]
         vmess_security: Option<String>,
+        // VLESS fields
+        #[serde(default)]
+        uuid: Option<String>,
+        #[serde(default)]
+        flow: Option<String>,
     },
     // Seeker format
     Seeker {
@@ -113,18 +143,25 @@ enum ServerConfigHelper {
         method: Option<CipherType>,
         #[serde(default)]
         obfs: Option<Obfs>,
-        // Hysteria2 fields
+        // Hysteria2 / TLS fields
         #[serde(default)]
+        #[serde(alias = "servername")]
         sni: Option<String>,
         #[serde(default)]
         obfs_password: Option<String>,
         #[serde(default)]
+        #[serde(alias = "skip-cert-verify")]
         insecure: Option<bool>,
         #[serde(default)]
         recv_window: Option<u64>,
         // VMess fields
         #[serde(default)]
         vmess_security: Option<String>,
+        // VLESS fields
+        #[serde(default)]
+        uuid: Option<String>,
+        #[serde(default)]
+        flow: Option<String>,
     },
 }
 
@@ -140,6 +177,7 @@ enum ClashProtocol {
     Hysteria2,
     Trojan,
     Vmess,
+    Vless,
 }
 
 impl From<ClashProtocol> for ServerProtocol {
@@ -152,6 +190,7 @@ impl From<ClashProtocol> for ServerProtocol {
             ClashProtocol::Hy2 | ClashProtocol::Hysteria2 => ServerProtocol::Hysteria2,
             ClashProtocol::Trojan => ServerProtocol::Trojan,
             ClashProtocol::Vmess => ServerProtocol::Vmess,
+            ClashProtocol::Vless => ServerProtocol::Vless,
         }
     }
 }
@@ -174,11 +213,15 @@ impl<'de> Deserialize<'de> for ServerConfig {
                 method,
                 obfs,
                 _udp: _,
+                _tls: _,
+                _network: _,
                 sni,
                 obfs_password,
                 insecure,
                 recv_window,
                 vmess_security,
+                uuid,
+                flow,
             } => {
                 let addr = Address::from_str(&format!("{server}:{port}")).map_err(|_| {
                     Error::custom(format!("invalid server address: {server}:{port}"))
@@ -187,7 +230,7 @@ impl<'de> Deserialize<'de> for ServerConfig {
                     name,
                     addr,
                     protocol: protocol.into(),
-                    username,
+                    username: username.or(uuid),
                     password,
                     method,
                     obfs,
@@ -196,6 +239,7 @@ impl<'de> Deserialize<'de> for ServerConfig {
                     insecure,
                     recv_window,
                     vmess_security,
+                    flow,
                 })
             }
             ServerConfigHelper::Seeker {
@@ -211,11 +255,13 @@ impl<'de> Deserialize<'de> for ServerConfig {
                 insecure,
                 recv_window,
                 vmess_security,
+                uuid,
+                flow,
             } => Ok(ServerConfig {
                 name,
                 addr,
                 protocol,
-                username,
+                username: username.or(uuid),
                 password,
                 method,
                 obfs,
@@ -224,6 +270,7 @@ impl<'de> Deserialize<'de> for ServerConfig {
                 insecure,
                 recv_window,
                 vmess_security,
+                flow,
             }),
         }
     }
@@ -301,6 +348,7 @@ impl ServerConfig {
             insecure: None,
             recv_window: None,
             vmess_security: None,
+            flow: None,
         }
     }
 
@@ -366,6 +414,11 @@ impl ServerConfig {
         self.vmess_security.as_deref()
     }
 
+    /// Get VLESS flow control (e.g., "xtls-rprx-vision")
+    pub fn flow(&self) -> Option<&str> {
+        self.flow.as_deref()
+    }
+
     pub fn from_url(encoded: &str) -> Result<ServerConfig, UrlParseError> {
         let parsed = Url::parse(encoded).map_err(UrlParseError::from)?;
 
@@ -373,6 +426,7 @@ impl ServerConfig {
             "ss" => {}
             "trojan" => return Self::from_trojan_url(&parsed),
             "vmess" => return Self::from_vmess_url(&parsed),
+            "vless" => return Self::from_vless_url(&parsed),
             _ => return Err(UrlParseError::InvalidScheme),
         }
 
@@ -567,6 +621,7 @@ impl ServerConfig {
             insecure,
             recv_window: None,
             vmess_security: None,
+            flow: None,
         })
     }
     /// Parse vmess:// URL
@@ -622,6 +677,63 @@ impl ServerConfig {
             insecure: None,
             recv_window: None,
             vmess_security: Some(security),
+            flow: None,
+        })
+    }
+
+    /// Parse vless:// URL
+    ///
+    /// Format: vless://uuid@host:port?security=tls&sni=xxx&allowInsecure=1#name
+    fn from_vless_url(parsed: &Url) -> Result<ServerConfig, UrlParseError> {
+        let host = match parsed.host_str() {
+            Some(host) => host,
+            None => return Err(UrlParseError::MissingHost),
+        };
+
+        let port = parsed.port().unwrap_or(443);
+
+        // UUID is the userinfo (username part)
+        let uuid = parsed.username();
+        if uuid.is_empty() {
+            return Err(UrlParseError::InvalidAuthInfo);
+        }
+        let uuid = percent_encoding::percent_decode_str(uuid)
+            .decode_utf8_lossy()
+            .to_string();
+
+        // Name from fragment, fallback to host
+        let name_percent_encoding = parsed.fragment().unwrap_or(host);
+        let name = percent_encoding::percent_decode_str(name_percent_encoding)
+            .decode_utf8_lossy()
+            .to_string();
+
+        // Parse query parameters
+        let mut sni = None;
+        let mut insecure = None;
+        let mut flow = None;
+        for (key, value) in parsed.query_pairs() {
+            match key.as_ref() {
+                "sni" => sni = Some(value.to_string()),
+                "allowInsecure" => insecure = Some(value == "1" || value == "true"),
+                "flow" => flow = Some(value.to_string()),
+                _ => {}
+            }
+        }
+
+        Ok(ServerConfig {
+            name,
+            addr: Address::from_str(&format!("{host}:{port}")).unwrap(),
+            protocol: ServerProtocol::Vless,
+            username: Some(uuid),
+            password: None,
+            method: None,
+            obfs: None,
+            sni,
+            obfs_password: None,
+            insecure,
+            recv_window: None,
+            vmess_security: None,
+            flow,
         })
     }
 }
@@ -948,6 +1060,7 @@ password: mixed123
             ("hy2", ServerProtocol::Hysteria2),
             ("trojan", ServerProtocol::Trojan),
             ("vmess", ServerProtocol::Vmess),
+            ("vless", ServerProtocol::Vless),
         ];
 
         for (alias, expected) in test_cases {
@@ -1196,6 +1309,144 @@ sni: custom.example.com
         );
         assert_eq!(server_config.vmess_security(), Some("auto"));
         assert_eq!(server_config.sni(), Some("sni.example.com"));
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_seeker_vless_basic() {
+        let yaml = r#"
+name: server-vless
+addr: example.com:443
+protocol: vless
+username: b831381d-6324-4d53-ad4f-8cda48b30811
+"#;
+        let server_config: ServerConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(server_config.name(), "server-vless");
+        assert_eq!(server_config.protocol(), ServerProtocol::Vless);
+        assert_eq!(
+            server_config.addr(),
+            &Address::from_str("example.com:443").unwrap()
+        );
+        assert_eq!(
+            server_config.username(),
+            Some("b831381d-6324-4d53-ad4f-8cda48b30811")
+        );
+        assert_eq!(server_config.sni(), None);
+        assert!(!server_config.insecure());
+    }
+
+    #[test]
+    fn test_parse_seeker_vless_with_sni() {
+        let yaml = r#"
+name: server-vless-sni
+addr: example.com:443
+protocol: vless
+username: b831381d-6324-4d53-ad4f-8cda48b30811
+sni: custom.example.com
+insecure: true
+"#;
+        let server_config: ServerConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(server_config.name(), "server-vless-sni");
+        assert_eq!(server_config.protocol(), ServerProtocol::Vless);
+        assert_eq!(
+            server_config.username(),
+            Some("b831381d-6324-4d53-ad4f-8cda48b30811")
+        );
+        assert_eq!(server_config.sni(), Some("custom.example.com"));
+        assert!(server_config.insecure());
+    }
+
+    #[test]
+    fn test_parse_clash_vless_format() {
+        let yaml = r#"
+name: "VLESS Server"
+type: vless
+server: example.com
+port: 443
+username: b831381d-6324-4d53-ad4f-8cda48b30811
+sni: custom.example.com
+"#;
+        let server_config: ServerConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(server_config.name(), "VLESS Server");
+        assert_eq!(server_config.protocol(), ServerProtocol::Vless);
+        assert_eq!(
+            server_config.addr(),
+            &Address::from_str("example.com:443").unwrap()
+        );
+        assert_eq!(
+            server_config.username(),
+            Some("b831381d-6324-4d53-ad4f-8cda48b30811")
+        );
+        assert_eq!(server_config.sni(), Some("custom.example.com"));
+    }
+
+    #[test]
+    fn test_parse_clash_vless_full_format() {
+        let yaml = r#"
+name: "Hong Kong-01"
+type: vless
+server: b.example.com
+port: 11111
+uuid: a-b-c-d-e
+udp: true
+tls: true
+flow: xtls-rprx-vision
+skip-cert-verify: true
+servername: example.dev
+network: tcp
+"#;
+        let server_config: ServerConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(server_config.name(), "Hong Kong-01");
+        assert_eq!(server_config.protocol(), ServerProtocol::Vless);
+        assert_eq!(
+            server_config.addr(),
+            &Address::from_str("b.example.com:11111").unwrap()
+        );
+        assert_eq!(server_config.username(), Some("a-b-c-d-e"));
+        assert_eq!(server_config.flow(), Some("xtls-rprx-vision"));
+        assert!(server_config.insecure());
+        assert_eq!(server_config.sni(), Some("example.dev"));
+    }
+
+    #[test]
+    fn test_parse_vless_url() -> Result<(), UrlParseError> {
+        let url = "vless://b831381d-6324-4d53-ad4f-8cda48b30811@example.com:443?sni=custom.example.com#MyVLESS";
+        let server_config = ServerConfig::from_str(url)?;
+        assert_eq!(server_config.name(), "MyVLESS");
+        assert_eq!(server_config.protocol(), ServerProtocol::Vless);
+        assert_eq!(
+            server_config.addr(),
+            &Address::from_str("example.com:443").unwrap()
+        );
+        assert_eq!(
+            server_config.username(),
+            Some("b831381d-6324-4d53-ad4f-8cda48b30811")
+        );
+        assert_eq!(server_config.sni(), Some("custom.example.com"));
+        assert!(!server_config.insecure());
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_vless_url_with_insecure() -> Result<(), UrlParseError> {
+        let url =
+            "vless://b831381d-6324-4d53-ad4f-8cda48b30811@example.com:443?allowInsecure=1#Test";
+        let server_config = ServerConfig::from_str(url)?;
+        assert_eq!(server_config.name(), "Test");
+        assert_eq!(server_config.protocol(), ServerProtocol::Vless);
+        assert!(server_config.insecure());
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_vless_url_minimal() -> Result<(), UrlParseError> {
+        let url = "vless://some-uuid@host.com:443";
+        let server_config = ServerConfig::from_str(url)?;
+        assert_eq!(server_config.name(), "host.com");
+        assert_eq!(server_config.protocol(), ServerProtocol::Vless);
+        assert_eq!(server_config.username(), Some("some-uuid"));
+        assert_eq!(server_config.sni(), None);
+        assert!(!server_config.insecure());
         Ok(())
     }
 
