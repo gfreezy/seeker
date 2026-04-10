@@ -45,8 +45,7 @@ impl TlsDeframer {
                     let content_type = self.buffer[0];
                     let version_major = self.buffer[1];
                     let version_minor = self.buffer[2];
-                    let payload_len =
-                        u16::from_be_bytes([self.buffer[3], self.buffer[4]]) as usize;
+                    let payload_len = u16::from_be_bytes([self.buffer[3], self.buffer[4]]) as usize;
 
                     if version_major != 0x03 || !(0x01..=0x03).contains(&version_minor) {
                         return Err(io::Error::new(

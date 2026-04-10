@@ -65,7 +65,12 @@ fn feed_and_process(session: &mut ClientConnection, data: &[u8]) -> io::Result<u
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("read_tls: {e}")))?;
     Ok(session
         .process_new_packets()
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("process_new_packets: {e}")))?
+        .map_err(|e| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("process_new_packets: {e}"),
+            )
+        })?
         .plaintext_bytes_to_read())
 }
 
@@ -203,9 +208,7 @@ impl<IO: AsyncRead + AsyncWrite + Unpin> VisionStream<IO> {
         loop {
             if self.session.wants_write() {
                 match self.write_tls_direct(cx) {
-                    Poll::Ready(Ok(0)) => {
-                        return Poll::Ready(Err(io::ErrorKind::WriteZero.into()))
-                    }
+                    Poll::Ready(Ok(0)) => return Poll::Ready(Err(io::ErrorKind::WriteZero.into())),
                     Poll::Ready(Ok(_)) => continue,
                     Poll::Ready(Err(e)) => return Poll::Ready(Err(e)),
                     Poll::Pending => return Poll::Pending,
@@ -466,7 +469,11 @@ impl<IO: AsyncRead + AsyncWrite + Unpin> VisionStream<IO> {
     // Read path: Tls mode (post-padding, still encrypted)
     // -------------------------------------------------------
 
-    fn poll_read_tls(&mut self, cx: &mut Context<'_>, buf: &mut ReadBuf<'_>) -> Poll<io::Result<()>> {
+    fn poll_read_tls(
+        &mut self,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
         // Let rustls control reads via SyncReadAdapter
         let mut reader = SyncReadAdapter {
             io: &mut self.tcp,
@@ -549,8 +556,10 @@ impl<IO: AsyncRead + AsyncWrite + Unpin> VisionStream<IO> {
                         processed_len += record.len();
                         self.filter.filter_record(&record);
 
-                        let is_app_data =
-                            self.filter.is_tls() && record.len() >= 3 && record[0] == 0x17 && record[1] == 0x03;
+                        let is_app_data = self.filter.is_tls()
+                            && record.len() >= 3
+                            && record[0] == 0x17
+                            && record[1] == 0x03;
 
                         if is_app_data {
                             let command = if self.filter.supports_xtls() {
@@ -616,7 +625,11 @@ impl<IO: AsyncRead + AsyncWrite + Unpin> VisionStream<IO> {
                                 self.filter.is_tls(),
                             )
                         } else {
-                            vision_pad::pad_with_command(remaining, COMMAND_END, self.filter.is_tls())
+                            vision_pad::pad_with_command(
+                                remaining,
+                                COMMAND_END,
+                                self.filter.is_tls(),
+                            )
                         };
                         self.write_to_session(&padded)?;
                         let _ = self.drain_all_writes(cx);

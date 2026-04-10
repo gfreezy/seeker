@@ -32,7 +32,9 @@ pub struct UnpadResult {
 
 #[derive(Debug, Clone)]
 enum UnpadState {
-    Initial { expected_uuid: [u8; 16] },
+    Initial {
+        expected_uuid: [u8; 16],
+    },
     ReadingCommand,
     ReadingContentLength {
         command: UnpadCommand,

@@ -11,12 +11,7 @@ const SHORT_PADDING_RANDOM_MAX: usize = 256;
 const MAX_PADDING_SIZE: usize = 8171;
 
 /// Pad data with UUID (first packet only) and command.
-pub fn pad_with_uuid_and_command(
-    data: &[u8],
-    uuid: &[u8; 16],
-    command: u8,
-    is_tls: bool,
-) -> Bytes {
+pub fn pad_with_uuid_and_command(data: &[u8], uuid: &[u8; 16], command: u8, is_tls: bool) -> Bytes {
     pad(data, Some(uuid), command, is_tls)
 }
 

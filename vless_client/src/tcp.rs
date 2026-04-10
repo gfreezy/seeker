@@ -121,11 +121,7 @@ impl AsyncRead for VlessTcpStream {
 }
 
 impl AsyncWrite for VlessTcpStream {
-    fn poll_write(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &[u8],
-    ) -> Poll<Result<usize>> {
+    fn poll_write(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<Result<usize>> {
         match &mut self.get_mut().inner {
             Inner::Vision(s) => Pin::new(s).poll_write(cx, buf),
             Inner::Plain(s) => Pin::new(s).poll_write(cx, buf),

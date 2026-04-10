@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 
 use crate::server_chooser::ServerChooser;
-use crate::server_performance::{ServerPerformanceStats, DEFAULT_SCORE};
+use crate::server_performance::{DEFAULT_SCORE, ServerPerformanceStats};
 
 #[derive(Serialize)]
 struct StatsResponse {
