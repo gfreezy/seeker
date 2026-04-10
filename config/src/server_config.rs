@@ -830,10 +830,7 @@ mod tests {
             server_config.password(),
             Some("00000000-0000-0000-0000-000000000000")
         );
-        assert_eq!(
-            server_config.sni(),
-            Some("sni.example.net")
-        );
+        assert_eq!(server_config.sni(), Some("sni.example.net"));
         assert!(!server_config.insecure());
         Ok(())
     }
