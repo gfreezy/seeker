@@ -58,11 +58,25 @@ enum VisionMode {
 }
 
 /// Feed data to rustls session and process. Returns plaintext byte count.
+/// Loops read_tls + process_new_packets to handle rustls's internal buffer limit.
 fn feed_and_process(session: &mut ClientConnection, data: &[u8]) -> io::Result<usize> {
     let mut cursor = io::Cursor::new(data);
-    session
-        .read_tls(&mut cursor)
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("read_tls: {e}")))?;
+
+    while (cursor.position() as usize) < data.len() {
+        let n = session
+            .read_tls(&mut cursor)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("read_tls: {e}")))?;
+        if n == 0 {
+            break;
+        }
+        session.process_new_packets().map_err(|e| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("process_new_packets: {e}"),
+            )
+        })?;
+    }
+
     Ok(session
         .process_new_packets()
         .map_err(|e| {
@@ -143,6 +157,97 @@ impl<IO: AsyncRead + AsyncWrite + Unpin> VisionStream<IO> {
             pending_tls_switch: false,
             is_read_eof: false,
         }
+    }
+
+    // -------------------------------------------------------
+    // TLS handshake (manual, avoids tokio-rustls buffer issues)
+    // -------------------------------------------------------
+
+    /// Drive the TLS handshake manually through the external deframer.
+    /// This ensures all TCP reads go through our deframer, keeping
+    /// the session's internal buffer in sync.
+    pub async fn handshake(&mut self) -> io::Result<()> {
+        use std::future::poll_fn;
+
+        poll_fn(|cx| {
+            loop {
+                // Write TLS output if needed
+                while self.session.wants_write() {
+                    match self.write_tls_direct(cx) {
+                        Poll::Ready(Ok(0)) => {
+                            return Poll::Ready(Err(io::ErrorKind::WriteZero.into()))
+                        }
+                        Poll::Ready(Ok(_)) => continue,
+                        Poll::Pending => return Poll::Pending,
+                        Poll::Ready(Err(e)) => return Poll::Ready(Err(e)),
+                    }
+                }
+
+                // Flush TCP
+                match Pin::new(&mut self.tcp).poll_flush(cx) {
+                    Poll::Ready(Ok(())) => {}
+                    Poll::Pending => return Poll::Pending,
+                    Poll::Ready(Err(e)) => return Poll::Ready(Err(e)),
+                }
+
+                if !self.session.is_handshaking() {
+                    return Poll::Ready(Ok(()));
+                }
+
+                // Read TLS via deframer
+                if self.session.wants_read() {
+                    let mut read_buf = ReadBuf::new(&mut self.tls_read_buffer);
+                    match Pin::new(&mut self.tcp).poll_read(cx, &mut read_buf) {
+                        Poll::Ready(Ok(())) => {}
+                        Poll::Pending => return Poll::Pending,
+                        Poll::Ready(Err(e)) => return Poll::Ready(Err(e)),
+                    }
+                    let tcp_bytes = read_buf.filled();
+                    if tcp_bytes.is_empty() {
+                        return Poll::Ready(Err(io::Error::new(
+                            io::ErrorKind::UnexpectedEof,
+                            "EOF during TLS handshake",
+                        )));
+                    }
+
+                    let deframer = self
+                        .outer_read_deframer
+                        .as_mut()
+                        .expect("deframer must exist during handshake");
+                    deframer.feed(tcp_bytes);
+
+                    while let Some(record) = deframer.next_record()? {
+                        feed_and_process(&mut self.session, &record)?;
+                    }
+                }
+            }
+        })
+        .await
+    }
+
+    /// Write VLESS header through the TLS session and flush to TCP.
+    pub async fn send_vless_header(&mut self, header: &[u8]) -> io::Result<()> {
+        use std::future::poll_fn;
+
+        self.session
+            .writer()
+            .write_all(header)
+            .map_err(|e| io::Error::other(format!("write header: {e}")))?;
+
+        poll_fn(|cx| {
+            while self.session.wants_write() {
+                match self.write_tls_direct(cx) {
+                    Poll::Ready(Ok(0)) => {
+                        return Poll::Ready(Err(io::ErrorKind::WriteZero.into()))
+                    }
+                    Poll::Ready(Ok(_)) => {}
+                    Poll::Pending => return Poll::Pending,
+                    Poll::Ready(Err(e)) => return Poll::Ready(Err(e)),
+                }
+            }
+            Pin::new(&mut self.tcp).poll_flush(cx)
+        })
+        .await
     }
 
     // -------------------------------------------------------

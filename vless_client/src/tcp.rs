@@ -1,16 +1,17 @@
 use crate::protocol::{encode_vless_request, CMD_TCP, VLESS_VERSION};
-use crate::tls::get_tls_connector;
+use crate::tls::{get_tls_config, get_tls_connector};
 use crate::vision_stream::VisionStream;
 use bytes::BytesMut;
 use config::Address;
 use rustls::pki_types::ServerName;
+use rustls::ClientConnection;
 use std::io::{Error, ErrorKind, Result};
 use std::net::SocketAddr;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
 use tokio::net::TcpStream;
-use tracing::{debug, info};
+use tracing::info;
 use uuid::Uuid;
 
 fn normalize_flow(flow: Option<&str>) -> Result<Option<&'static str>> {
@@ -44,8 +45,8 @@ impl VlessTcpStream {
         flow: Option<&str>,
         insecure: bool,
     ) -> Result<Self> {
-        let connector = get_tls_connector(insecure);
         let flow = normalize_flow(flow)?;
+        let is_vision = flow == Some("xtls-rprx-vision");
 
         let uuid_parsed =
             Uuid::parse_str(uuid).map_err(|e| Error::other(format!("invalid VLESS uuid: {e}")))?;
@@ -53,39 +54,52 @@ impl VlessTcpStream {
         let server_name = ServerName::try_from(sni.to_string())
             .map_err(|e| Error::other(format!("invalid SNI: {e}")))?;
 
-        let tcp_stream = TcpStream::connect(server).await?;
-        let mut tls_stream = connector
-            .connect(server_name, tcp_stream)
-            .await
-            .map_err(Error::other)?;
-
-        let is_vision = flow == Some("xtls-rprx-vision");
-
-        // Build and send VLESS request header
+        // Build VLESS request header
         let mut header_buf = BytesMut::with_capacity(128);
         encode_vless_request(&uuid_parsed, CMD_TCP, &addr, flow, &mut header_buf)?;
 
-        tls_stream.write_all(&header_buf).await?;
-        tls_stream.flush().await?;
-
-        info!(
-            server = %server,
-            sni,
-            flow = flow.unwrap_or("none"),
-            addr = %addr,
-            vision = is_vision,
-            "VLESS connected"
-        );
-
         if is_vision {
-            // Split into raw TCP + TLS session for manual management
-            let (tcp, session) = tls_stream.into_inner();
-            let vision = VisionStream::new_client(tcp, session, *uuid_parsed.as_bytes());
+            // Vision mode: drive TLS handshake manually so all reads go through
+            // our deframer, avoiding buffer sync issues with tokio-rustls.
+            let tcp_stream = TcpStream::connect(server).await?;
+
+            let tls_config = get_tls_config(insecure);
+            let session = ClientConnection::new(tls_config, server_name.clone())
+                .map_err(|e| Error::other(format!("TLS session init: {e}")))?;
+
+            let mut vision =
+                VisionStream::new_client(tcp_stream, session, *uuid_parsed.as_bytes());
+
+            // Manual TLS handshake through external deframer
+            vision.handshake().await?;
+
+            // Send VLESS header through the TLS session
+            vision.send_vless_header(&header_buf).await?;
+
+            info!(
+                server = %server,
+                sni,
+                flow = "xtls-rprx-vision",
+                addr = %addr,
+                "VLESS Vision connected"
+            );
+
             Ok(Self {
                 inner: Inner::Vision(Box::new(vision)),
             })
         } else {
-            // Plain VLESS: read response header, then relay through tokio-rustls
+            // Plain VLESS: use tokio-rustls for TLS (no manual management needed)
+            let connector = get_tls_connector(insecure);
+            let tcp_stream = TcpStream::connect(server).await?;
+            let mut tls_stream = connector
+                .connect(server_name, tcp_stream)
+                .await
+                .map_err(Error::other)?;
+
+            tls_stream.write_all(&header_buf).await?;
+            tls_stream.flush().await?;
+
+            // Read VLESS response header
             let mut resp = [0u8; 2];
             tls_stream.read_exact(&mut resp).await?;
             if resp[0] != VLESS_VERSION {
@@ -99,7 +113,15 @@ impl VlessTcpStream {
                 let mut addons = vec![0u8; addons_len];
                 tls_stream.read_exact(&mut addons).await?;
             }
-            debug!("VLESS plain response parsed");
+
+            info!(
+                server = %server,
+                sni,
+                flow = "none",
+                addr = %addr,
+                "VLESS plain connected"
+            );
+
             Ok(Self {
                 inner: Inner::Plain(Box::new(tls_stream)),
             })

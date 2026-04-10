@@ -3,15 +3,15 @@ use rustls::ClientConfig;
 use std::sync::Arc;
 use tokio_rustls::TlsConnector;
 
-pub(crate) fn get_tls_connector(insecure: bool) -> TlsConnector {
+pub(crate) fn get_tls_config(insecure: bool) -> Arc<ClientConfig> {
     use std::sync::OnceLock;
-    static CONNECTOR: OnceLock<TlsConnector> = OnceLock::new();
-    static CONNECTOR_INSECURE: OnceLock<TlsConnector> = OnceLock::new();
+    static CONFIG: OnceLock<Arc<ClientConfig>> = OnceLock::new();
+    static CONFIG_INSECURE: OnceLock<Arc<ClientConfig>> = OnceLock::new();
 
     let lock = if insecure {
-        &CONNECTOR_INSECURE
+        &CONFIG_INSECURE
     } else {
-        &CONNECTOR
+        &CONFIG
     };
     lock.get_or_init(|| {
         let mut root_store = rustls::RootCertStore::empty();
@@ -29,9 +29,13 @@ pub(crate) fn get_tls_connector(insecure: bool) -> TlsConnector {
                 .set_certificate_verifier(Arc::new(NoVerifier));
         }
 
-        TlsConnector::from(Arc::new(tls_config))
+        Arc::new(tls_config)
     })
     .clone()
+}
+
+pub(crate) fn get_tls_connector(insecure: bool) -> TlsConnector {
+    TlsConnector::from(get_tls_config(insecure))
 }
 
 #[derive(Debug)]
