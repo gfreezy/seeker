@@ -158,12 +158,41 @@ impl VlessTcpStream {
         true
     }
 
+    /// Drain all available plaintext from the TLS reader.
+    fn drain_tls_plaintext(tls: &mut ClientConnection) -> Vec<u8> {
+        let mut plaintext = Vec::new();
+        let mut reader = tls.reader();
+        loop {
+            match reader.fill_buf() {
+                Ok([]) => break,
+                Ok(buf) => {
+                    plaintext.extend_from_slice(buf);
+                    let len = buf.len();
+                    reader.consume(len);
+                }
+                Err(_) => break,
+            }
+        }
+        plaintext
+    }
+
     /// Read from TCP, feed to TLS session, return decrypted plaintext.
     fn poll_read_tls_plaintext(&mut self, cx: &mut Context<'_>) -> Poll<Result<Vec<u8>>> {
         let tls = self
             .tls
             .as_mut()
             .expect("poll_read_tls_plaintext called without TLS session");
+
+        // Check for pre-existing plaintext (may be buffered by tokio-rustls during handshake)
+        let state = tls.process_new_packets().map_err(|e| {
+            Error::new(
+                ErrorKind::InvalidData,
+                format!("TLS process_new_packets: {e}"),
+            )
+        })?;
+        if state.plaintext_bytes_to_read() > 0 {
+            return Poll::Ready(Ok(Self::drain_tls_plaintext(tls)));
+        }
 
         // Read raw bytes from TCP
         let mut tcp_buf = vec![0u8; 16384];
@@ -193,23 +222,7 @@ impl VlessTcpStream {
             return Poll::Pending;
         }
 
-        // Read decrypted plaintext
-        let mut plaintext = Vec::with_capacity(available);
-        let mut reader = tls.reader();
-        loop {
-            match reader.fill_buf() {
-                Ok([]) => break,
-                Ok(buf) => {
-                    plaintext.extend_from_slice(buf);
-                    let len = buf.len();
-                    reader.consume(len);
-                }
-                Err(e) if e.kind() == ErrorKind::WouldBlock => break,
-                Err(e) => return Poll::Ready(Err(e)),
-            }
-        }
-
-        Poll::Ready(Ok(plaintext))
+        Poll::Ready(Ok(Self::drain_tls_plaintext(tls)))
     }
 
     /// Parse VLESS response header from accumulated unpadded data.
@@ -248,120 +261,6 @@ impl VlessTcpStream {
         let remaining = self.response_buf[total..].to_vec();
         self.response_buf.clear();
         Ok(Some(remaining))
-    }
-
-    /// Consume VLESS response header directly from TLS stream (non-Vision mode).
-    fn poll_read_response_header_plain(&mut self, cx: &mut Context<'_>) -> Poll<Result<()>> {
-        // Need at least 2 bytes (version + addons_len)
-        while self.response_buf.len() < 2 {
-            let need = 2 - self.response_buf.len();
-            let mut tmp = vec![0u8; need];
-            let mut rb = ReadBuf::new(&mut tmp);
-            let tls = self.tls.as_mut().expect("plain response needs TLS session");
-            // Read from TCP -> TLS
-            ready!(Pin::new(&mut self.tcp).poll_read(cx, &mut rb))?;
-            let filled = rb.filled().len();
-            if filled == 0 {
-                return Poll::Ready(Err(Error::new(
-                    ErrorKind::UnexpectedEof,
-                    "VLESS: EOF reading response header",
-                )));
-            }
-            // Feed to TLS
-            let mut cursor = std::io::Cursor::new(&tmp[..filled]);
-            tls.read_tls(&mut cursor)
-                .map_err(|e| Error::new(ErrorKind::InvalidData, format!("TLS read_tls: {e}")))?;
-            let state = tls.process_new_packets().map_err(|e| {
-                Error::new(
-                    ErrorKind::InvalidData,
-                    format!("TLS process_new_packets: {e}"),
-                )
-            })?;
-            let avail = state.plaintext_bytes_to_read();
-            if avail > 0 {
-                let mut reader = tls.reader();
-                loop {
-                    match reader.fill_buf() {
-                        Ok([]) => break,
-                        Ok(buf) => {
-                            self.response_buf.extend_from_slice(buf);
-                            let len = buf.len();
-                            reader.consume(len);
-                        }
-                        Err(e) if e.kind() == ErrorKind::WouldBlock => break,
-                        Err(e) => return Poll::Ready(Err(e)),
-                    }
-                }
-            }
-        }
-
-        // Read addons if any
-        let addons_len = self.response_buf[1] as usize;
-        let total = 2 + addons_len;
-        while self.response_buf.len() < total {
-            let tls = self.tls.as_mut().expect("plain response needs TLS session");
-            let mut tmp = vec![0u8; 1024];
-            let mut rb = ReadBuf::new(&mut tmp);
-            ready!(Pin::new(&mut self.tcp).poll_read(cx, &mut rb))?;
-            let filled = rb.filled().len();
-            if filled == 0 {
-                return Poll::Ready(Err(Error::new(
-                    ErrorKind::UnexpectedEof,
-                    "VLESS: EOF reading response addons",
-                )));
-            }
-            let mut cursor = std::io::Cursor::new(&tmp[..filled]);
-            tls.read_tls(&mut cursor)
-                .map_err(|e| Error::new(ErrorKind::InvalidData, format!("TLS read_tls: {e}")))?;
-            let state = tls.process_new_packets().map_err(|e| {
-                Error::new(
-                    ErrorKind::InvalidData,
-                    format!("TLS process_new_packets: {e}"),
-                )
-            })?;
-            let avail = state.plaintext_bytes_to_read();
-            if avail > 0 {
-                let mut reader = tls.reader();
-                loop {
-                    match reader.fill_buf() {
-                        Ok([]) => break,
-                        Ok(buf) => {
-                            self.response_buf.extend_from_slice(buf);
-                            let len = buf.len();
-                            reader.consume(len);
-                        }
-                        Err(e) if e.kind() == ErrorKind::WouldBlock => break,
-                        Err(e) => return Poll::Ready(Err(e)),
-                    }
-                }
-            }
-        }
-
-        if self.response_buf[0] != VLESS_VERSION {
-            let err_msg = format!(
-                "VLESS: unexpected response version {:#04x}, expected {:#04x}. Raw header bytes: {:02x?}",
-                self.response_buf[0], VLESS_VERSION, &self.response_buf
-            );
-            warn!(id = self.id, "{}", err_msg);
-            return Poll::Ready(Err(Error::new(ErrorKind::InvalidData, err_msg)));
-        }
-
-        debug!(
-            id = self.id,
-            version = self.response_buf[0],
-            addons_len,
-            "VLESS response header parsed (plain)"
-        );
-        self.response_header_parsed = true;
-
-        // Buffer any data beyond the response header
-        if self.response_buf.len() > total {
-            let remaining = self.response_buf[total..].to_vec();
-            self.read_buf = remaining;
-            self.read_offset = 0;
-        }
-        self.response_buf.clear();
-        Poll::Ready(Ok(()))
     }
 
     // -------------------------------------------------------
@@ -494,6 +393,36 @@ impl VlessTcpStream {
             debug!(id = self.id, "TLS session dropped (both sides direct)");
         }
     }
+
+    /// Feed data to Vision unpadder, handle mode switches, buffer results.
+    /// Returns true if data was placed in read_buf (or it was empty/pending).
+    fn process_vision_data(&mut self, data: &[u8]) -> Result<()> {
+        let vision = self.vision.as_mut().expect("process_vision_data without vision");
+        let result = vision.unpad(data);
+
+        if let Some(cmd) = result.finished_command {
+            if cmd == COMMAND_PADDING_DIRECT {
+                let extra = self.finalize_read_direct_switch()?;
+                let mut combined = result.data;
+                combined.extend_from_slice(&extra);
+                if !combined.is_empty() {
+                    self.read_buf = combined;
+                    self.read_offset = 0;
+                }
+            } else {
+                // COMMAND_PADDING_END: padding done, keep using TLS
+                debug!(id = self.id, "Vision padding ended (END), continuing TLS");
+                if !result.data.is_empty() {
+                    self.read_buf = result.data;
+                    self.read_offset = 0;
+                }
+            }
+        } else if !result.data.is_empty() {
+            self.read_buf = result.data;
+            self.read_offset = 0;
+        }
+        Ok(())
+    }
 }
 
 // -------------------------------------------------------
@@ -518,71 +447,35 @@ impl AsyncRead for VlessTcpStream {
             return Pin::new(&mut me.tcp).poll_read(cx, buf);
         }
 
-        // 3. Non-Vision: parse response header directly from TLS
-        if me.vision.is_none() && !me.response_header_parsed {
-            ready!(me.poll_read_response_header_plain(cx))?;
-            // Drain any data buffered during response parsing
-            if me.drain_read_buf(buf) {
-                return Poll::Ready(Ok(()));
+        // 3. Parse VLESS response header from RAW TLS plaintext (both Vision and non-Vision).
+        //    The response is NOT Vision-padded — it's raw bytes in the TLS stream.
+        //    Remaining data after the response header IS Vision-padded for Vision mode.
+        if !me.response_header_parsed {
+            let plaintext = ready!(me.poll_read_tls_plaintext(cx))?;
+            if plaintext.is_empty() {
+                return Poll::Ready(Ok(())); // EOF
             }
-        }
 
-        // 4. Read TLS plaintext
-        let plaintext = ready!(me.poll_read_tls_plaintext(cx))?;
-        if plaintext.is_empty() {
-            return Poll::Ready(Ok(())); // EOF
-        }
-
-        // 5. Apply Vision unpadding if active
-        let data = if let Some(vision) = &mut me.vision {
-            let result = vision.unpad(&plaintext);
-
-            // Check for mode switch
-            if let Some(cmd) = result.finished_command {
-                if cmd == COMMAND_PADDING_DIRECT {
-                    let extra = me.finalize_read_direct_switch()?;
-                    // Combine unpadded data + drained TLS plaintext
-                    let mut combined = result.data;
-                    combined.extend_from_slice(&extra);
-                    combined
-                } else {
-                    // COMMAND_PADDING_END: padding done, keep using TLS
-                    debug!(id = me.id, "Vision padding ended (END), continuing TLS");
-                    result.data
-                }
-            } else if result.data.is_empty() {
-                // Need more data for unpadding (incomplete frame)
-                cx.waker().wake_by_ref();
-                return Poll::Pending;
-            } else {
-                result.data
-            }
-        } else {
-            plaintext
-        };
-
-        if data.is_empty() {
-            cx.waker().wake_by_ref();
-            return Poll::Pending;
-        }
-
-        // 6. Vision mode: parse response header from unpadded data
-        if me.vision.is_some() && !me.response_header_parsed {
-            me.response_buf.extend_from_slice(&data);
+            me.response_buf.extend_from_slice(&plaintext);
             match me.try_parse_response_from_buf()? {
                 Some(remaining) => {
-                    // Response parsed! Return remaining data to caller.
-                    if remaining.is_empty() {
-                        cx.waker().wake_by_ref();
-                        return Poll::Pending;
+                    // Response parsed. Process remaining data.
+                    if !remaining.is_empty() {
+                        if me.vision.is_some() {
+                            // Remaining is the first Vision-padded data
+                            me.process_vision_data(&remaining)?;
+                        } else {
+                            // Non-Vision: remaining is raw application data
+                            me.read_buf = remaining;
+                            me.read_offset = 0;
+                        }
                     }
-                    let to_copy = remaining.len().min(buf.remaining());
-                    buf.put_slice(&remaining[..to_copy]);
-                    if to_copy < remaining.len() {
-                        me.read_buf = remaining;
-                        me.read_offset = to_copy;
+                    // Drain any data produced
+                    if me.drain_read_buf(buf) {
+                        return Poll::Ready(Ok(()));
                     }
-                    return Poll::Ready(Ok(()));
+                    cx.waker().wake_by_ref();
+                    return Poll::Pending;
                 }
                 None => {
                     // Need more data for response header
@@ -592,11 +485,28 @@ impl AsyncRead for VlessTcpStream {
             }
         }
 
-        // 7. Copy data to caller, buffer overflow
-        let to_copy = data.len().min(buf.remaining());
-        buf.put_slice(&data[..to_copy]);
-        if to_copy < data.len() {
-            me.read_buf = data;
+        // 4. Read TLS plaintext
+        let plaintext = ready!(me.poll_read_tls_plaintext(cx))?;
+        if plaintext.is_empty() {
+            return Poll::Ready(Ok(())); // EOF
+        }
+
+        // 5. Apply Vision unpadding if active, or use plaintext directly
+        if me.vision.is_some() {
+            me.process_vision_data(&plaintext)?;
+            if me.drain_read_buf(buf) {
+                return Poll::Ready(Ok(()));
+            }
+            // No data produced (incomplete frame), need more
+            cx.waker().wake_by_ref();
+            return Poll::Pending;
+        }
+
+        // 6. Non-Vision: copy plaintext to caller, buffer overflow
+        let to_copy = plaintext.len().min(buf.remaining());
+        buf.put_slice(&plaintext[..to_copy]);
+        if to_copy < plaintext.len() {
+            me.read_buf = plaintext;
             me.read_offset = to_copy;
         }
         Poll::Ready(Ok(()))
