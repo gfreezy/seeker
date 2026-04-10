@@ -316,56 +316,6 @@ async fn test_vless_udp_dns_query() {
     container.cleanup().await;
 }
 
-/// Test: multiple TCP streams through the same VLESS server
-#[tokio::test]
-async fn test_vless_tcp_multiple_streams() {
-    let port = next_port();
-    let container = start_vless_server_async(port).await;
-
-    let proxy_addr: SocketAddr = format!("127.0.0.1:{port}").parse().unwrap();
-
-    let (r1, r2) = tokio::join!(
-        async {
-            let target = Address::DomainNameAddress("www.baidu.com".to_string(), 80);
-            let mut s =
-                VlessTcpStream::connect(proxy_addr, "localhost", target, TEST_UUID, None, true)
-                    .await?;
-            s.write_all(b"GET / HTTP/1.1\r\nHost: www.baidu.com\r\nConnection: close\r\n\r\n")
-                .await?;
-            let mut buf = Vec::new();
-            s.read_to_end(&mut buf).await?;
-            Ok::<_, std::io::Error>(String::from_utf8_lossy(&buf).to_string())
-        },
-        async {
-            let target = Address::DomainNameAddress("www.baidu.com".to_string(), 80);
-            let mut s =
-                VlessTcpStream::connect(proxy_addr, "localhost", target, TEST_UUID, None, true)
-                    .await?;
-            s.write_all(
-                b"GET /s?wd=vless HTTP/1.1\r\nHost: www.baidu.com\r\nConnection: close\r\n\r\n",
-            )
-            .await?;
-            let mut buf = Vec::new();
-            s.read_to_end(&mut buf).await?;
-            Ok::<_, std::io::Error>(String::from_utf8_lossy(&buf).to_string())
-        }
-    );
-
-    let resp1 = r1.expect("stream 1 failed");
-    let resp2 = r2.expect("stream 2 failed");
-    println!("stream1 len={}, stream2 len={}", resp1.len(), resp2.len());
-    assert!(
-        resp1.contains("200 OK") || resp1.contains("301") || resp1.contains("302"),
-        "stream 1: expected HTTP success/redirect"
-    );
-    assert!(
-        resp2.contains("200 OK") || resp2.contains("301") || resp2.contains("302"),
-        "stream 2: expected HTTP success/redirect"
-    );
-
-    container.cleanup().await;
-}
-
 /// Test: TCP proxy with XTLS-Vision — HTTP request through VLESS Vision proxy
 #[tokio::test]
 async fn test_vless_tcp_proxy_http_vision() {

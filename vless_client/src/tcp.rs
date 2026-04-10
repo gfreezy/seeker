@@ -1,15 +1,15 @@
 use crate::protocol::{encode_vless_request, CMD_TCP, VLESS_VERSION};
 use crate::tls::{get_tls_config, get_tls_connector};
 use crate::vision_stream::VisionStream;
-use bytes::BytesMut;
+use bytes::{Buf, BytesMut};
 use config::Address;
 use rustls::pki_types::ServerName;
 use rustls::ClientConnection;
 use std::io::{Error, ErrorKind, Result};
 use std::net::SocketAddr;
 use std::pin::Pin;
-use std::task::{Context, Poll};
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
+use std::task::{ready, Context, Poll};
+use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, ReadBuf};
 use tokio::net::TcpStream;
 use tracing::info;
 use uuid::Uuid;
@@ -25,11 +25,125 @@ fn normalize_flow(flow: Option<&str>) -> Result<Option<&'static str>> {
     }
 }
 
+/// Plain VLESS stream wrapper that defers reading the VLESS response header
+/// until the first `poll_read`. Xray sends the response header lazily —
+/// prepended to the first data from the target — so we must not block
+/// on it during connect().
+struct PlainVlessStream {
+    tls: tokio_rustls::client::TlsStream<TcpStream>,
+    response_pending: bool,
+    /// Buffer for accumulating partial VLESS response header bytes
+    response_buf: [u8; 2],
+    response_buf_len: usize,
+    /// Extra data after the response header (rare, but possible if response
+    /// header and payload arrive in the same TLS record)
+    pending_read: BytesMut,
+}
+
+impl PlainVlessStream {
+    fn new(tls: tokio_rustls::client::TlsStream<TcpStream>) -> Self {
+        Self {
+            tls,
+            response_pending: true,
+            response_buf: [0u8; 2],
+            response_buf_len: 0,
+            pending_read: BytesMut::new(),
+        }
+    }
+
+    /// Try to read and parse the VLESS response header.
+    /// Returns Ready(Ok(())) when the response has been fully consumed.
+    fn poll_read_response(&mut self, cx: &mut Context<'_>) -> Poll<Result<()>> {
+        // Read the 2-byte response header (version + addons_len)
+        while self.response_buf_len < 2 {
+            let mut buf = ReadBuf::new(&mut self.response_buf[self.response_buf_len..]);
+            ready!(Pin::new(&mut self.tls).poll_read(cx, &mut buf))?;
+            let n = buf.filled().len();
+            if n == 0 {
+                return Poll::Ready(Err(Error::new(
+                    ErrorKind::UnexpectedEof,
+                    "EOF reading VLESS response header",
+                )));
+            }
+            self.response_buf_len += n;
+        }
+
+        let version = self.response_buf[0];
+        if version != VLESS_VERSION {
+            return Poll::Ready(Err(Error::new(
+                ErrorKind::InvalidData,
+                format!("VLESS: unexpected response version {version:#04x}"),
+            )));
+        }
+
+        let addons_len = self.response_buf[1] as usize;
+        if addons_len > 0 {
+            // Read and discard addons (very rare for plain VLESS)
+            let mut addons = vec![0u8; addons_len];
+            let mut read = 0;
+            while read < addons_len {
+                let mut buf = ReadBuf::new(&mut addons[read..]);
+                ready!(Pin::new(&mut self.tls).poll_read(cx, &mut buf))?;
+                let n = buf.filled().len();
+                if n == 0 {
+                    return Poll::Ready(Err(Error::new(
+                        ErrorKind::UnexpectedEof,
+                        "EOF reading VLESS response addons",
+                    )));
+                }
+                read += n;
+            }
+        }
+
+        self.response_pending = false;
+        Poll::Ready(Ok(()))
+    }
+}
+
+impl AsyncRead for PlainVlessStream {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<Result<()>> {
+        let this = self.get_mut();
+
+        // First read: consume the VLESS response header
+        if this.response_pending {
+            ready!(this.poll_read_response(cx))?;
+        }
+
+        // Drain any buffered data from response parsing
+        if !this.pending_read.is_empty() {
+            let len = buf.remaining().min(this.pending_read.len());
+            buf.put_slice(&this.pending_read[..len]);
+            this.pending_read.advance(len);
+            return Poll::Ready(Ok(()));
+        }
+
+        Pin::new(&mut this.tls).poll_read(cx, buf)
+    }
+}
+
+impl AsyncWrite for PlainVlessStream {
+    fn poll_write(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<Result<usize>> {
+        Pin::new(&mut self.get_mut().tls).poll_write(cx, buf)
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<()>> {
+        Pin::new(&mut self.get_mut().tls).poll_flush(cx)
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<()>> {
+        Pin::new(&mut self.get_mut().tls).poll_shutdown(cx)
+    }
+}
+
 enum Inner {
     /// Vision mode: manual TLS + Vision padding/unpadding + direct copy
     Vision(Box<VisionStream<TcpStream>>),
-    /// Plain VLESS: tokio-rustls handles TLS transparently
-    Plain(Box<tokio_rustls::client::TlsStream<TcpStream>>),
+    /// Plain VLESS: tokio-rustls handles TLS, lazy response header reading
+    Plain(Box<PlainVlessStream>),
 }
 
 pub struct VlessTcpStream {
@@ -88,7 +202,9 @@ impl VlessTcpStream {
                 inner: Inner::Vision(Box::new(vision)),
             })
         } else {
-            // Plain VLESS: use tokio-rustls for TLS (no manual management needed)
+            // Plain VLESS: use tokio-rustls for TLS (no manual management needed).
+            // VLESS response header is read lazily on first poll_read, because
+            // Xray sends it prepended to the first target response data.
             let connector = get_tls_connector(insecure);
             let tcp_stream = TcpStream::connect(server).await?;
             let mut tls_stream = connector
@@ -99,21 +215,6 @@ impl VlessTcpStream {
             tls_stream.write_all(&header_buf).await?;
             tls_stream.flush().await?;
 
-            // Read VLESS response header
-            let mut resp = [0u8; 2];
-            tls_stream.read_exact(&mut resp).await?;
-            if resp[0] != VLESS_VERSION {
-                return Err(Error::new(
-                    ErrorKind::InvalidData,
-                    format!("VLESS: unexpected response version {:#04x}", resp[0]),
-                ));
-            }
-            let addons_len = resp[1] as usize;
-            if addons_len > 0 {
-                let mut addons = vec![0u8; addons_len];
-                tls_stream.read_exact(&mut addons).await?;
-            }
-
             info!(
                 server = %server,
                 sni,
@@ -123,7 +224,7 @@ impl VlessTcpStream {
             );
 
             Ok(Self {
-                inner: Inner::Plain(Box::new(tls_stream)),
+                inner: Inner::Plain(Box::new(PlainVlessStream::new(tls_stream))),
             })
         }
     }
