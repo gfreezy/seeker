@@ -11,5 +11,4 @@ rand = { workspace = true }
 chrono = { workspace = true }
 async-trait = { workspace = true }
 tracing = { workspace = true }
-tracing-futures = { workspace = true, features = ["std-future"] }
 tokio = { workspace = true }

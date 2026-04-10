@@ -27,7 +27,6 @@ bytes = { workspace = true }
 tracing = { workspace = true }
 config = { path = "../config" }
 rand = { workspace = true }
-anyhow = { workspace = true }
 parking_lot = { workspace = true }
 futures-util = { workspace = true }
 rustls-native-certs = "0.8"

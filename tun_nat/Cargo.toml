@@ -9,7 +9,6 @@ edition = "2021"
 [dependencies]
 tun-rs = { version = "2.7.5", features = ["interruptible"]}
 route_manager = "0.2.6"
-sysconfig = { path = "../sysconfig" }
 parking_lot = { workspace = true }
 bitvec = { workspace = true }
 smoltcp = { workspace = true, features = ["proto-ipv6", "proto-ipv4", "std"] }

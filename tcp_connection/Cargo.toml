@@ -9,7 +9,6 @@ edition = "2021"
 integration-tests = ["dep:testcontainers"]
 
 [dependencies]
-dyn-clone = { workspace = true }
 tokio = { workspace = true }
 nanorand = { workspace = true }
 memchr = { workspace = true }

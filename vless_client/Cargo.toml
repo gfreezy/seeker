@@ -15,7 +15,6 @@ webpki-roots = "0.26"
 config = { path = "../config" }
 bytes = { workspace = true }
 uuid = { workspace = true }
-parking_lot = { workspace = true }
 rand = { workspace = true }
 tracing = { workspace = true }
 testcontainers = { workspace = true, optional = true }

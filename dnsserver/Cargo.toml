@@ -15,9 +15,7 @@ tracing = { workspace = true }
 hickory-resolver = { workspace = true }
 hickory-proto = { workspace = true }
 store = { path = "../store" }
-parking_lot = { workspace = true }
 
 [dev-dependencies]
-tempfile = { workspace = true }
 tracing-subscriber = { workspace = true }
 tokio-test = "0.4"

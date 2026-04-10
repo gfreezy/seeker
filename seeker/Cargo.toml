@@ -34,22 +34,18 @@ futures-util = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 hickory-resolver = { workspace = true }
 hickory-proto = { workspace = true }
-tokio-util = { workspace = true }
 ureq = { workspace = true, features = ["json"] }
 crypto = { path = "../crypto" }
 bytes = { workspace = true }
 base64 = { workspace = true }
 anyhow = { workspace = true }
 tcp_connection = { path = "../tcp_connection" }
-url = { workspace = true }
 store = { path = "../store" }
 nix = { workspace = true, features = ["socket", "net"] }
-os_socketaddr = { workspace = true }
 notify-debouncer-mini = { workspace = true }
 socket2 = { version = "0.5", features = ["all"] }
 crossbeam-channel = "0.5"
 axum = { workspace = true }
-serde_json = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 testcontainers = { workspace = true, optional = true }
 
@@ -60,9 +56,6 @@ system-configuration = "0.6"
 netlink-packet-route = { workspace = true }
 netlink-packet-core = { workspace = true }
 netlink-sys = { workspace = true }
-
-[dev-dependencies]
-tempfile = { workspace = true }
 
 [features]
 tracing-chrome = ["dep:tracing-chrome"]

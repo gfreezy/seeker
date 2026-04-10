@@ -11,7 +11,6 @@ bytes = { workspace = true }
 rand = { workspace = true }
 md-5 = { workspace = true }
 digest = { workspace = true }
-typenum = { workspace = true }
 byte_string = { workspace = true }
 byteorder = { workspace = true }
 openssl = { workspace = true, features = ["vendored"], optional = true }

@@ -606,7 +606,6 @@ dependencies = [
  "rand",
  "ring",
  "sha-1",
- "typenum",
 ]
 
 [[package]]
@@ -782,9 +781,7 @@ dependencies = [
  "hermesdns",
  "hickory-proto",
  "hickory-resolver",
- "parking_lot",
  "store",
- "tempfile",
  "tokio",
  "tokio-test",
  "tracing",
@@ -1228,7 +1225,6 @@ dependencies = [
  "rand",
  "tokio",
  "tracing",
- "tracing-futures",
 ]
 
 [[package]]
@@ -1469,7 +1465,6 @@ dependencies = [
 name = "hysteria2_client"
 version = "20260127.0.0"
 dependencies = [
- "anyhow",
  "blake2",
  "bytes",
  "config",
@@ -2354,16 +2349,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "os_socketaddr"
-version = "0.2.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fa149f3ec09cadeb41968390fcd71e6ea038a9a373d1d4eb070f4d9484d4b244"
-dependencies = [
- "libc",
- "winapi",
-]
-
-[[package]]
 name = "parking_lot"
 version = "0.12.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3027,10 +3012,8 @@ dependencies = [
  "netlink-sys",
  "nix 0.30.1",
  "notify-debouncer-mini",
- "os_socketaddr",
  "parking_lot",
  "serde",
- "serde_json",
  "socket2 0.5.10",
  "socks5_client",
  "ssclient",
@@ -3038,11 +3021,9 @@ dependencies = [
  "sysconfig",
  "system-configuration",
  "tcp_connection",
- "tempfile",
  "testcontainers",
  "tokio",
  "tokio-native-tls",
- "tokio-util",
  "tracing",
  "tracing-chrome",
  "tracing-futures",
@@ -3050,7 +3031,6 @@ dependencies = [
  "trojan_client",
  "tun_nat",
  "ureq 2.12.1",
- "url",
  "vless_client",
  "vmess_client",
 ]
@@ -3334,11 +3314,9 @@ name = "store"
 version = "20260127.0.0"
 dependencies = [
  "anyhow",
- "cfg-if",
  "once_cell",
  "parking_lot",
  "rusqlite",
- "tracing",
 ]
 
 [[package]]
@@ -3473,7 +3451,6 @@ name = "tcp_connection"
 version = "20260127.0.0"
 dependencies = [
  "base64 0.20.0",
- "dyn-clone",
  "memchr",
  "nanorand 0.8.0",
  "serde",
@@ -3854,7 +3831,6 @@ dependencies = [
  "testcontainers",
  "tokio",
  "tokio-native-tls",
- "tracing",
 ]
 
 [[package]]
@@ -3899,7 +3875,6 @@ dependencies = [
  "route_manager",
  "smoltcp",
  "socket2 0.5.10",
- "sysconfig",
  "tracing",
  "tun-rs",
 ]
@@ -4037,7 +4012,6 @@ dependencies = [
  "bytes",
  "config",
  "native-tls",
- "parking_lot",
  "rand",
  "rcgen",
  "rustls",
@@ -4054,7 +4028,6 @@ dependencies = [
 name = "vmess_client"
 version = "20260127.0.0"
 dependencies = [
- "base64 0.20.0",
  "bytes",
  "config",
  "digest",
@@ -4062,10 +4035,7 @@ dependencies = [
  "md-5",
  "native-tls",
  "openssl",
- "parking_lot",
  "rand",
- "rcgen",
- "serde_json",
  "sha2",
  "sha3",
  "testcontainers",

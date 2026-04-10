@@ -7,8 +7,6 @@ edition = "2021"
 
 [dependencies]
 rusqlite = { workspace = true, features = ["bundled"] }
-tracing = { workspace = true }
 anyhow = { workspace = true, features = ["backtrace"] }
 once_cell = { workspace = true }
 parking_lot = { workspace = true }
-cfg-if = { workspace = true }
