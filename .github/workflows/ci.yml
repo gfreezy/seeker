@@ -55,6 +55,4 @@ jobs:
       - name: Install Rust
         run: rustup update stable
       - name: Run tests
-        run: cargo test --workspace
-      - name: Run integration tests
         run: cargo test --workspace --features integration-tests
