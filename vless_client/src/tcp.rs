@@ -5,7 +5,7 @@ use bytes::BytesMut;
 use config::Address;
 use rustls::pki_types::ServerName;
 use rustls::ClientConnection;
-use std::io::{BufRead, Error, ErrorKind, Read, Result, Write};
+use std::io::{BufRead, Error, ErrorKind, Result, Write};
 use std::net::SocketAddr;
 use std::pin::Pin;
 use std::task::{ready, Context, Poll};
@@ -204,6 +204,7 @@ impl VlessTcpStream {
                     let len = buf.len();
                     reader.consume(len);
                 }
+                Err(e) if e.kind() == ErrorKind::WouldBlock => break,
                 Err(e) => return Poll::Ready(Err(e)),
             }
         }
@@ -279,9 +280,18 @@ impl VlessTcpStream {
             let avail = state.plaintext_bytes_to_read();
             if avail > 0 {
                 let mut reader = tls.reader();
-                let mut buf = vec![0u8; avail];
-                reader.read_exact(&mut buf)?;
-                self.response_buf.extend_from_slice(&buf);
+                loop {
+                    match reader.fill_buf() {
+                        Ok([]) => break,
+                        Ok(buf) => {
+                            self.response_buf.extend_from_slice(buf);
+                            let len = buf.len();
+                            reader.consume(len);
+                        }
+                        Err(e) if e.kind() == ErrorKind::WouldBlock => break,
+                        Err(e) => return Poll::Ready(Err(e)),
+                    }
+                }
             }
         }
 
@@ -312,9 +322,18 @@ impl VlessTcpStream {
             let avail = state.plaintext_bytes_to_read();
             if avail > 0 {
                 let mut reader = tls.reader();
-                let mut buf = vec![0u8; avail];
-                reader.read_exact(&mut buf)?;
-                self.response_buf.extend_from_slice(&buf);
+                loop {
+                    match reader.fill_buf() {
+                        Ok([]) => break,
+                        Ok(buf) => {
+                            self.response_buf.extend_from_slice(buf);
+                            let len = buf.len();
+                            reader.consume(len);
+                        }
+                        Err(e) if e.kind() == ErrorKind::WouldBlock => break,
+                        Err(e) => return Poll::Ready(Err(e)),
+                    }
+                }
             }
         }
 
@@ -372,16 +391,32 @@ impl VlessTcpStream {
     }
 
     /// Write plaintext to TLS session and extract encrypted output.
+    ///
+    /// Handles `WouldBlock` from rustls when its internal plaintext buffer is full
+    /// by draining encrypted output (via `write_tls`) and retrying.
     fn tls_encrypt_and_queue(&mut self, plaintext: &[u8]) -> Result<()> {
         let tls = self
             .tls
             .as_mut()
             .expect("tls_encrypt_and_queue called without TLS session");
 
-        // Write plaintext to TLS session
-        tls.writer().write_all(plaintext)?;
+        let mut offset = 0;
+        while offset < plaintext.len() {
+            match tls.writer().write(&plaintext[offset..]) {
+                Ok(0) => {
+                    return Err(Error::new(ErrorKind::WriteZero, "TLS writer returned 0"));
+                }
+                Ok(n) => offset += n,
+                Err(e) if e.kind() == ErrorKind::WouldBlock => {
+                    // Internal buffer full — drain encrypted output to make room
+                    tls.write_tls(&mut self.tls_write_pending)
+                        .map_err(|e| Error::other(format!("TLS write_tls: {e}")))?;
+                }
+                Err(e) => return Err(e),
+            }
+        }
 
-        // Extract encrypted TLS records
+        // Extract all remaining encrypted TLS records
         tls.write_tls(&mut self.tls_write_pending)
             .map_err(|e| Error::other(format!("TLS write_tls: {e}")))?;
 
