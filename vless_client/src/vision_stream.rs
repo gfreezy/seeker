@@ -237,9 +237,7 @@ impl<IO: AsyncRead + AsyncWrite + Unpin> VisionStream<IO> {
         poll_fn(|cx| {
             while self.session.wants_write() {
                 match self.write_tls_direct(cx) {
-                    Poll::Ready(Ok(0)) => {
-                        return Poll::Ready(Err(io::ErrorKind::WriteZero.into()))
-                    }
+                    Poll::Ready(Ok(0)) => return Poll::Ready(Err(io::ErrorKind::WriteZero.into())),
                     Poll::Ready(Ok(_)) => {}
                     Poll::Pending => return Poll::Pending,
                     Poll::Ready(Err(e)) => return Poll::Ready(Err(e)),

@@ -8,11 +8,7 @@ pub(crate) fn get_tls_config(insecure: bool) -> Arc<ClientConfig> {
     static CONFIG: OnceLock<Arc<ClientConfig>> = OnceLock::new();
     static CONFIG_INSECURE: OnceLock<Arc<ClientConfig>> = OnceLock::new();
 
-    let lock = if insecure {
-        &CONFIG_INSECURE
-    } else {
-        &CONFIG
-    };
+    let lock = if insecure { &CONFIG_INSECURE } else { &CONFIG };
     lock.get_or_init(|| {
         let mut root_store = rustls::RootCertStore::empty();
         root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());

@@ -181,8 +181,7 @@ impl VlessTcpStream {
             let session = ClientConnection::new(tls_config, server_name.clone())
                 .map_err(|e| Error::other(format!("TLS session init: {e}")))?;
 
-            let mut vision =
-                VisionStream::new_client(tcp_stream, session, *uuid_parsed.as_bytes());
+            let mut vision = VisionStream::new_client(tcp_stream, session, *uuid_parsed.as_bytes());
 
             // Manual TLS handshake through external deframer
             vision.handshake().await?;
