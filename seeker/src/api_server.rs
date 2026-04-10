@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 
 use crate::server_chooser::ServerChooser;
-use crate::server_performance::ServerPerformanceStats;
+use crate::server_performance::{ServerPerformanceStats, DEFAULT_SCORE};
 
 #[derive(Serialize)]
 struct StatsResponse {
@@ -44,10 +44,10 @@ async fn get_stats(State(chooser): State<ServerChooser>) -> Json<StatsResponse> 
                     })
                     .collect();
                 server_stats.sort_by(|a, b| {
-                    let score_a = a.stats.as_ref().map(|s| s.score).unwrap_or(0.0);
-                    let score_b = b.stats.as_ref().map(|s| s.score).unwrap_or(0.0);
-                    score_b
-                        .partial_cmp(&score_a)
+                    let score_a = a.stats.as_ref().map(|s| s.score).unwrap_or(DEFAULT_SCORE);
+                    let score_b = b.stats.as_ref().map(|s| s.score).unwrap_or(DEFAULT_SCORE);
+                    score_a
+                        .partial_cmp(&score_b)
                         .unwrap_or(std::cmp::Ordering::Equal)
                 });
                 let selected_stats = server_stats

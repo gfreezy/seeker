@@ -46,6 +46,9 @@ pub struct VlessTcpStream {
     response_buf: Vec<u8>,
 
     // --- Read buffers ---
+    /// TCP data pending TLS record deframing.
+    /// Prevents raw data (after Direct transition) from being fed to TLS session.
+    tcp_read_buf: Vec<u8>,
     /// Overflow app data from a previous read (after Vision unpad + response parse).
     read_buf: Vec<u8>,
     read_offset: usize,
@@ -125,6 +128,7 @@ impl VlessTcpStream {
             write_direct: false,
             response_header_parsed: false,
             response_buf: Vec::new(),
+            tcp_read_buf: Vec::new(),
             read_buf: Vec::new(),
             read_offset: 0,
             tls_write_pending: Vec::new(),
@@ -176,7 +180,49 @@ impl VlessTcpStream {
         plaintext
     }
 
-    /// Read from TCP, feed to TLS session, return decrypted plaintext.
+    /// Try to extract one complete TLS record from `tcp_read_buf`.
+    /// Returns the record length if a complete record is available.
+    fn next_tls_record_len(buf: &[u8]) -> Option<usize> {
+        if buf.len() < 5 {
+            return None;
+        }
+        let payload_len = u16::from_be_bytes([buf[3], buf[4]]) as usize;
+        let total = 5 + payload_len;
+        if buf.len() >= total {
+            Some(total)
+        } else {
+            None
+        }
+    }
+
+    /// Feed one TLS record from `tcp_read_buf` to the session and return plaintext.
+    fn feed_one_record_to_tls(&mut self) -> Result<usize> {
+        let record_len = Self::next_tls_record_len(&self.tcp_read_buf)
+            .expect("feed_one_record_to_tls called without complete record");
+
+        let tls = self
+            .tls
+            .as_mut()
+            .expect("feed_one_record_to_tls called without TLS session");
+
+        let mut cursor = std::io::Cursor::new(&self.tcp_read_buf[..record_len]);
+        tls.read_tls(&mut cursor)
+            .map_err(|e| Error::new(ErrorKind::InvalidData, format!("TLS read_tls: {e}")))?;
+        self.tcp_read_buf.drain(..record_len);
+
+        let state = tls.process_new_packets().map_err(|e| {
+            Error::new(
+                ErrorKind::InvalidData,
+                format!("TLS process_new_packets: {e}"),
+            )
+        })?;
+        Ok(state.plaintext_bytes_to_read())
+    }
+
+    /// Read from TCP, deframe one TLS record, feed to session, return decrypted plaintext.
+    ///
+    /// Uses `tcp_read_buf` as a deframer to ensure raw data (after Direct mode
+    /// transition) is never fed to the TLS session.
     fn poll_read_tls_plaintext(&mut self, cx: &mut Context<'_>) -> Poll<Result<Vec<u8>>> {
         let tls = self
             .tls
@@ -194,7 +240,18 @@ impl VlessTcpStream {
             return Poll::Ready(Ok(Self::drain_tls_plaintext(tls)));
         }
 
-        // Read raw bytes from TCP
+        // Try to extract a complete TLS record from existing buffer
+        if Self::next_tls_record_len(&self.tcp_read_buf).is_some() {
+            let available = self.feed_one_record_to_tls()?;
+            if available > 0 {
+                let tls = self.tls.as_mut().unwrap();
+                return Poll::Ready(Ok(Self::drain_tls_plaintext(tls)));
+            }
+            cx.waker().wake_by_ref();
+            return Poll::Pending;
+        }
+
+        // Need more TCP data
         let mut tcp_buf = vec![0u8; 16384];
         let mut rb = ReadBuf::new(&mut tcp_buf);
         ready!(Pin::new(&mut self.tcp).poll_read(cx, &mut rb))?;
@@ -203,26 +260,20 @@ impl VlessTcpStream {
             return Poll::Ready(Ok(Vec::new())); // EOF
         }
 
-        // Feed to TLS session
-        let mut cursor = std::io::Cursor::new(&tcp_buf[..filled]);
-        tls.read_tls(&mut cursor)
-            .map_err(|e| Error::new(ErrorKind::InvalidData, format!("TLS read_tls: {e}")))?;
+        self.tcp_read_buf.extend_from_slice(rb.filled());
 
-        let state = tls.process_new_packets().map_err(|e| {
-            Error::new(
-                ErrorKind::InvalidData,
-                format!("TLS process_new_packets: {e}"),
-            )
-        })?;
-
-        let available = state.plaintext_bytes_to_read();
-        if available == 0 {
-            // TLS record not complete yet, need more TCP data
-            cx.waker().wake_by_ref();
-            return Poll::Pending;
+        // Try to extract a record from the buffer
+        if Self::next_tls_record_len(&self.tcp_read_buf).is_some() {
+            let available = self.feed_one_record_to_tls()?;
+            if available > 0 {
+                let tls = self.tls.as_mut().unwrap();
+                return Poll::Ready(Ok(Self::drain_tls_plaintext(tls)));
+            }
         }
 
-        Poll::Ready(Ok(Self::drain_tls_plaintext(tls)))
+        // Incomplete record, need more TCP data
+        cx.waker().wake_by_ref();
+        Poll::Pending
     }
 
     /// Parse VLESS response header from accumulated unpadded data.
@@ -358,23 +409,16 @@ impl VlessTcpStream {
         Ok(())
     }
 
-    /// After receiving COMMAND_PADDING_DIRECT, drain TLS plaintext and switch to direct reads.
+    /// After receiving COMMAND_PADDING_DIRECT, drain TLS plaintext and take remaining
+    /// raw TCP data from the deframer buffer, then switch to direct reads.
     fn finalize_read_direct_switch(&mut self) -> Result<Vec<u8>> {
         let mut extra = Vec::new();
         if let Some(tls) = self.tls.as_mut() {
-            // Drain any remaining decrypted plaintext from the TLS session
-            let mut reader = tls.reader();
-            loop {
-                match reader.fill_buf() {
-                    Ok([]) => break,
-                    Ok(buf) => {
-                        extra.extend_from_slice(buf);
-                        let len = buf.len();
-                        reader.consume(len);
-                    }
-                    Err(_) => break,
-                }
-            }
+            extra = Self::drain_tls_plaintext(tls);
+        }
+        // Remaining data in tcp_read_buf is raw direct-mode data (not TLS)
+        if !self.tcp_read_buf.is_empty() {
+            extra.append(&mut self.tcp_read_buf);
         }
         self.read_direct = true;
         debug!(

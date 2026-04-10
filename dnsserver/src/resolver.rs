@@ -9,7 +9,7 @@ use std::io;
 use std::io::Result;
 use std::sync::Arc;
 use store::Store;
-use tracing::{debug, error};
+use tracing::debug;
 
 /// A Forwarding DNS Resolver
 ///
@@ -59,11 +59,11 @@ impl RuleBasedDnsResolver {
             .await;
         let lookup = match lookup {
             Ok(v) => v,
-            Err(e) => {
-                error!(
-                    "resolve error, domain: {}, type: {:?}, {:?}",
-                    domain, qtype, e
-                );
+            Err(_e) => {
+                // error!(
+                //     "resolve error, domain: {}, type: {:?}, {:?}",
+                //     domain, qtype, e
+                // );
                 return Ok(packet);
             }
         };

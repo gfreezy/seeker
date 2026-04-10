@@ -27,10 +27,17 @@ pub struct ServerPerformanceStats {
 }
 
 #[derive(Clone)]
+struct PingRecord {
+    timestamp: Instant,
+    latency: Duration,
+    success: bool,
+}
+
+#[derive(Clone)]
 pub struct ServerPerformance {
     name: String,
     protocol: String,
-    latency_history: Vec<(Instant, Duration)>,
+    history: Vec<PingRecord>,
     success_count: u32,
     failure_count: u32,
     last_update: Instant,
@@ -49,7 +56,7 @@ impl ServerPerformance {
         Self {
             name,
             protocol,
-            latency_history: Vec::new(),
+            history: Vec::new(),
             success_count: 0,
             failure_count: 0,
             last_update: Instant::now(),
@@ -68,81 +75,83 @@ impl ServerPerformance {
         self.last_ping_results = ping_results;
         let now = Instant::now();
 
+        self.history.push(PingRecord {
+            timestamp: now,
+            latency: latency.unwrap_or(Duration::ZERO),
+            success,
+        });
+
         if success {
-            self.latency_history
-                .push((now, latency.unwrap_or(FAILURE_LATENCY)));
             self.success_count += 1;
         } else {
-            self.latency_history.push((now, FAILURE_LATENCY));
             self.failure_count += 1;
         }
         self.last_update = now;
 
-        // Keep only the most recent records
-        if self.latency_history.len() > self.max_history_size {
-            self.latency_history.remove(0);
+        if self.history.len() > self.max_history_size {
+            self.history.remove(0);
         }
     }
 
     pub fn calculate_score(&self, now: Instant) -> f64 {
-        let mut total_weighted_latency = 0.0;
+        if self.history.is_empty() {
+            return DEFAULT_SCORE;
+        }
+
+        let mut success_weight = 0.0;
         let mut total_weight = 0.0;
+        let mut latency_sum = 0.0;
 
-        for (timestamp, latency) in &self.latency_history {
-            let age = now.duration_since(*timestamp);
+        for record in &self.history {
+            let age = now.duration_since(record.timestamp);
             let weight = 2.0_f64.powf(-age.as_secs_f64() / self.half_life.as_secs_f64());
-            total_weighted_latency += latency.as_millis() as f64 * weight;
             total_weight += weight;
+            if record.success {
+                success_weight += weight;
+                latency_sum += record.latency.as_secs_f64() * 1000.0 * weight;
+            }
         }
 
-        if total_weight == 0.0 {
+        if total_weight == 0.0 || success_weight == 0.0 {
             return DEFAULT_SCORE;
         }
 
-        // 如果没有成功记录，返回默认高分
-        if self.success_count == 0 {
-            return DEFAULT_SCORE;
-        }
+        let success_rate = success_weight / total_weight;
+        let avg_latency = latency_sum / success_weight;
 
-        let avg_latency = total_weighted_latency / total_weight;
-
-        // Factor in success rate: score = latency / success_rate
-        // Lower success rate → higher (worse) score
-        let success_rate =
-            self.success_count as f64 / (self.success_count + self.failure_count).max(1) as f64;
         avg_latency / success_rate
     }
 
     pub fn get_stats(&self) -> ServerPerformanceStats {
         let now = Instant::now();
-        let mut total_latency = 0.0;
+        let mut success_weight = 0.0;
         let mut total_weight = 0.0;
+        let mut latency_sum = 0.0;
 
-        for (timestamp, latency) in &self.latency_history {
-            let age = now.duration_since(*timestamp);
+        for record in &self.history {
+            let age = now.duration_since(record.timestamp);
             let weight = 2.0_f64.powf(-age.as_secs_f64() / self.half_life.as_secs_f64());
-            total_latency += latency.as_millis() as f64 * weight;
             total_weight += weight;
+            if record.success {
+                success_weight += weight;
+                latency_sum += record.latency.as_secs_f64() * 1000.0 * weight;
+            }
         }
 
-        let avg_latency = if total_weight > 0.0 {
-            total_latency / total_weight
+        let avg_latency = if success_weight > 0.0 {
+            latency_sum / success_weight
         } else {
             DEFAULT_LATENCY
         };
 
-        let success_rate = if self.success_count + self.failure_count > 0 {
-            self.success_count as f64 / (self.success_count + self.failure_count) as f64
+        let success_rate = if total_weight > 0.0 {
+            success_weight / total_weight
         } else {
             0.0
         };
 
-        let raw_score = self.calculate_score(now);
-        // 转换为越大越好的分数 (0-100)
-        let score = (100.0 * (1.0 - raw_score / DEFAULT_SCORE)).clamp(0.0, 100.0);
-
         ServerPerformanceStats {
-            score,
+            score: self.calculate_score(now),
             latency: avg_latency,
             success_rate,
             success: self.success_count,
