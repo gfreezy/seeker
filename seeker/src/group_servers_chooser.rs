@@ -3,7 +3,7 @@ use crate::proxy_connection::ProxyConnection;
 use crate::proxy_tcp_stream::ProxyTcpStream;
 use crate::proxy_udp_socket::ProxyUdpSocket;
 use crate::server_chooser::{CandidateTcpStream, CandidateUdpSocket};
-use crate::server_performance::{DEFAULT_SCORE, PingUrlResult, ServerPerformanceTracker};
+use crate::server_performance::{PingUrlResult, ServerPerformanceTracker};
 use anyhow::Result;
 use config::rule::Action;
 use config::{Address, PingURL, ServerConfig};
@@ -75,7 +75,7 @@ impl GroupServersChooser {
             selected_server: Arc::new(Mutex::new(selected)),
             show_stats,
             performance_tracker: ServerPerformanceTracker::new(100, Duration::from_secs(300)),
-            last_switch_time: Arc::new(Mutex::new(Instant::now())),
+            last_switch_time: Arc::new(Mutex::new(Instant::now() - MIN_SWITCH_INTERVAL)),
             consecutive_failures: Arc::new(AtomicU32::new(0)),
         };
         chooser.ping_servers(false).await;
@@ -199,7 +199,7 @@ impl GroupServersChooser {
             .performance_tracker
             .get_server_score(&current_server, now);
 
-        let mut best_score = DEFAULT_SCORE;
+        let mut best_score = f64::MAX;
         let mut best_server = None;
 
         // Find the server with the best performance score

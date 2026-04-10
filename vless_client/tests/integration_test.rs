@@ -86,6 +86,64 @@ fn server_config_json(port: u16) -> Vec<u8> {
     .into_bytes()
 }
 
+/// Build Xray server config JSON for VLESS with XTLS-Vision flow.
+fn server_config_json_vision(port: u16) -> Vec<u8> {
+    format!(
+        r#"{{
+    "log": {{ "loglevel": "debug" }},
+    "inbounds": [{{
+        "port": {port},
+        "protocol": "vless",
+        "settings": {{
+            "clients": [{{
+                "id": "{TEST_UUID}",
+                "flow": "xtls-rprx-vision"
+            }}],
+            "decryption": "none"
+        }},
+        "streamSettings": {{
+            "network": "tcp",
+            "security": "tls",
+            "tlsSettings": {{
+                "certificates": [{{
+                    "certificateFile": "/usr/local/etc/xray/server.crt",
+                    "keyFile": "/usr/local/etc/xray/server.key"
+                }}]
+            }}
+        }}
+    }}],
+    "outbounds": [{{
+        "protocol": "freedom"
+    }}]
+}}"#
+    )
+    .into_bytes()
+}
+
+fn start_vless_vision_server(port: u16) -> Container<GenericImage> {
+    let (cert_pem, key_pem) = generate_self_signed_cert();
+    let config_json = server_config_json_vision(port);
+
+    GenericImage::new("ghcr.io/xtls/xray-core", "latest")
+        .with_wait_for(WaitFor::message_on_stdout("started"))
+        .with_startup_timeout(Duration::from_secs(30))
+        .with_network("host")
+        .with_copy_to("/usr/local/etc/xray/config.json", config_json)
+        .with_copy_to("/usr/local/etc/xray/server.crt", cert_pem)
+        .with_copy_to("/usr/local/etc/xray/server.key", key_pem)
+        .with_cmd(["run", "-c", "/usr/local/etc/xray/config.json"])
+        .start()
+        .expect("failed to start xray vision container")
+}
+
+async fn start_vless_vision_server_async(port: u16) -> TestContainer {
+    let container = tokio::task::spawn_blocking(move || start_vless_vision_server(port))
+        .await
+        .expect("failed to spawn blocking task for vision container start");
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    TestContainer::new(container)
+}
+
 fn build_dns_query(domain: &str, qtype: u16) -> Vec<u8> {
     let mut buf = Vec::new();
     buf.extend_from_slice(&[0x12, 0x34]);
@@ -303,6 +361,115 @@ async fn test_vless_tcp_multiple_streams() {
     assert!(
         resp2.contains("200 OK") || resp2.contains("301") || resp2.contains("302"),
         "stream 2: expected HTTP success/redirect"
+    );
+
+    container.cleanup().await;
+}
+
+/// Test: TCP proxy with XTLS-Vision — HTTP request through VLESS Vision proxy
+#[tokio::test]
+async fn test_vless_tcp_proxy_http_vision() {
+    let port = next_port();
+    let container = start_vless_vision_server_async(port).await;
+
+    let proxy_addr: SocketAddr = format!("127.0.0.1:{port}").parse().unwrap();
+    let target = Address::DomainNameAddress("www.baidu.com".to_string(), 80);
+
+    let mut stream = tokio::time::timeout(
+        CONNECT_TIMEOUT,
+        VlessTcpStream::connect(
+            proxy_addr,
+            "localhost",
+            target,
+            TEST_UUID,
+            Some("xtls-rprx-vision"),
+            true,
+        ),
+    )
+    .await
+    .expect("connection timed out")
+    .expect("VLESS Vision connect failed");
+
+    let request = "GET / HTTP/1.1\r\nHost: www.baidu.com\r\nConnection: close\r\n\r\n";
+    stream
+        .write_all(request.as_bytes())
+        .await
+        .expect("write failed");
+
+    let mut response = Vec::new();
+    stream
+        .read_to_end(&mut response)
+        .await
+        .expect("read failed");
+    let response_str = String::from_utf8_lossy(&response);
+
+    println!(
+        "Vision response (len={}):\n{}",
+        response.len(),
+        &response_str[..response_str.len().min(500)]
+    );
+    assert!(
+        response_str.contains("200 OK")
+            || response_str.contains("301")
+            || response_str.contains("302"),
+        "expected HTTP success/redirect in Vision response"
+    );
+
+    container.cleanup().await;
+}
+
+/// Test: TCP proxy with XTLS-Vision — HTTPS via raw TLS over VLESS Vision (exercises direct copy)
+#[tokio::test]
+async fn test_vless_tcp_proxy_https_vision() {
+    let port = next_port();
+    let container = start_vless_vision_server_async(port).await;
+
+    let proxy_addr: SocketAddr = format!("127.0.0.1:{port}").parse().unwrap();
+    let target = Address::DomainNameAddress("www.baidu.com".to_string(), 443);
+
+    let stream = tokio::time::timeout(
+        CONNECT_TIMEOUT,
+        VlessTcpStream::connect(
+            proxy_addr,
+            "localhost",
+            target,
+            TEST_UUID,
+            Some("xtls-rprx-vision"),
+            true,
+        ),
+    )
+    .await
+    .expect("connection timed out")
+    .expect("VLESS Vision connect failed");
+
+    // Layer client-side TLS on top for the target connection.
+    // This exercises XTLS-Vision direct copy: the inner TLS handshake (ClientHello/ServerHello)
+    // flows through Vision padding, and once Application Data is detected, the Vision layer
+    // should switch to direct copy mode.
+    let tls_connector = tokio_native_tls::TlsConnector::from(
+        native_tls::TlsConnector::new().expect("failed to create TLS connector"),
+    );
+    let mut tls_stream = tls_connector
+        .connect("www.baidu.com", stream)
+        .await
+        .expect("TLS handshake with target failed");
+
+    let request = "GET / HTTP/1.1\r\nHost: www.baidu.com\r\nConnection: close\r\n\r\n";
+    tls_stream
+        .write_all(request.as_bytes())
+        .await
+        .expect("write failed");
+
+    let mut response = vec![0u8; 4096];
+    let n = tls_stream.read(&mut response).await.expect("read failed");
+    let response_str = String::from_utf8_lossy(&response[..n]);
+
+    println!("Vision+TLS response (first {n} bytes):\n{response_str}");
+    assert!(
+        response_str.contains("200")
+            || response_str.contains("301")
+            || response_str.contains("302"),
+        "expected HTTP success/redirect status in Vision+TLS response"
     );
 
     container.cleanup().await;

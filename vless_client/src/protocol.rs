@@ -39,7 +39,7 @@ pub fn encode_vless_request(
     addr: &Address,
     flow: Option<&str>,
     buf: &mut BytesMut,
-) {
+) -> std::io::Result<()> {
     // Version
     buf.put_u8(VLESS_VERSION);
     // UUID (16 bytes)
@@ -53,11 +53,11 @@ pub fn encode_vless_request(
     // Command
     buf.put_u8(cmd);
     // Port (big-endian) + Address type + Address
-    write_vless_address(addr, buf);
+    write_vless_address(addr, buf)
 }
 
 /// Write VLESS address format: Port(2) + AddrType(1) + Addr(var)
-fn write_vless_address(addr: &Address, buf: &mut BytesMut) {
+fn write_vless_address(addr: &Address, buf: &mut BytesMut) -> std::io::Result<()> {
     match addr {
         Address::SocketAddress(SocketAddr::V4(v4)) => {
             buf.put_u16(v4.port());
@@ -70,12 +70,22 @@ fn write_vless_address(addr: &Address, buf: &mut BytesMut) {
             buf.put_slice(&v6.ip().octets());
         }
         Address::DomainNameAddress(domain, port) => {
+            if domain.len() > 255 {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    format!(
+                        "VLESS domain name too long: {} bytes (max 255)",
+                        domain.len()
+                    ),
+                ));
+            }
             buf.put_u16(*port);
             buf.put_u8(ATYP_DOMAIN);
             buf.put_u8(domain.len() as u8);
             buf.put_slice(domain.as_bytes());
         }
     }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -87,7 +97,7 @@ mod tests {
         let uuid = Uuid::parse_str("b831381d-6324-4d53-ad4f-8cda48b30811").unwrap();
         let addr = Address::DomainNameAddress("example.com".to_string(), 443);
         let mut buf = BytesMut::new();
-        encode_vless_request(&uuid, CMD_TCP, &addr, None, &mut buf);
+        encode_vless_request(&uuid, CMD_TCP, &addr, None, &mut buf).unwrap();
 
         // version(1) + uuid(16) + addons_len(1) + cmd(1) + port(2) + atyp(1) + domain_len(1) + "example.com"(11) = 34
         assert_eq!(buf.len(), 34);
@@ -106,7 +116,7 @@ mod tests {
         let uuid = Uuid::parse_str("b831381d-6324-4d53-ad4f-8cda48b30811").unwrap();
         let addr = Address::DomainNameAddress("example.com".to_string(), 443);
         let mut buf = BytesMut::new();
-        encode_vless_request(&uuid, CMD_TCP, &addr, Some("xtls-rprx-vision"), &mut buf);
+        encode_vless_request(&uuid, CMD_TCP, &addr, Some("xtls-rprx-vision"), &mut buf).unwrap();
 
         assert_eq!(buf[0], VLESS_VERSION);
         assert_eq!(&buf[1..17], uuid.as_bytes());
@@ -125,7 +135,7 @@ mod tests {
         let uuid = Uuid::parse_str("b831381d-6324-4d53-ad4f-8cda48b30811").unwrap();
         let addr = Address::SocketAddress("1.2.3.4:80".parse().unwrap());
         let mut buf = BytesMut::new();
-        encode_vless_request(&uuid, CMD_TCP, &addr, None, &mut buf);
+        encode_vless_request(&uuid, CMD_TCP, &addr, None, &mut buf).unwrap();
 
         // version(1) + uuid(16) + addons_len(1) + cmd(1) + port(2) + atyp(1) + ipv4(4) = 26
         assert_eq!(buf.len(), 26);
@@ -140,7 +150,7 @@ mod tests {
         let uuid = Uuid::parse_str("b831381d-6324-4d53-ad4f-8cda48b30811").unwrap();
         let addr = Address::SocketAddress("[::1]:8080".parse().unwrap());
         let mut buf = BytesMut::new();
-        encode_vless_request(&uuid, CMD_TCP, &addr, None, &mut buf);
+        encode_vless_request(&uuid, CMD_TCP, &addr, None, &mut buf).unwrap();
 
         // version(1) + uuid(16) + addons_len(1) + cmd(1) + port(2) + atyp(1) + ipv6(16) = 38
         assert_eq!(buf.len(), 38);

@@ -1,9 +1,9 @@
 use rand::Rng;
 use tracing::debug;
 
-const COMMAND_PADDING_CONTINUE: u8 = 0x00;
-const COMMAND_PADDING_END: u8 = 0x01;
-const COMMAND_PADDING_DIRECT: u8 = 0x02;
+pub const COMMAND_PADDING_CONTINUE: u8 = 0x00;
+pub const COMMAND_PADDING_END: u8 = 0x01;
+pub const COMMAND_PADDING_DIRECT: u8 = 0x02;
 
 const TLS_CLIENT_HANDSHAKE_START: [u8; 2] = [0x16, 0x03];
 const TLS_SERVER_HANDSHAKE_START: [u8; 3] = [0x16, 0x03, 0x03];
@@ -12,6 +12,18 @@ const TLS13_SUPPORTED_VERSIONS: [u8; 6] = [0x00, 0x2b, 0x00, 0x02, 0x03, 0x04];
 
 const HANDSHAKE_TYPE_SERVER_HELLO: u8 = 0x02;
 const HANDSHAKE_TYPE_CLIENT_HELLO: u8 = 0x01;
+
+/// Result of a Vision unpad operation, including the command that ended the block.
+pub struct UnpadResult {
+    /// The unpadded content data.
+    pub data: Vec<u8>,
+    /// The command that completed the current padding phase, if any.
+    /// - `Some(COMMAND_PADDING_CONTINUE)`: more padded blocks will follow
+    /// - `Some(COMMAND_PADDING_END)`: padding ended, keep using TLS
+    /// - `Some(COMMAND_PADDING_DIRECT)`: padding ended, switch to direct TCP
+    /// - `None`: still within a block (need more data) or passthrough
+    pub finished_command: Option<u8>,
+}
 
 /// XTLS-Vision padding filter, matching Xray-core's VisionReader/VisionWriter behavior.
 pub struct VisionFilter {
@@ -25,7 +37,7 @@ pub struct VisionFilter {
     read_current_command: u8,
     /// Whether padding phase is active for reads
     read_within_padding: bool,
-    /// Whether to switch to direct copy (no more unpadding)
+    /// Whether the server has signaled direct copy mode
     pub read_direct_copy: bool,
 
     // --- Padding state (write path) ---
@@ -39,6 +51,8 @@ pub struct VisionFilter {
     is_tls12_or_above: bool,
     enable_xtls: bool,
     remaining_server_hello: i32,
+    /// Accumulation buffer for filter_tls to handle split TLS record headers.
+    filter_buf: Vec<u8>,
 }
 
 impl VisionFilter {
@@ -60,23 +74,34 @@ impl VisionFilter {
             is_tls12_or_above: false,
             enable_xtls: false,
             remaining_server_hello: -1,
+            filter_buf: Vec::new(),
         }
     }
 
-    /// Strip Vision padding from incoming data. Returns the actual application data.
-    pub fn unpad(&mut self, input: &[u8]) -> Vec<u8> {
+    /// Strip Vision padding from incoming data.
+    /// Returns the actual application data and the command that finished the padding phase (if any).
+    pub fn unpad(&mut self, input: &[u8]) -> UnpadResult {
         if self.read_direct_copy {
-            return input.to_vec();
+            return UnpadResult {
+                data: input.to_vec(),
+                finished_command: None,
+            };
         }
 
         if input.is_empty() {
-            return Vec::new();
+            return UnpadResult {
+                data: Vec::new(),
+                finished_command: None,
+            };
         }
 
-        // Not within padding and no more packets to filter → passthrough
+        // Not within padding and no more packets to filter -> passthrough
         if !self.read_within_padding && self.packets_to_filter <= 0 && self.read_staging.is_empty()
         {
-            return input.to_vec();
+            return UnpadResult {
+                data: input.to_vec(),
+                finished_command: None,
+            };
         }
 
         self.read_staging.extend_from_slice(input);
@@ -84,16 +109,15 @@ impl VisionFilter {
             input_len = input.len(),
             staging_len = self.read_staging.len(),
             within_padding = self.read_within_padding,
-            direct_copy = self.read_direct_copy,
             "vision unpad input"
         );
 
         let mut output = Vec::new();
         let mut pos = 0;
+        let mut finished_command: Option<u8> = None;
 
         loop {
             // Initial state: check for UUID prefix.
-            // During padding phase we may need to wait for the full 16-byte UUID + 5-byte frame header.
             if self.read_remaining_command == -1
                 && self.read_remaining_content == -1
                 && self.read_remaining_padding == -1
@@ -121,7 +145,6 @@ impl VisionFilter {
                     self.read_remaining_command = 5;
                     debug!("vision unpad: UUID matched, entering padded frame parsing");
                 } else {
-                    // No UUID prefix → not a padded frame, passthrough
                     debug!(
                         remaining_len = remaining.len(),
                         "vision unpad: no UUID match, passthrough"
@@ -179,19 +202,20 @@ impl VisionFilter {
                     // More blocks coming
                     self.read_remaining_command = 5;
                     self.read_within_padding = true;
-                    debug!("vision unpad: block done, CONTINUE → next block");
+                    debug!("vision unpad: block done, CONTINUE -> next block");
                 } else {
                     // PaddingEnd or PaddingDirect
                     self.read_remaining_command = -1;
                     self.read_remaining_content = -1;
                     self.read_remaining_padding = -1;
                     self.read_within_padding = false;
+
+                    finished_command = Some(self.read_current_command);
+
                     if self.read_current_command == COMMAND_PADDING_DIRECT {
-                        // Server sent DIRECT — it will switch its writer to
-                        // raw TCP (bypassing outer TLS). We must also switch
-                        // our reader to raw TCP on the next read.
                         self.read_direct_copy = true;
                     }
+
                     debug!(
                         command = self.read_current_command,
                         direct_copy = self.read_direct_copy,
@@ -220,14 +244,18 @@ impl VisionFilter {
             staging_remaining = self.read_staging.len(),
             is_tls = self.is_tls,
             enable_xtls = self.enable_xtls,
+            finished = ?finished_command,
             "vision unpad result"
         );
-        output
+        UnpadResult {
+            data: output,
+            finished_command,
+        }
     }
 
     /// Add Vision padding to outgoing data. Returns the padded frame.
     pub fn pad(&mut self, data: &[u8]) -> Vec<u8> {
-        if self.write_direct_copy || !self.write_is_padding {
+        if !self.write_is_padding {
             debug!(
                 data_len = data.len(),
                 direct_copy = self.write_direct_copy,
@@ -247,7 +275,7 @@ impl VisionFilter {
 
         // Determine command
         let command = if self.is_tls && data.len() >= 3 && data[..3] == TLS_APPLICATION_DATA_START {
-            // TLS Application Data found → end padding
+            // TLS Application Data found -> end padding
             self.write_is_padding = false;
             if self.enable_xtls {
                 self.write_direct_copy = true;
@@ -315,53 +343,67 @@ impl VisionFilter {
     }
 
     /// Detect TLS records in the data stream. Updates internal TLS detection state.
+    /// Uses an accumulation buffer to handle TLS record headers split across chunks.
     fn filter_tls(&mut self, data: &[u8]) {
         if self.packets_to_filter <= 0 {
             return;
         }
+
+        // Accumulate data for detection
+        let combined;
+        let check_data = if !self.filter_buf.is_empty() {
+            self.filter_buf.extend_from_slice(data);
+            combined = std::mem::take(&mut self.filter_buf);
+            &combined[..]
+        } else {
+            data
+        };
+
+        // Need at least 6 bytes for TLS record pattern detection
+        if check_data.len() < 6 {
+            self.filter_buf = check_data.to_vec();
+            return;
+        }
+
         self.packets_to_filter -= 1;
 
-        if data.len() >= 6 {
-            // Check for ServerHello
-            if data[..3] == TLS_SERVER_HANDSHAKE_START && data[5] == HANDSHAKE_TYPE_SERVER_HELLO {
-                self.remaining_server_hello = ((data[3] as i32) << 8 | data[4] as i32) + 5;
-                self.is_tls12_or_above = true;
-                self.is_tls = true;
-                debug!(
-                    remaining_server_hello = self.remaining_server_hello,
-                    "filter_tls: detected TLS ServerHello"
-                );
-            }
-            // Check for ClientHello
-            else if data[..2] == TLS_CLIENT_HANDSHAKE_START
-                && data[5] == HANDSHAKE_TYPE_CLIENT_HELLO
-            {
-                self.is_tls = true;
-                debug!(
-                    data_len = data.len(),
-                    "filter_tls: detected TLS ClientHello"
-                );
-            }
+        // Check for ServerHello
+        if check_data[..3] == TLS_SERVER_HANDSHAKE_START
+            && check_data[5] == HANDSHAKE_TYPE_SERVER_HELLO
+        {
+            self.remaining_server_hello = ((check_data[3] as i32) << 8 | check_data[4] as i32) + 5;
+            self.is_tls12_or_above = true;
+            self.is_tls = true;
+            debug!(
+                remaining_server_hello = self.remaining_server_hello,
+                "filter_tls: detected TLS ServerHello"
+            );
+        }
+        // Check for ClientHello
+        else if check_data[..2] == TLS_CLIENT_HANDSHAKE_START
+            && check_data[5] == HANDSHAKE_TYPE_CLIENT_HELLO
+        {
+            self.is_tls = true;
+            debug!(
+                data_len = check_data.len(),
+                "filter_tls: detected TLS ClientHello"
+            );
         }
 
         if self.remaining_server_hello > 0 {
-            let end = (self.remaining_server_hello as usize).min(data.len());
-            self.remaining_server_hello -= data.len() as i32;
+            let end = (self.remaining_server_hello as usize).min(check_data.len());
+            self.remaining_server_hello -= check_data.len() as i32;
 
-            // Look for TLS 1.3 supported_versions extension
-            if contains_subsequence(&data[..end], &TLS13_SUPPORTED_VERSIONS) {
-                // NOTE: We intentionally keep enable_xtls = false.
-                // XTLS direct copy requires bypassing the outer TLS layer
-                // (UnwrapRawConn in Xray-core), which is not possible with
-                // tokio-rustls. If we set enable_xtls = true, we'd send
-                // COMMAND_PADDING_DIRECT, causing the server to switch to
-                // raw TCP writes, resulting in DecryptError on our TLS reader.
-                // Keeping enable_xtls = false means we use COMMAND_PADDING_END,
-                // which still correctly ends the padding phase without bypassing TLS.
+            // Look for TLS 1.3 supported_versions extension.
+            // NOTE: This is a simplified detection using byte-sequence matching rather than
+            // full ServerHello parsing (as shoes does). Since enable_xtls controls direct
+            // copy behavior, a false positive here would incorrectly trigger direct copy.
+            // In practice the byte sequence [0x00,0x2b,0x00,0x02,0x03,0x04] is specific
+            // enough (TLS supported_versions extension with version 0x0304) to be reliable.
+            if contains_subsequence(&check_data[..end], &TLS13_SUPPORTED_VERSIONS) {
+                self.enable_xtls = true;
                 self.packets_to_filter = 0;
-                debug!(
-                    "filter_tls: detected TLS 1.3 (enable_xtls stays false, no raw TCP support)"
-                );
+                debug!("filter_tls: detected TLS 1.3, enable_xtls = true");
             } else if self.remaining_server_hello <= 0 {
                 // TLS 1.2
                 self.packets_to_filter = 0;
@@ -396,9 +438,9 @@ mod tests {
 
         let data = b"Hello, World!";
         let padded = writer.pad(data);
-        let unpadded = reader.unpad(&padded);
+        let result = reader.unpad(&padded);
 
-        assert_eq!(unpadded, data);
+        assert_eq!(result.data, data);
     }
 
     #[test]
@@ -415,11 +457,11 @@ mod tests {
         let data2 = b"block two";
         let padded2 = writer.pad(data2);
 
-        let unpadded1 = reader.unpad(&padded1);
-        assert_eq!(unpadded1, data1);
+        let result1 = reader.unpad(&padded1);
+        assert_eq!(result1.data, data1);
 
-        let unpadded2 = reader.unpad(&padded2);
-        assert_eq!(unpadded2, data2);
+        let result2 = reader.unpad(&padded2);
+        assert_eq!(result2.data, data2);
     }
 
     #[test]
@@ -446,10 +488,10 @@ mod tests {
         let uuid = test_uuid();
         let mut filter = VisionFilter::new(uuid);
 
-        // Data that doesn't start with UUID → passthrough
+        // Data that doesn't start with UUID -> passthrough
         let data = b"not padded data";
         let result = filter.unpad(data);
-        assert_eq!(result, data);
+        assert_eq!(result.data, data);
     }
 
     #[test]
@@ -459,7 +501,39 @@ mod tests {
         let mut reader = VisionFilter::new(uuid);
 
         let padded = writer.pad(b"fragmented");
-        assert_eq!(reader.unpad(&padded[..10]), b"");
-        assert_eq!(reader.unpad(&padded[10..]), b"fragmented");
+        let r1 = reader.unpad(&padded[..10]);
+        assert_eq!(r1.data, b"");
+        let r2 = reader.unpad(&padded[10..]);
+        assert_eq!(r2.data, b"fragmented");
+    }
+
+    #[test]
+    fn test_unpad_direct_command() {
+        let uuid = test_uuid();
+        let mut filter = VisionFilter::new(uuid);
+
+        // Construct a Vision frame with COMMAND_PADDING_DIRECT
+        let content = b"direct data";
+        let padding_len: u16 = 3;
+        let mut frame = Vec::new();
+        frame.extend_from_slice(&uuid); // UUID
+        frame.push(COMMAND_PADDING_DIRECT); // command
+        frame.push(0); // content_len high
+        frame.push(content.len() as u8); // content_len low
+        frame.push(0); // padding_len high
+        frame.push(padding_len as u8); // padding_len low
+        frame.extend_from_slice(content);
+        frame.extend_from_slice(&vec![0u8; padding_len as usize]);
+        frame.extend_from_slice(b"raw tail"); // data after padding ends
+
+        let result = filter.unpad(&frame);
+        assert_eq!(&result.data[..content.len()], content.as_slice());
+        assert_eq!(
+            &result.data[content.len()..],
+            b"raw tail",
+            "remaining data after DIRECT"
+        );
+        assert_eq!(result.finished_command, Some(COMMAND_PADDING_DIRECT));
+        assert!(filter.read_direct_copy);
     }
 }

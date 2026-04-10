@@ -1,8 +1,8 @@
 use crate::protocol::{encode_vless_request, CMD_UDP, VLESS_VERSION};
+use crate::tls::get_tls_connector;
 use bytes::{BufMut, BytesMut};
 use config::Address;
 use rustls::pki_types::ServerName;
-use rustls::ClientConfig;
 use std::io::{Error, ErrorKind, Result};
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -10,7 +10,6 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt, ReadHalf, WriteHalf};
 use tokio::net::TcpStream;
 use tokio::sync::{Mutex, Notify};
 use tokio_rustls::client::TlsStream;
-use tokio_rustls::TlsConnector;
 use uuid::Uuid;
 
 fn normalize_udp_flow(flow: Option<&str>) -> Result<()> {
@@ -22,37 +21,6 @@ fn normalize_udp_flow(flow: Option<&str>) -> Result<()> {
             format!("unsupported VLESS flow: {other}"),
         )),
     }
-}
-
-fn get_tls_connector(insecure: bool) -> TlsConnector {
-    use std::sync::OnceLock;
-    static CONNECTOR: OnceLock<TlsConnector> = OnceLock::new();
-    static CONNECTOR_INSECURE: OnceLock<TlsConnector> = OnceLock::new();
-
-    let lock = if insecure {
-        &CONNECTOR_INSECURE
-    } else {
-        &CONNECTOR
-    };
-    lock.get_or_init(|| {
-        let mut root_store = rustls::RootCertStore::empty();
-        root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-
-        let mut tls_config = ClientConfig::builder()
-            .with_root_certificates(root_store)
-            .with_no_client_auth();
-
-        tls_config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
-
-        if insecure {
-            tls_config
-                .dangerous()
-                .set_certificate_verifier(Arc::new(crate::tcp::NoVerifier));
-        }
-
-        TlsConnector::from(Arc::new(tls_config))
-    })
-    .clone()
 }
 
 enum ConnectionState {
@@ -98,7 +66,7 @@ impl PlainVlessUdpSocket {
             &Address::SocketAddress(peer),
             None,
             &mut header_buf,
-        );
+        )?;
         tls_stream.write_all(&header_buf).await?;
         tls_stream.flush().await?;
 
@@ -262,7 +230,16 @@ impl VlessUdpSocket {
 
     pub async fn send_to(&self, buf: &[u8], addr: SocketAddr) -> Result<usize> {
         let conn = self.get_or_connect(addr).await?;
-        conn.send_to(buf, addr).await
+        match conn.send_to(buf, addr).await {
+            Ok(n) => Ok(n),
+            Err(e) => {
+                // Reset connection so next call attempts reconnection
+                let mut state = self.state.lock().await;
+                *state = ConnectionState::Unconnected;
+                self.state_change.notify_waiters();
+                Err(e)
+            }
+        }
     }
 
     pub async fn recv_from(&self, buf: &mut [u8]) -> Result<(usize, SocketAddr)> {
@@ -276,7 +253,15 @@ impl VlessUdpSocket {
                 }
             }
         };
-        conn.recv_from(buf).await
+        match conn.recv_from(buf).await {
+            Ok(result) => Ok(result),
+            Err(e) => {
+                let mut state = self.state.lock().await;
+                *state = ConnectionState::Unconnected;
+                self.state_change.notify_waiters();
+                Err(e)
+            }
+        }
     }
 }
 
