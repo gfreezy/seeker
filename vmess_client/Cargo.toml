@@ -1,6 +1,6 @@
 [package]
 name = "vmess_client"
-version = "20260127.0.0"
+version = "20260411.0.0"
 edition = "2021"
 
 [features]
