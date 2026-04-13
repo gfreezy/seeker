@@ -150,10 +150,17 @@ impl ProxyTcpStream {
                             "uuid (username) must be set for vmess protocol.",
                         )
                     })?;
-                    let security = config.vmess_security().unwrap_or("auto");
+                    let security = config
+                        .vmess_security()
+                        .unwrap_or(config::VMessSecurity::Auto);
                     ProxyTcpStreamInner::VMess(Box::new(
-                        VMessTcpStream::connect(proxy_socket_addr, uuid, remote_addr, security)
-                            .await?,
+                        VMessTcpStream::connect(
+                            proxy_socket_addr,
+                            uuid,
+                            remote_addr,
+                            security.as_str(),
+                        )
+                        .await?,
                     ))
                 }
                 ServerProtocol::Vless => {
@@ -179,7 +186,7 @@ impl ProxyTcpStream {
                             &sni,
                             remote_addr,
                             uuid,
-                            config.flow(),
+                            config.flow().map(|f| f.as_str()),
                             config.insecure(),
                         )
                         .await?,

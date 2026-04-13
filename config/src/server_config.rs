@@ -41,6 +41,63 @@ pub enum ServerProtocol {
     Vless,
 }
 
+/// VMess encryption method
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+pub enum VMessSecurity {
+    #[serde(alias = "auto")]
+    Auto,
+    #[serde(alias = "aes-128-gcm")]
+    Aes128Gcm,
+    #[serde(alias = "chacha20-poly1305", alias = "chacha20-ietf-poly1305")]
+    ChaCha20Poly1305,
+    #[serde(alias = "aes-128-cfb", alias = "legacy")]
+    Aes128Cfb,
+    #[serde(alias = "none", alias = "zero")]
+    None,
+}
+
+impl VMessSecurity {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            VMessSecurity::Auto => "auto",
+            VMessSecurity::Aes128Gcm => "aes-128-gcm",
+            VMessSecurity::ChaCha20Poly1305 => "chacha20-poly1305",
+            VMessSecurity::Aes128Cfb => "aes-128-cfb",
+            VMessSecurity::None => "none",
+        }
+    }
+}
+
+impl std::fmt::Display for VMessSecurity {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// VLESS flow control
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+pub enum VlessFlow {
+    #[serde(alias = "xtls-rprx-vision")]
+    XtlsRprxVision,
+    #[serde(alias = "xtls-rprx-vision-udp443")]
+    XtlsRprxVisionUdp443,
+}
+
+impl VlessFlow {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            VlessFlow::XtlsRprxVision => "xtls-rprx-vision",
+            VlessFlow::XtlsRprxVisionUdp443 => "xtls-rprx-vision-udp443",
+        }
+    }
+}
+
+impl std::fmt::Display for VlessFlow {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 impl std::fmt::Display for ServerProtocol {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -75,10 +132,10 @@ pub struct ServerConfig {
     insecure: Option<bool>,
     /// Receive window bandwidth hint for Hysteria2 (Hysteria-CC-RX)
     recv_window: Option<u64>,
-    /// VMess encryption method (e.g., "auto", "aes-128-gcm", "chacha20-poly1305")
-    vmess_security: Option<String>,
-    /// VLESS flow control (e.g., "xtls-rprx-vision")
-    flow: Option<String>,
+    /// VMess encryption method
+    vmess_security: Option<VMessSecurity>,
+    /// VLESS flow control
+    flow: Option<VlessFlow>,
 }
 
 // Internal struct for deserializing both Seeker and Clash formats
@@ -120,12 +177,12 @@ enum ServerConfigHelper {
         recv_window: Option<u64>,
         // VMess fields
         #[serde(default)]
-        vmess_security: Option<String>,
+        vmess_security: Option<VMessSecurity>,
         // VLESS fields
         #[serde(default)]
         uuid: Option<String>,
         #[serde(default)]
-        flow: Option<String>,
+        flow: Option<VlessFlow>,
     },
     // Seeker format
     Seeker {
@@ -156,12 +213,12 @@ enum ServerConfigHelper {
         recv_window: Option<u64>,
         // VMess fields
         #[serde(default)]
-        vmess_security: Option<String>,
+        vmess_security: Option<VMessSecurity>,
         // VLESS fields
         #[serde(default)]
         uuid: Option<String>,
         #[serde(default)]
-        flow: Option<String>,
+        flow: Option<VlessFlow>,
     },
 }
 
@@ -410,13 +467,13 @@ impl ServerConfig {
     }
 
     /// Get VMess encryption method
-    pub fn vmess_security(&self) -> Option<&str> {
-        self.vmess_security.as_deref()
+    pub fn vmess_security(&self) -> Option<VMessSecurity> {
+        self.vmess_security
     }
 
-    /// Get VLESS flow control (e.g., "xtls-rprx-vision")
-    pub fn flow(&self) -> Option<&str> {
-        self.flow.as_deref()
+    /// Get VLESS flow control
+    pub fn flow(&self) -> Option<VlessFlow> {
+        self.flow
     }
 
     pub fn from_url(encoded: &str) -> Result<ServerConfig, UrlParseError> {
@@ -657,7 +714,10 @@ impl ServerConfig {
             .unwrap_or(443);
         let uuid = json["id"].as_str().ok_or(UrlParseError::InvalidAuthInfo)?;
         let name = json["ps"].as_str().unwrap_or(add).to_string();
-        let security = json["scy"].as_str().unwrap_or("auto").to_string();
+        let security_str = json["scy"].as_str().unwrap_or("auto");
+        let security: VMessSecurity =
+            serde_json::from_value(serde_json::Value::String(security_str.to_string()))
+                .unwrap_or(VMessSecurity::Auto);
         let sni = json["sni"]
             .as_str()
             .filter(|s| !s.is_empty())
@@ -715,7 +775,10 @@ impl ServerConfig {
             match key.as_ref() {
                 "sni" => sni = Some(value.to_string()),
                 "allowInsecure" => insecure = Some(value == "1" || value == "true"),
-                "flow" => flow = Some(value.to_string()),
+                "flow" => {
+                    flow = serde_json::from_value(serde_json::Value::String(value.to_string()))
+                        .ok();
+                }
                 _ => {}
             }
         }
@@ -1258,7 +1321,7 @@ vmess_security: aes-128-gcm
             server_config.username(),
             Some("b831381d-6324-4d53-ad4f-8cda48b30811")
         );
-        assert_eq!(server_config.vmess_security(), Some("aes-128-gcm"));
+        assert_eq!(server_config.vmess_security(), Some(VMessSecurity::Aes128Gcm));
     }
 
     #[test]
@@ -1283,7 +1346,7 @@ sni: custom.example.com
             server_config.username(),
             Some("b831381d-6324-4d53-ad4f-8cda48b30811")
         );
-        assert_eq!(server_config.vmess_security(), Some("auto"));
+        assert_eq!(server_config.vmess_security(), Some(VMessSecurity::Auto));
         assert_eq!(server_config.sni(), Some("custom.example.com"));
     }
 
@@ -1304,7 +1367,7 @@ sni: custom.example.com
             server_config.username(),
             Some("b831381d-6324-4d53-ad4f-8cda48b30811")
         );
-        assert_eq!(server_config.vmess_security(), Some("auto"));
+        assert_eq!(server_config.vmess_security(), Some(VMessSecurity::Auto));
         assert_eq!(server_config.sni(), Some("sni.example.com"));
         Ok(())
     }
@@ -1400,7 +1463,7 @@ network: tcp
             &Address::from_str("b.example.com:11111").unwrap()
         );
         assert_eq!(server_config.username(), Some("a-b-c-d-e"));
-        assert_eq!(server_config.flow(), Some("xtls-rprx-vision"));
+        assert_eq!(server_config.flow(), Some(VlessFlow::XtlsRprxVision));
         assert!(server_config.insecure());
         assert_eq!(server_config.sni(), Some("example.dev"));
     }

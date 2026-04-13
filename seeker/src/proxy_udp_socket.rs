@@ -105,7 +105,7 @@ impl ProxyUdpSocket {
                             )
                         })?;
                     let udp =
-                        VlessUdpSocket::new(server, &sni, uuid, config.flow(), config.insecure())
+                        VlessUdpSocket::new(server, &sni, uuid, config.flow().map(|f| f.as_str()), config.insecure())
                             .await?;
                     ProxyUdpSocketInner::Vless(Arc::new(udp))
                 }
