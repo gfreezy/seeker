@@ -104,9 +104,14 @@ impl ProxyUdpSocket {
                                 "sni or domain must be set for vless protocol.",
                             )
                         })?;
-                    let udp =
-                        VlessUdpSocket::new(server, &sni, uuid, config.flow().map(|f| f.as_str()), config.insecure())
-                            .await?;
+                    let udp = VlessUdpSocket::new(
+                        server,
+                        &sni,
+                        uuid,
+                        config.flow().map(|f| f.as_str()),
+                        config.insecure(),
+                    )
+                    .await?;
                     ProxyUdpSocketInner::Vless(Arc::new(udp))
                 }
                 protocol => {

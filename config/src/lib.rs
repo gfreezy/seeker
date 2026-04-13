@@ -1,6 +1,8 @@
 pub mod rule;
 mod server_config;
-pub use server_config::{DnsServerAddr, Obfs, ServerConfig, ServerProtocol, VMessSecurity, VlessFlow};
+pub use server_config::{
+    DnsServerAddr, Obfs, ServerConfig, ServerProtocol, VMessSecurity, VlessFlow,
+};
 pub use socks5_client::Address;
 pub use tcp_connection::ObfsMode;
 

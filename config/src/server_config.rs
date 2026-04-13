@@ -776,8 +776,8 @@ impl ServerConfig {
                 "sni" => sni = Some(value.to_string()),
                 "allowInsecure" => insecure = Some(value == "1" || value == "true"),
                 "flow" => {
-                    flow = serde_json::from_value(serde_json::Value::String(value.to_string()))
-                        .ok();
+                    flow =
+                        serde_json::from_value(serde_json::Value::String(value.to_string())).ok();
                 }
                 _ => {}
             }
@@ -1321,7 +1321,10 @@ vmess_security: aes-128-gcm
             server_config.username(),
             Some("b831381d-6324-4d53-ad4f-8cda48b30811")
         );
-        assert_eq!(server_config.vmess_security(), Some(VMessSecurity::Aes128Gcm));
+        assert_eq!(
+            server_config.vmess_security(),
+            Some(VMessSecurity::Aes128Gcm)
+        );
     }
 
     #[test]
