@@ -256,8 +256,8 @@ curl http://127.0.0.1:7890/api/stats
         "score": 85.2,
         "latency": 120.5,
         "success_rate": 0.95,
-        "success": 100,
-        "failure": 5
+        "success": 285,
+        "failure": 15
       }
     ]
   }

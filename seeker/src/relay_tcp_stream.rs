@@ -63,7 +63,12 @@ pub(crate) async fn relay_tcp_stream(
         if let Some(performance_tracker) = performance_tracker
             && let Some(server_config) = candidate_tcp_stream.server_config
         {
-            performance_tracker.add_result(&server_config, None, false, vec![]);
+            performance_tracker.add_result(
+                &server_config,
+                crate::server_performance::FAILURE_LATENCY,
+                0.0,
+                vec![],
+            );
         }
     } else {
         tracing::info!("tunnel tcp stream: recycle port, host: {host}");

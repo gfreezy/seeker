@@ -30,7 +30,7 @@ pub struct ServerPerformanceStats {
 struct PingRecord {
     timestamp: Instant,
     latency: Duration,
-    success: bool,
+    success_ratio: f64,
 }
 
 #[derive(Clone)]
@@ -68,24 +68,23 @@ impl ServerPerformance {
 
     pub fn add_result(
         &mut self,
-        latency: Option<Duration>,
-        success: bool,
+        latency: Duration,
+        success_ratio: f64,
         ping_results: Vec<PingUrlResult>,
     ) {
+        let url_successes = ping_results.iter().filter(|r| r.success).count() as u32;
+        let url_failures = ping_results.len() as u32 - url_successes;
+        self.success_count += url_successes;
+        self.failure_count += url_failures;
         self.last_ping_results = ping_results;
         let now = Instant::now();
 
         self.history.push(PingRecord {
             timestamp: now,
-            latency: latency.unwrap_or(Duration::ZERO),
-            success,
+            latency,
+            success_ratio,
         });
 
-        if success {
-            self.success_count += 1;
-        } else {
-            self.failure_count += 1;
-        }
         self.last_update = now;
 
         if self.history.len() > self.max_history_size {
@@ -106,10 +105,8 @@ impl ServerPerformance {
             let age = now.duration_since(record.timestamp);
             let weight = 2.0_f64.powf(-age.as_secs_f64() / self.half_life.as_secs_f64());
             total_weight += weight;
-            if record.success {
-                success_weight += weight;
-                latency_sum += record.latency.as_secs_f64() * 1000.0 * weight;
-            }
+            success_weight += weight * record.success_ratio;
+            latency_sum += record.latency.as_secs_f64() * 1000.0 * weight;
         }
 
         if total_weight == 0.0 || success_weight == 0.0 {
@@ -117,7 +114,7 @@ impl ServerPerformance {
         }
 
         let success_rate = success_weight / total_weight;
-        let avg_latency = latency_sum / success_weight;
+        let avg_latency = latency_sum / total_weight;
 
         avg_latency / success_rate
     }
@@ -132,14 +129,12 @@ impl ServerPerformance {
             let age = now.duration_since(record.timestamp);
             let weight = 2.0_f64.powf(-age.as_secs_f64() / self.half_life.as_secs_f64());
             total_weight += weight;
-            if record.success {
-                success_weight += weight;
-                latency_sum += record.latency.as_secs_f64() * 1000.0 * weight;
-            }
+            success_weight += weight * record.success_ratio;
+            latency_sum += record.latency.as_secs_f64() * 1000.0 * weight;
         }
 
-        let avg_latency = if success_weight > 0.0 {
-            latency_sum / success_weight
+        let avg_latency = if total_weight > 0.0 {
+            latency_sum / total_weight
         } else {
             DEFAULT_LATENCY
         };
@@ -180,8 +175,8 @@ impl ServerPerformanceTracker {
     pub fn add_result(
         &self,
         server: &ServerConfig,
-        latency: Option<Duration>,
-        success: bool,
+        latency: Duration,
+        success_ratio: f64,
         ping_results: Vec<PingUrlResult>,
     ) {
         let mut history = self.performance_history.lock();
@@ -193,7 +188,7 @@ impl ServerPerformanceTracker {
                 self.half_life,
             )
         });
-        performance.add_result(latency, success, ping_results);
+        performance.add_result(latency, success_ratio, ping_results);
     }
 
     pub fn get_server_score(&self, server: &ServerConfig, now: Instant) -> f64 {

@@ -369,15 +369,15 @@ impl GroupServersChooser {
                 let self_clone = self.clone();
                 let config_clone = config.clone();
                 task::spawn(async move {
-                    let (result, ping_results) = self_clone.ping_server(config_clone.clone()).await;
-                    let is_success = result.is_ok();
+                    let (latency, success_ratio, ping_results) =
+                        self_clone.ping_server(config_clone.clone()).await;
                     self_clone.performance_tracker.add_result(
                         &config_clone,
-                        result.ok(),
-                        is_success,
+                        latency,
+                        success_ratio,
                         ping_results,
                     );
-                    is_success
+                    success_ratio > 0.0
                 })
             })
             .collect();
@@ -399,7 +399,7 @@ impl GroupServersChooser {
     async fn ping_server(
         &self,
         server_config: ServerConfig,
-    ) -> (std::io::Result<Duration>, Vec<PingUrlResult>) {
+    ) -> (Duration, f64, Vec<PingUrlResult>) {
         // Ping all URLs concurrently
         let futs: Vec<_> = self.ping_urls.iter().map(|ping_url| {
             let server_config = server_config.clone();
@@ -460,31 +460,22 @@ impl GroupServersChooser {
 
         let success_count = ping_results.iter().filter(|r| r.success).count();
         let failure_latency_ms = FAILURE_LATENCY.as_secs_f64() * 1000.0;
+        let success_ratio = success_count as f64 / ping_results.len() as f64;
 
-        let result = if success_count > 0 {
-            // Average latency across all URLs: successful ones use real latency,
-            // failed ones use FAILURE_LATENCY as penalty.
-            let total_latency_ms: f64 = ping_results
-                .iter()
-                .map(|r| {
-                    if r.success {
-                        r.latency_ms.unwrap_or(failure_latency_ms)
-                    } else {
-                        failure_latency_ms
-                    }
-                })
-                .sum();
-            let avg_ms = total_latency_ms / ping_results.len() as f64;
-            Ok(Duration::from_secs_f64(avg_ms / 1000.0))
-        } else {
-            let first_err = ping_results
-                .iter()
-                .find(|r| !r.success)
-                .and_then(|r| r.error.clone())
-                .unwrap_or_else(|| "ping failed".to_string());
-            Err(std::io::Error::other(first_err))
-        };
-        (result, ping_results)
+        let total_latency_ms: f64 = ping_results
+            .iter()
+            .map(|r| {
+                if r.success {
+                    r.latency_ms.unwrap_or(failure_latency_ms)
+                } else {
+                    failure_latency_ms
+                }
+            })
+            .sum();
+        let avg_ms = total_latency_ms / ping_results.len() as f64;
+        let latency = Duration::from_secs_f64(avg_ms / 1000.0);
+
+        (latency, success_ratio, ping_results)
     }
 
     pub fn get_performance_tracker(&self) -> ServerPerformanceTracker {
