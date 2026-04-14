@@ -146,7 +146,6 @@ impl Store {
         // connection data is cleared whenever the process starts.
         conn.execute_batch(&format!(
             r#"
-            DROP TABLE IF EXISTS {table};
             CREATE TABLE IF NOT EXISTS {table} (
                 id INTEGER PRIMARY KEY,
                 host TEXT NOT NULL,
@@ -159,6 +158,7 @@ impl Store {
                 last_update INTEGER NOT NULL,
                 is_alive INTEGER NOT NULL
             );
+            DELETE FROM {table};
             "#,
             table = Self::TABLE_CONNECTIONS,
         ))?;
