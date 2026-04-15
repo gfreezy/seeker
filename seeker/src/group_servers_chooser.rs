@@ -18,7 +18,6 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::task;
 use tokio::time::sleep;
 use tokio::time::timeout;
-use tokio_native_tls::TlsConnector;
 use tracing::info;
 
 // 切换阈值：新服务器分数需比当前低 10% 以上才切换
@@ -553,9 +552,12 @@ async fn ping_server(
     );
 
     let resp_buf = if ping_url.port() == 443 {
-        let cx = native_tls::TlsConnector::builder().build().unwrap();
-        let connector = TlsConnector::from(cx);
-        let mut conn = timeout(connect_timeout, connector.connect(ping_url.host(), stream))
+        let connector = tcp_connection::tls::get_tls_connector(false);
+        let sn = rustls::pki_types::ServerName::try_from(ping_url.host().to_string())
+            .map_err(|e| std::io::Error::other(format!(
+                "server={server_name}({server_addr}), url={url_str}, stage=tls_handshake, error: invalid SNI: {e}"
+            )))?;
+        let mut conn = timeout(connect_timeout, connector.connect(sn, stream))
             .await
             .map_err(|_| std::io::Error::other(format!(
                 "server={server_name}({server_addr}), url={url_str}, stage=tls_handshake, error: timeout after {connect_timeout:?}"
@@ -711,7 +713,7 @@ mod tests {
 
         let dns_client = DnsClient::new(
             &[config::DnsServerAddr::UdpSocketAddr(
-                "8.8.8.8:53".parse().unwrap(),
+                "114.114.114.114:53".parse().unwrap(),
             )],
             Duration::from_secs(5),
         )
@@ -719,7 +721,7 @@ mod tests {
 
         let result = ping_server(
             server_config,
-            &PingURL::new("httpbin.org".to_string(), 80, "/ip".to_string()),
+            &PingURL::new("www.baidu.com".to_string(), 80, "/".to_string()),
             Duration::from_secs(10),
             Duration::from_secs(10),
             Duration::from_secs(10),

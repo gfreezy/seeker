@@ -331,7 +331,7 @@ fn download_geoip_database(url: &str, path: &Path) -> bool {
 
     // Write the response body to the file.
     let mut writer = BufWriter::new(&mut file);
-    if copy(&mut response.into_reader(), &mut writer).is_err() {
+    if copy(&mut response.into_body().into_reader(), &mut writer).is_err() {
         tracing::error!("failed to write to geoip.mmdb file: {:?}", url);
         return false;
     }

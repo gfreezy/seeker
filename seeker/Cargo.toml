@@ -25,8 +25,7 @@ sysconfig = { path = "../sysconfig" }
 tun_nat = { path = "../tun_nat" }
 file-rotate = { workspace = true }
 tokio = { workspace = true }
-tokio-native-tls = "0.3"
-native-tls = "0.2"
+rustls = { workspace = true }
 parking_lot = { workspace = true, features = ["deadlock_detection"] }
 ctrlc = { workspace = true, features = ["termination"] }
 libc = { workspace = true }

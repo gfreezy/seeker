@@ -3,15 +3,16 @@ use crate::protocol::{
 };
 use bytes::BytesMut;
 use config::Address;
+use rustls::pki_types::ServerName;
 use std::io::{Error, ErrorKind, Result};
 use std::net::SocketAddr;
 use std::sync::Arc;
+use tcp_connection::tls::get_tls_connector;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::Mutex;
-use tokio_native_tls::native_tls;
-use tokio_native_tls::TlsConnector;
-use tokio_native_tls::TlsStream;
+use tokio_rustls::client::TlsStream;
+use tokio_rustls::TlsConnector;
 
 pub struct TrojanUdpSocket {
     conn: Arc<Mutex<TlsStream<TcpStream>>>,
@@ -24,11 +25,7 @@ impl TrojanUdpSocket {
         password: &str,
         insecure: bool,
     ) -> Result<Self> {
-        let mut builder = native_tls::TlsConnector::builder();
-        if insecure {
-            builder.danger_accept_invalid_certs(true);
-        }
-        let connector = TlsConnector::from(builder.build().map_err(Error::other)?);
+        let connector = get_tls_connector(insecure);
         Self::new_with_connector(server, sni, password, connector).await
     }
 
@@ -39,8 +36,10 @@ impl TrojanUdpSocket {
         connector: TlsConnector,
     ) -> Result<Self> {
         let tcp_stream = TcpStream::connect(server).await?;
+        let server_name = ServerName::try_from(sni.to_string())
+            .map_err(|e| Error::new(ErrorKind::InvalidInput, format!("invalid SNI: {e}")))?;
         let mut tls_stream = connector
-            .connect(sni, tcp_stream)
+            .connect(server_name, tcp_stream)
             .await
             .map_err(Error::other)?;
 

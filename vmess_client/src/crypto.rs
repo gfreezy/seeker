@@ -1,5 +1,13 @@
-use openssl::symm;
+use aes_gcm::{
+    aead::{AeadInPlace, KeyInit},
+    Aes128Gcm,
+};
+use chacha20poly1305::ChaCha20Poly1305;
+use cipher::KeyIvInit;
 use std::io::{Error, ErrorKind, Result};
+
+type Aes128CfbEnc = cfb_mode::BufEncryptor<aes::Aes128>;
+type Aes128CfbDec = cfb_mode::BufDecryptor<aes::Aes128>;
 
 /// VMess data encryption methods.
 /// Values match V2Ray's SecurityType protobuf enum.
@@ -39,56 +47,67 @@ impl VMessEncryptMethod {
 }
 
 /// Streaming AES-128-CFB cipher (maintains state across calls).
-pub struct CfbCipher {
-    crypter: symm::Crypter,
+pub enum CfbCipher {
+    Encrypt(Aes128CfbEnc),
+    Decrypt(Aes128CfbDec),
 }
 
 impl CfbCipher {
     pub fn new_encrypt(key: &[u8; 16], iv: &[u8; 16]) -> Result<Self> {
-        let crypter = symm::Crypter::new(
-            symm::Cipher::aes_128_cfb128(),
-            symm::Mode::Encrypt,
-            key,
-            Some(iv),
-        )
-        .map_err(|e| Error::other(format!("CFB encrypt init: {e}")))?;
-        Ok(Self { crypter })
+        let c = Aes128CfbEnc::new_from_slices(key, iv)
+            .map_err(|e| Error::other(format!("CFB encrypt init: {e}")))?;
+        Ok(Self::Encrypt(c))
     }
 
     pub fn new_decrypt(key: &[u8; 16], iv: &[u8; 16]) -> Result<Self> {
-        let crypter = symm::Crypter::new(
-            symm::Cipher::aes_128_cfb128(),
-            symm::Mode::Decrypt,
-            key,
-            Some(iv),
-        )
-        .map_err(|e| Error::other(format!("CFB decrypt init: {e}")))?;
-        Ok(Self { crypter })
+        let c = Aes128CfbDec::new_from_slices(key, iv)
+            .map_err(|e| Error::other(format!("CFB decrypt init: {e}")))?;
+        Ok(Self::Decrypt(c))
     }
 
-    /// Encrypt/decrypt data in-place (streaming, state preserved across calls).
+    /// Encrypt/decrypt data (streaming, state preserved across calls).
     pub fn update(&mut self, input: &[u8], output: &mut [u8]) -> Result<usize> {
-        self.crypter
-            .update(input, output)
-            .map_err(|e| Error::other(format!("CFB update: {e}")))
+        if output.len() < input.len() {
+            return Err(Error::new(
+                ErrorKind::InvalidInput,
+                "output buffer too small",
+            ));
+        }
+        output[..input.len()].copy_from_slice(input);
+        match self {
+            CfbCipher::Encrypt(c) => c.encrypt(&mut output[..input.len()]),
+            CfbCipher::Decrypt(c) => c.decrypt(&mut output[..input.len()]),
+        }
+        Ok(input.len())
     }
 }
 
 /// AEAD cipher (AES-128-GCM or ChaCha20-Poly1305) for per-chunk encryption.
-pub struct AeadCipher {
-    cipher: symm::Cipher,
-    key: [u8; 16],
-    base_nonce: [u8; 12],
-    count: u16,
+///
+/// The GCM variant is boxed because `Aes128Gcm` carries ~750 bytes of precomputed
+/// tables — roughly 15× the size of the ChaCha state. Without the box, this enum
+/// would trip `clippy::large_enum_variant` and every `VMessDataCipher` would pay
+/// that footprint even when the connection uses ChaCha.
+pub enum AeadCipher {
+    Gcm {
+        cipher: Box<Aes128Gcm>,
+        base_nonce: [u8; 12],
+        count: u16,
+    },
+    ChaCha {
+        cipher: ChaCha20Poly1305,
+        base_nonce: [u8; 12],
+        count: u16,
+    },
 }
 
 impl AeadCipher {
     pub fn new_gcm(key: &[u8; 16], iv: &[u8; 16]) -> Self {
         let mut base_nonce = [0u8; 12];
         base_nonce.copy_from_slice(&iv[..12]);
-        Self {
-            cipher: symm::Cipher::aes_128_gcm(),
-            key: *key,
+        let cipher = Box::new(Aes128Gcm::new(key.into()));
+        Self::Gcm {
+            cipher,
             base_nonce,
             count: 0,
         }
@@ -97,52 +116,50 @@ impl AeadCipher {
     pub fn new_chacha20(key: &[u8; 16], iv: &[u8; 16]) -> Self {
         // ChaCha20-Poly1305 needs 32-byte key, but VMess uses 16-byte key.
         // V2Ray extends the 16-byte key by repeating it: key16 ++ key16 -> key32.
-        // However, openssl's chacha20_poly1305 expects 32-byte key.
-        // We'll handle this in seal/open by using the proper key size.
+        let mut key32 = [0u8; 32];
+        key32[..16].copy_from_slice(key);
+        key32[16..].copy_from_slice(key);
         let mut base_nonce = [0u8; 12];
         base_nonce.copy_from_slice(&iv[..12]);
-        Self {
-            cipher: symm::Cipher::chacha20_poly1305(),
-            key: *key,
+        let cipher = ChaCha20Poly1305::new((&key32).into());
+        Self::ChaCha {
+            cipher,
             base_nonce,
             count: 0,
         }
     }
 
     fn next_nonce(&mut self) -> [u8; 12] {
-        let mut nonce = self.base_nonce;
-        let count_bytes = self.count.to_be_bytes();
+        let (base_nonce, count) = match self {
+            AeadCipher::Gcm {
+                base_nonce, count, ..
+            } => (base_nonce, count),
+            AeadCipher::ChaCha {
+                base_nonce, count, ..
+            } => (base_nonce, count),
+        };
+        let mut nonce = *base_nonce;
+        let count_bytes = count.to_be_bytes();
         nonce[0] = count_bytes[0];
         nonce[1] = count_bytes[1];
-        self.count = self.count.wrapping_add(1);
+        *count = count.wrapping_add(1);
         nonce
-    }
-
-    fn effective_key(&self) -> Vec<u8> {
-        if self.cipher == symm::Cipher::chacha20_poly1305() {
-            // ChaCha20-Poly1305 needs 32-byte key; VMess doubles the 16-byte key
-            let mut key32 = vec![0u8; 32];
-            key32[..16].copy_from_slice(&self.key);
-            key32[16..].copy_from_slice(&self.key);
-            key32
-        } else {
-            self.key.to_vec()
-        }
     }
 
     /// Seal plaintext with AEAD, returning ciphertext + 16-byte tag appended.
     pub fn seal(&mut self, plaintext: &[u8]) -> Result<Vec<u8>> {
         let nonce = self.next_nonce();
-        let key = self.effective_key();
-        let mut tag = [0u8; 16];
-
-        let ciphertext =
-            symm::encrypt_aead(self.cipher, &key, Some(&nonce), &[], plaintext, &mut tag)
-                .map_err(|e| Error::other(format!("AEAD seal: {e}")))?;
-
-        let mut result = ciphertext;
-        result.extend_from_slice(&tag);
-        Ok(result)
+        let mut buf = plaintext.to_vec();
+        let tag = match self {
+            AeadCipher::Gcm { cipher, .. } => cipher
+                .encrypt_in_place_detached((&nonce).into(), &[], &mut buf)
+                .map_err(|e| Error::other(format!("AEAD seal: {e}")))?,
+            AeadCipher::ChaCha { cipher, .. } => cipher
+                .encrypt_in_place_detached((&nonce).into(), &[], &mut buf)
+                .map_err(|e| Error::other(format!("AEAD seal: {e}")))?,
+        };
+        buf.extend_from_slice(&tag);
+        Ok(buf)
     }
 
     /// Open ciphertext (with 16-byte tag appended), returning plaintext.
@@ -152,28 +169,43 @@ impl AeadCipher {
         }
 
         let nonce = self.next_nonce();
-        let key = self.effective_key();
         let (ciphertext, tag) = ciphertext_with_tag.split_at(ciphertext_with_tag.len() - 16);
-
-        symm::decrypt_aead(self.cipher, &key, Some(&nonce), &[], ciphertext, tag)
-            .map_err(|e| Error::new(ErrorKind::InvalidData, format!("AEAD open: {e}")))
+        let mut buf = ciphertext.to_vec();
+        match self {
+            AeadCipher::Gcm { cipher, .. } => cipher
+                .decrypt_in_place_detached((&nonce).into(), &[], &mut buf, tag.into())
+                .map_err(|e| Error::new(ErrorKind::InvalidData, format!("AEAD open: {e}")))?,
+            AeadCipher::ChaCha { cipher, .. } => cipher
+                .decrypt_in_place_detached((&nonce).into(), &[], &mut buf, tag.into())
+                .map_err(|e| Error::new(ErrorKind::InvalidData, format!("AEAD open: {e}")))?,
+        }
+        Ok(buf)
     }
 }
 
 /// Unified data cipher for VMess data stream.
+///
+/// Inner variants are boxed: `CfbCipher` holds ~700 bytes of AES round keys
+/// and `AeadCipher::Gcm` holds ~750 bytes of GCM tables. Without indirection
+/// every `VMessDataCipher` would be ~736 bytes regardless of which cipher is
+/// actually selected.
 pub enum VMessDataCipher {
-    Cfb(CfbCipher),
-    Aead(AeadCipher),
+    Cfb(Box<CfbCipher>),
+    Aead(Box<AeadCipher>),
     None,
 }
 
 impl VMessDataCipher {
     pub fn new_encrypt(method: VMessEncryptMethod, key: &[u8; 16], iv: &[u8; 16]) -> Result<Self> {
         match method {
-            VMessEncryptMethod::Aes128Cfb => Ok(Self::Cfb(CfbCipher::new_encrypt(key, iv)?)),
-            VMessEncryptMethod::Aes128Gcm => Ok(Self::Aead(AeadCipher::new_gcm(key, iv))),
+            VMessEncryptMethod::Aes128Cfb => {
+                Ok(Self::Cfb(Box::new(CfbCipher::new_encrypt(key, iv)?)))
+            }
+            VMessEncryptMethod::Aes128Gcm => {
+                Ok(Self::Aead(Box::new(AeadCipher::new_gcm(key, iv))))
+            }
             VMessEncryptMethod::ChaCha20Poly1305 => {
-                Ok(Self::Aead(AeadCipher::new_chacha20(key, iv)))
+                Ok(Self::Aead(Box::new(AeadCipher::new_chacha20(key, iv))))
             }
             VMessEncryptMethod::None => Ok(Self::None),
         }
@@ -181,10 +213,14 @@ impl VMessDataCipher {
 
     pub fn new_decrypt(method: VMessEncryptMethod, key: &[u8; 16], iv: &[u8; 16]) -> Result<Self> {
         match method {
-            VMessEncryptMethod::Aes128Cfb => Ok(Self::Cfb(CfbCipher::new_decrypt(key, iv)?)),
-            VMessEncryptMethod::Aes128Gcm => Ok(Self::Aead(AeadCipher::new_gcm(key, iv))),
+            VMessEncryptMethod::Aes128Cfb => {
+                Ok(Self::Cfb(Box::new(CfbCipher::new_decrypt(key, iv)?)))
+            }
+            VMessEncryptMethod::Aes128Gcm => {
+                Ok(Self::Aead(Box::new(AeadCipher::new_gcm(key, iv))))
+            }
             VMessEncryptMethod::ChaCha20Poly1305 => {
-                Ok(Self::Aead(AeadCipher::new_chacha20(key, iv)))
+                Ok(Self::Aead(Box::new(AeadCipher::new_chacha20(key, iv))))
             }
             VMessEncryptMethod::None => Ok(Self::None),
         }

@@ -1,5 +1,6 @@
 mod obfs_http;
 mod obfs_tls;
+pub mod tls;
 
 use tokio::{
     io::{AsyncRead, AsyncWrite},

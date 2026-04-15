@@ -1,5 +1,5 @@
 use crate::protocol::{encode_vless_request, CMD_UDP, VLESS_VERSION};
-use crate::tls::get_tls_connector;
+use tcp_connection::tls::get_tls_connector;
 use bytes::{BufMut, BytesMut};
 use config::Address;
 use rustls::pki_types::ServerName;

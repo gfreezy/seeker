@@ -3,7 +3,7 @@ use std::{error, fmt};
 use std::{fmt::Debug, net::SocketAddr};
 
 use crate::Address;
-use base64::decode_engine;
+use base64::Engine;
 use bytes::Bytes;
 use crypto::CipherType;
 use serde::Deserialize;
@@ -496,7 +496,7 @@ impl ServerConfig {
                 None => return Err(UrlParseError::MissingHost),
             };
 
-            let mut decoded_body = match decode_engine(encoded, &crate::URL_SAFE_ENGINE) {
+            let mut decoded_body = match crate::URL_SAFE_ENGINE.decode(encoded) {
                 Ok(b) => match String::from_utf8(b) {
                     Ok(b) => b,
                     Err(..) => return Err(UrlParseError::InvalidServerAddr),
@@ -547,7 +547,7 @@ impl ServerConfig {
                 (m, p)
             }
             None => {
-                let account = match decode_engine(user_info, &crate::URL_SAFE_ENGINE) {
+                let account = match crate::URL_SAFE_ENGINE.decode(user_info) {
                     Ok(account) => match String::from_utf8(account) {
                         Ok(ac) => ac,
                         Err(..) => return Err(UrlParseError::InvalidAuthInfo),
@@ -692,12 +692,14 @@ impl ServerConfig {
             None => return Err(UrlParseError::MissingHost),
         };
 
-        let decoded = decode_engine(encoded, &crate::URL_SAFE_ENGINE)
+        let decoded = crate::URL_SAFE_ENGINE
+            .decode(encoded)
             .or_else(|_| {
                 // Try standard base64 (with padding) as well
-                use base64::engine::fast_portable::{FastPortable, NO_PAD};
-                let standard = FastPortable::from(&base64::alphabet::STANDARD, NO_PAD);
-                decode_engine(encoded, &standard)
+                use base64::engine::general_purpose::{GeneralPurpose, GeneralPurposeConfig};
+                let standard =
+                    GeneralPurpose::new(&base64::alphabet::STANDARD, GeneralPurposeConfig::new());
+                standard.decode(encoded)
             })
             .map_err(|_| UrlParseError::InvalidServerAddr)?;
 
@@ -1357,7 +1359,7 @@ sni: custom.example.com
     fn test_parse_vmess_url() -> Result<(), UrlParseError> {
         // vmess://base64(json)
         let json = r#"{"v":"2","ps":"Tokyo-01","add":"server.example.com","port":"443","id":"b831381d-6324-4d53-ad4f-8cda48b30811","aid":"0","scy":"auto","net":"tcp","type":"none","host":"","path":"","tls":"tls","sni":"sni.example.com"}"#;
-        let encoded = base64::encode_engine(json.as_bytes(), &crate::URL_SAFE_ENGINE);
+        let encoded = crate::URL_SAFE_ENGINE.encode(json.as_bytes());
         let url = format!("vmess://{encoded}");
         let server_config = ServerConfig::from_str(&url)?;
         assert_eq!(server_config.name(), "Tokyo-01");

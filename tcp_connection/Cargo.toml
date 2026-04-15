@@ -14,4 +14,7 @@ nanorand = { workspace = true }
 memchr = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 base64 = { workspace = true }
+tokio-rustls = { workspace = true }
+rustls = { workspace = true }
+webpki-roots = { workspace = true }
 testcontainers = { workspace = true, optional = true }

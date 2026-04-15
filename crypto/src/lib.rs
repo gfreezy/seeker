@@ -8,15 +8,13 @@ pub use self::{
     cipher::{CipherCategory, CipherResult, CipherType},
     stream::{new_stream, BoxStreamCipher, StreamCipher},
 };
-#[cfg(feature = "openssl")]
-use ::openssl::symm;
 
 pub mod aead;
 pub mod cipher;
 pub mod digest;
 pub mod dummy;
-#[cfg(feature = "openssl")]
-pub mod openssl;
+#[cfg(any(feature = "aes-cfb", feature = "aes-ctr", feature = "camellia-cfb"))]
+pub mod symmetric;
 #[cfg(feature = "use-ring")]
 pub mod ring;
 #[cfg(feature = "miscreant")]
@@ -31,14 +29,4 @@ pub mod table;
 pub enum CryptoMode {
     Encrypt,
     Decrypt,
-}
-
-#[cfg(feature = "openssl")]
-impl std::convert::From<CryptoMode> for symm::Mode {
-    fn from(m: CryptoMode) -> symm::Mode {
-        match m {
-            CryptoMode::Encrypt => symm::Mode::Encrypt,
-            CryptoMode::Decrypt => symm::Mode::Decrypt,
-        }
-    }
 }

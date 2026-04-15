@@ -4,11 +4,48 @@ use config::Address;
 use digest::Digest;
 use hmac::{Hmac, Mac};
 use md5::Md5;
-use openssl::symm;
 use sha2::Sha256;
 use std::io::{Error, ErrorKind, Result};
 use std::net::SocketAddr;
 use uuid::Uuid;
+
+type Aes128CfbEnc = cfb_mode::BufEncryptor<aes::Aes128>;
+type Aes128CfbDec = cfb_mode::BufDecryptor<aes::Aes128>;
+
+fn aes_gcm_encrypt(key: &[u8], nonce: &[u8], aad: &[u8], plaintext: &[u8]) -> Result<Vec<u8>> {
+    use aes_gcm::aead::{Aead, KeyInit, Payload};
+    use aes_gcm::Aes128Gcm;
+    let cipher = Aes128Gcm::new_from_slice(key)
+        .map_err(|e| Error::new(ErrorKind::InvalidInput, format!("AES-GCM key: {e}")))?;
+    cipher
+        .encrypt(
+            nonce.into(),
+            Payload {
+                msg: plaintext,
+                aad,
+            },
+        )
+        .map_err(|e| Error::other(format!("AEAD encrypt: {e}")))
+}
+
+fn aes_gcm_decrypt(key: &[u8], nonce: &[u8], aad: &[u8], ct: &[u8], tag: &[u8]) -> Result<Vec<u8>> {
+    use aes_gcm::aead::{Aead, KeyInit, Payload};
+    use aes_gcm::Aes128Gcm;
+    let cipher = Aes128Gcm::new_from_slice(key)
+        .map_err(|e| Error::new(ErrorKind::InvalidInput, format!("AES-GCM key: {e}")))?;
+    let mut joined = Vec::with_capacity(ct.len() + tag.len());
+    joined.extend_from_slice(ct);
+    joined.extend_from_slice(tag);
+    cipher
+        .decrypt(
+            nonce.into(),
+            Payload {
+                msg: &joined,
+                aad,
+            },
+        )
+        .map_err(|e| Error::new(ErrorKind::InvalidData, format!("AEAD decrypt: {e}")))
+}
 
 use crate::crypto::VMessEncryptMethod;
 use crate::kdf;
@@ -181,14 +218,22 @@ pub fn build_command(
 
 /// Encrypt command header with AES-128-CFB.
 pub fn encrypt_command(key: &[u8; 16], iv: &[u8; 16], plaintext: &[u8]) -> Result<Vec<u8>> {
-    symm::encrypt(symm::Cipher::aes_128_cfb128(), key, Some(iv), plaintext)
-        .map_err(|e| Error::other(format!("AES-128-CFB encrypt failed: {e}")))
+    use cipher::KeyIvInit;
+    let mut c = Aes128CfbEnc::new_from_slices(key, iv)
+        .map_err(|e| Error::other(format!("AES-128-CFB init: {e}")))?;
+    let mut out = plaintext.to_vec();
+    c.encrypt(&mut out);
+    Ok(out)
 }
 
 /// Decrypt data with AES-128-CFB.
 pub fn decrypt_cfb(key: &[u8; 16], iv: &[u8; 16], ciphertext: &[u8]) -> Result<Vec<u8>> {
-    symm::decrypt(symm::Cipher::aes_128_cfb128(), key, Some(iv), ciphertext)
-        .map_err(|e| Error::other(format!("AES-128-CFB decrypt failed: {e}")))
+    use cipher::KeyIvInit;
+    let mut c = Aes128CfbDec::new_from_slices(key, iv)
+        .map_err(|e| Error::other(format!("AES-128-CFB init: {e}")))?;
+    let mut out = ciphertext.to_vec();
+    c.decrypt(&mut out);
+    Ok(out)
 }
 
 /// Derive response key = MD5(request_data_key).
@@ -259,6 +304,9 @@ pub fn crc32_ieee(data: &[u8]) -> u32 {
 }
 
 /// Create AEAD Auth ID (16 bytes): AES-128-ECB encrypt [timestamp(8) + random(4) + CRC32(4)].
+// RustCrypto's `GenericArray` (from `generic-array` 0.14) is deprecated, but our
+// `aes` 0.8 still uses it. Silence until the full stack upgrades to 1.x.
+#[allow(deprecated)]
 pub fn create_auth_id(cmd_key: &[u8; 16], timestamp: u64) -> Result<[u8; 16]> {
     let aes_key =
         &kdf::vmess_kdf_1_one_shot(cmd_key, kdf::KDF_SALT_CONST_AUTH_ID_ENCRYPTION_KEY)[..16];
@@ -270,22 +318,15 @@ pub fn create_auth_id(cmd_key: &[u8; 16], timestamp: u64) -> Result<[u8; 16]> {
     buf[12..16].copy_from_slice(&crc.to_be_bytes());
 
     // AES-128-ECB encrypt (single block, no padding)
-    let cipher = openssl::symm::Cipher::aes_128_ecb();
-    let mut crypter =
-        openssl::symm::Crypter::new(cipher, openssl::symm::Mode::Encrypt, aes_key, None)
-            .map_err(|e| Error::other(format!("AES ECB init: {e}")))?;
-    crypter.pad(false);
-    let mut out = [0u8; 32]; // extra space for openssl
-    let n = crypter
-        .update(&buf, &mut out)
-        .map_err(|e| Error::other(format!("AES ECB encrypt: {e}")))?;
-    let n2 = crypter
-        .finalize(&mut out[n..])
-        .map_err(|e| Error::other(format!("AES ECB finalize: {e}")))?;
-    assert_eq!(n + n2, 16);
+    use aes::cipher::generic_array::GenericArray;
+    use aes::cipher::{BlockEncrypt, KeyInit};
+    let key_arr = GenericArray::from_slice(aes_key);
+    let cipher = aes::Aes128::new(key_arr);
+    let mut block = GenericArray::clone_from_slice(&buf);
+    cipher.encrypt_block(&mut block);
 
     let mut auth_id = [0u8; 16];
-    auth_id.copy_from_slice(&out[..16]);
+    auth_id.copy_from_slice(&block);
     Ok(auth_id)
 }
 
@@ -318,16 +359,9 @@ pub fn seal_vmess_aead_header(cmd_key: &[u8; 16], command: &[u8]) -> Result<Vec<
     )[..12];
 
     let len_bytes = (command.len() as u16).to_be_bytes();
-    let mut len_tag = [0u8; 16];
-    let sealed_len = symm::encrypt_aead(
-        symm::Cipher::aes_128_gcm(),
-        len_key,
-        Some(len_iv),
-        &auth_id,
-        &len_bytes,
-        &mut len_tag,
-    )
-    .map_err(|e| Error::other(format!("AEAD seal length: {e}")))?;
+    // aes-gcm's encrypt() returns ciphertext || tag appended (total = plaintext.len() + 16).
+    let sealed_len_tagged = aes_gcm_encrypt(len_key, len_iv, &auth_id, &len_bytes)
+        .map_err(|e| Error::other(format!("AEAD seal length: {e}")))?;
 
     // Seal command payload: AEAD(command)
     let payload_key = &kdf::vmess_kdf_3_one_shot(
@@ -343,25 +377,15 @@ pub fn seal_vmess_aead_header(cmd_key: &[u8; 16], command: &[u8]) -> Result<Vec<
         &connection_nonce,
     )[..12];
 
-    let mut payload_tag = [0u8; 16];
-    let sealed_payload = symm::encrypt_aead(
-        symm::Cipher::aes_128_gcm(),
-        payload_key,
-        Some(payload_iv),
-        &auth_id,
-        command,
-        &mut payload_tag,
-    )
-    .map_err(|e| Error::other(format!("AEAD seal payload: {e}")))?;
+    let sealed_payload_tagged = aes_gcm_encrypt(payload_key, payload_iv, &auth_id, command)
+        .map_err(|e| Error::other(format!("AEAD seal payload: {e}")))?;
 
-    // Assemble: auth_id(16) + sealed_len(2) + len_tag(16) + nonce(8) + sealed_payload + payload_tag(16)
-    let mut out = Vec::with_capacity(16 + 2 + 16 + 8 + sealed_payload.len() + 16);
+    // Assemble: auth_id(16) + sealed_len+tag(18) + nonce(8) + sealed_payload+tag
+    let mut out = Vec::with_capacity(16 + 18 + 8 + sealed_payload_tagged.len());
     out.extend_from_slice(&auth_id);
-    out.extend_from_slice(&sealed_len);
-    out.extend_from_slice(&len_tag);
+    out.extend_from_slice(&sealed_len_tagged);
     out.extend_from_slice(&connection_nonce);
-    out.extend_from_slice(&sealed_payload);
-    out.extend_from_slice(&payload_tag);
+    out.extend_from_slice(&sealed_payload_tagged);
 
     Ok(out)
 }
@@ -403,15 +427,8 @@ pub fn decrypt_aead_response_header(
         &kdf::vmess_kdf_1_one_shot(resp_iv, kdf::KDF_SALT_CONST_AEAD_RESP_HEADER_LEN_IV)[..12];
 
     let (len_ct, len_tag) = data[..18].split_at(2);
-    let len_plain = symm::decrypt_aead(
-        symm::Cipher::aes_128_gcm(),
-        &len_key,
-        Some(len_iv),
-        &[],
-        len_ct,
-        len_tag,
-    )
-    .map_err(|e| Error::other(format!("AEAD resp header len decrypt: {e}")))?;
+    let len_plain = aes_gcm_decrypt(&len_key, len_iv, &[], len_ct, len_tag)
+        .map_err(|e| Error::other(format!("AEAD resp header len decrypt: {e}")))?;
 
     let header_len = u16::from_be_bytes([len_plain[0], len_plain[1]]) as usize;
 
@@ -430,15 +447,8 @@ pub fn decrypt_aead_response_header(
         &kdf::vmess_kdf_1_one_shot(resp_iv, kdf::KDF_SALT_CONST_AEAD_RESP_HEADER_PAYLOAD_IV)[..12];
 
     let (payload_ct, payload_tag) = data[payload_start..payload_end].split_at(header_len);
-    let payload = symm::decrypt_aead(
-        symm::Cipher::aes_128_gcm(),
-        &payload_key,
-        Some(payload_iv),
-        &[],
-        payload_ct,
-        payload_tag,
-    )
-    .map_err(|e| Error::other(format!("AEAD resp header payload decrypt: {e}")))?;
+    let payload = aes_gcm_decrypt(&payload_key, payload_iv, &[], payload_ct, payload_tag)
+        .map_err(|e| Error::other(format!("AEAD resp header payload decrypt: {e}")))?;
 
     Ok(payload)
 }

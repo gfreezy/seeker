@@ -54,9 +54,24 @@ async fn start_socks5_server_async(port: u16) -> TestContainer {
     let container = tokio::task::spawn_blocking(move || start_socks5_server(port))
         .await
         .expect("failed to spawn blocking task for container start");
-    // Brief delay to ensure the proxy is fully accepting connections
-    tokio::time::sleep(Duration::from_millis(500)).await;
+    wait_port_listening(port, Duration::from_secs(30)).await;
     TestContainer::new(container)
+}
+
+/// Poll `127.0.0.1:port` until a TCP connection succeeds, or the deadline passes.
+/// The container's `WaitFor` signal sometimes fires before the service has actually
+/// started listening, causing flaky "Connection refused" in subsequent connects.
+async fn wait_port_listening(port: u16, timeout: Duration) {
+    let deadline = tokio::time::Instant::now() + timeout;
+    while tokio::time::Instant::now() < deadline {
+        if tokio::net::TcpStream::connect(format!("127.0.0.1:{port}"))
+            .await
+            .is_ok()
+        {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
 }
 
 #[tokio::test]
@@ -65,13 +80,13 @@ async fn test_socks5_tcp_proxy() {
     let container = start_socks5_server_async(port).await;
 
     let proxy_addr: SocketAddr = format!("127.0.0.1:{port}").parse().unwrap();
-    let target = Address::DomainNameAddress("httpbin.org".to_string(), 80);
+    let target = Address::DomainNameAddress("www.baidu.com".to_string(), 80);
 
     let mut stream = Socks5TcpStream::connect(proxy_addr, target)
         .await
         .expect("SOCKS5 connect failed");
 
-    let request = "GET /ip HTTP/1.1\r\nHost: httpbin.org\r\nConnection: close\r\n\r\n";
+    let request = "GET / HTTP/1.1\r\nHost: www.baidu.com\r\nConnection: close\r\n\r\n";
     stream
         .write_all(request.as_bytes())
         .await
@@ -109,9 +124,9 @@ async fn test_socks5_udp_dns() {
         }
     };
 
-    // Build a simple DNS query for google.com A record
-    let dns_query = build_dns_query("google.com", 1);
-    let dns_server: SocketAddr = "8.8.8.8:53".parse().unwrap();
+    // Build a simple DNS query for baidu.com A record
+    let dns_query = build_dns_query("baidu.com", 1);
+    let dns_server: SocketAddr = "114.114.114.114:53".parse().unwrap();
 
     udp.send_to(&dns_query, dns_server)
         .await

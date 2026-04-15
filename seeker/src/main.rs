@@ -213,16 +213,23 @@ fn load_config(
     let mut c = match (path, url, decrypt_key) {
         (Some(p), ..) => Config::from_config_file(p).context("Load config from path error")?,
         (_, Some(url), Some(key)) => {
-            let ret = ureq::get(url).timeout(Duration::from_secs(5)).call();
+            let agent: ureq::Agent = ureq::Agent::config_builder()
+                .timeout_global(Some(Duration::from_secs(5)))
+                .build()
+                .into();
+            let ret = agent.get(url).call();
             let resp = match ret {
                 Err(e) => {
                     return Err(anyhow::anyhow!("Load config from remote host error: {}", e));
                 }
                 Ok(resp) => resp,
             };
-            let config =
-                config_encryptor::decrypt_config(resp.into_reader(), CipherType::ChaCha20Ietf, key)
-                    .context("Decrypt remote config error")?;
+            let config = config_encryptor::decrypt_config(
+                resp.into_body().into_reader(),
+                CipherType::ChaCha20Ietf,
+                key,
+            )
+            .context("Decrypt remote config error")?;
             Config::from_reader(config.as_slice()).context("Load Config error")?
         }
         _ => bail!("Parameters error"),

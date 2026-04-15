@@ -44,12 +44,25 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Check clippy
-        run: cargo clippy --all --lib --bins
+        run: cargo clippy --workspace --all-targets
+
+  machete:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        run: rustup update stable
+      - name: Install cargo-machete
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-machete
+      - name: Check for unused dependencies
+        run: cargo machete
 
   test:
     runs-on: ubuntu-latest
     env:
-      DNS: 8.8.8.8
+      DNS: 114.114.114.114
     steps:
       - uses: actions/checkout@v4
       - name: Install Rust

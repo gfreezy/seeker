@@ -51,7 +51,10 @@ impl ObfsHttpTcpStream {
         let mut rng = tls_rng();
         let random_num: u128 = rng.generate();
         let random_bytes = random_num.to_be_bytes();
-        let key = base64::encode(random_bytes);
+        let key = {
+            use base64::Engine;
+            base64::engine::general_purpose::STANDARD.encode(random_bytes)
+        };
         let host = if self.addr.port() != 80 {
             format!("{}:{}", self.host, self.addr.port())
         } else {

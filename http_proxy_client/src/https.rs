@@ -1,18 +1,19 @@
 use config::Address;
 use parking_lot::Mutex;
+use rustls::pki_types::ServerName;
 use std::io::Error;
 use std::io::{ErrorKind, Result};
 use std::net::SocketAddr;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
+use tcp_connection::tls::get_tls_connector;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
-use tokio_native_tls::native_tls;
-use tokio_native_tls::TlsConnector;
-use tokio_native_tls::TlsStream;
+use tokio_rustls::client::TlsStream;
+use tokio_rustls::TlsConnector;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct HttpsProxyTcpStream {
     conn: Arc<Mutex<TlsStream<TcpStream>>>,
 }
@@ -25,7 +26,7 @@ impl HttpsProxyTcpStream {
         username: Option<&str>,
         password: Option<&str>,
     ) -> Result<Self> {
-        let connector = TlsConnector::from(native_tls::TlsConnector::new().unwrap());
+        let connector = get_tls_connector(false);
         Self::connect_with_connector(
             proxy_server,
             proxy_server_domain,
@@ -46,12 +47,17 @@ impl HttpsProxyTcpStream {
         connector: TlsConnector,
     ) -> Result<Self> {
         let stream = TcpStream::connect(proxy_server).await?;
+        let server_name = ServerName::try_from(proxy_server_domain.to_string())
+            .map_err(|e| Error::new(ErrorKind::InvalidInput, format!("invalid SNI: {e}")))?;
         let mut conn = connector
-            .connect(proxy_server_domain, stream)
+            .connect(server_name, stream)
             .await
-            .map_err(std::io::Error::other)?;
+            .map_err(Error::other)?;
         let authorization = match (username, password) {
-            (Some(username), Some(password)) => base64::encode(format!("{username}:{password}")),
+            (Some(username), Some(password)) => {
+                use base64::Engine;
+                base64::engine::general_purpose::STANDARD.encode(format!("{username}:{password}"))
+            }
             _ => "".to_string(),
         };
         let mut req_buf = vec![format!("CONNECT {addr} HTTP/1.1")];

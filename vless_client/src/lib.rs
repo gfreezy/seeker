@@ -1,6 +1,5 @@
 pub mod protocol;
 mod tcp;
-pub(crate) mod tls;
 pub(crate) mod tls_deframer;
 mod udp;
 pub(crate) mod vision_filter;

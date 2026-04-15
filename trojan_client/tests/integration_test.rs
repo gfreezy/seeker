@@ -95,27 +95,38 @@ async fn start_trojan_server_async(port: u16) -> TestContainer {
     let container = tokio::task::spawn_blocking(move || start_trojan_server(port))
         .await
         .expect("failed to spawn blocking task for container start");
-    tokio::time::sleep(Duration::from_millis(500)).await;
+    wait_port_listening(port, Duration::from_secs(30)).await;
     TestContainer::new(container)
 }
 
-fn build_test_tls_connector() -> tokio_native_tls::TlsConnector {
-    tokio_native_tls::TlsConnector::from(
-        native_tls::TlsConnector::builder()
-            .danger_accept_invalid_certs(true)
-            .build()
-            .expect("failed to build TLS connector"),
-    )
+/// Poll `127.0.0.1:port` until a TCP connection succeeds, or the deadline passes.
+/// trojan-go prints its banner before actually binding, so the `WaitFor` message
+/// fires too early and connections race with the server's listen().
+async fn wait_port_listening(port: u16, timeout: Duration) {
+    let deadline = tokio::time::Instant::now() + timeout;
+    while tokio::time::Instant::now() < deadline {
+        if tokio::net::TcpStream::connect(format!("127.0.0.1:{port}"))
+            .await
+            .is_ok()
+        {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
 }
 
-/// Test: TCP proxy — send HTTP request through proxy to httpbin.org
+fn build_test_tls_connector() -> tokio_rustls::TlsConnector {
+    tcp_connection::tls::get_tls_connector(true)
+}
+
+/// Test: TCP proxy — send HTTP request through proxy to www.baidu.com
 #[tokio::test]
 async fn test_trojan_tcp_proxy_http() {
     let port = next_port();
     let container = start_trojan_server_async(port).await;
 
     let proxy_addr: SocketAddr = format!("127.0.0.1:{port}").parse().unwrap();
-    let target = Address::DomainNameAddress("httpbin.org".to_string(), 80);
+    let target = Address::DomainNameAddress("www.baidu.com".to_string(), 80);
     let connector = build_test_tls_connector();
 
     let mut stream = tokio::time::timeout(
@@ -132,7 +143,7 @@ async fn test_trojan_tcp_proxy_http() {
     .expect("connection timed out")
     .expect("Trojan connect failed");
 
-    let request = "GET /ip HTTP/1.1\r\nHost: httpbin.org\r\nConnection: close\r\n\r\n";
+    let request = "GET / HTTP/1.1\r\nHost: www.baidu.com\r\nConnection: close\r\n\r\n";
     stream
         .write_all(request.as_bytes())
         .await
@@ -150,10 +161,6 @@ async fn test_trojan_tcp_proxy_http() {
         response_str.contains("200 OK"),
         "expected 200 OK in response"
     );
-    assert!(
-        response_str.contains("origin"),
-        "expected 'origin' field in httpbin response"
-    );
 
     container.cleanup().await;
 }
@@ -165,7 +172,7 @@ async fn test_trojan_tcp_proxy_https() {
     let container = start_trojan_server_async(port).await;
 
     let proxy_addr: SocketAddr = format!("127.0.0.1:{port}").parse().unwrap();
-    let target = Address::DomainNameAddress("www.google.com".to_string(), 443);
+    let target = Address::DomainNameAddress("www.baidu.com".to_string(), 443);
     let connector = build_test_tls_connector();
 
     let stream = tokio::time::timeout(
@@ -183,15 +190,15 @@ async fn test_trojan_tcp_proxy_https() {
     .expect("Trojan connect failed");
 
     // Layer client-side TLS on top for the target connection
-    let tls_connector = tokio_native_tls::TlsConnector::from(
-        native_tls::TlsConnector::new().expect("failed to create TLS connector"),
-    );
+    let tls_connector = tcp_connection::tls::get_tls_connector(false);
+    let server_name = rustls::pki_types::ServerName::try_from("www.baidu.com".to_string())
+        .expect("invalid SNI");
     let mut tls_stream = tls_connector
-        .connect("www.google.com", stream)
+        .connect(server_name, stream)
         .await
         .expect("TLS handshake with target failed");
 
-    let request = "GET / HTTP/1.1\r\nHost: www.google.com\r\nConnection: close\r\n\r\n";
+    let request = "GET / HTTP/1.1\r\nHost: www.baidu.com\r\nConnection: close\r\n\r\n";
     tls_stream
         .write_all(request.as_bytes())
         .await
@@ -201,7 +208,7 @@ async fn test_trojan_tcp_proxy_https() {
     let n = tls_stream.read(&mut response).await.expect("read failed");
     let response_str = String::from_utf8_lossy(&response[..n]);
 
-    println!("google response (first {n} bytes):\n{response_str}");
+    println!("baidu response (first {n} bytes):\n{response_str}");
     assert!(
         response_str.contains("200")
             || response_str.contains("301")
@@ -222,7 +229,7 @@ async fn test_trojan_tcp_multiple_streams() {
 
     let (r1, r2) = tokio::join!(
         async {
-            let target = Address::DomainNameAddress("httpbin.org".to_string(), 80);
+            let target = Address::DomainNameAddress("www.baidu.com".to_string(), 80);
             let connector = build_test_tls_connector();
             let mut s = TrojanTcpStream::connect_with_connector(
                 proxy_addr,
@@ -232,14 +239,14 @@ async fn test_trojan_tcp_multiple_streams() {
                 connector,
             )
             .await?;
-            s.write_all(b"GET /ip HTTP/1.1\r\nHost: httpbin.org\r\nConnection: close\r\n\r\n")
+            s.write_all(b"GET / HTTP/1.1\r\nHost: www.baidu.com\r\nConnection: close\r\n\r\n")
                 .await?;
             let mut buf = Vec::new();
             s.read_to_end(&mut buf).await?;
             Ok::<_, std::io::Error>(String::from_utf8_lossy(&buf).to_string())
         },
         async {
-            let target = Address::DomainNameAddress("httpbin.org".to_string(), 80);
+            let target = Address::DomainNameAddress("www.baidu.com".to_string(), 80);
             let connector = build_test_tls_connector();
             let mut s = TrojanTcpStream::connect_with_connector(
                 proxy_addr,
@@ -250,7 +257,7 @@ async fn test_trojan_tcp_multiple_streams() {
             )
             .await?;
             s.write_all(
-                b"GET /user-agent HTTP/1.1\r\nHost: httpbin.org\r\nConnection: close\r\n\r\n",
+                b"GET / HTTP/1.1\r\nHost: www.baidu.com\r\nConnection: close\r\n\r\n",
             )
             .await?;
             let mut buf = Vec::new();
@@ -285,9 +292,9 @@ async fn test_trojan_udp_dns_query() {
     .expect("connection timed out")
     .expect("UDP socket creation failed");
 
-    // Build a simple DNS query for google.com A record
-    let dns_query = build_dns_query("google.com", 1); // type A
-    let dns_server: SocketAddr = "8.8.8.8:53".parse().unwrap();
+    // Build a simple DNS query for baidu.com A record
+    let dns_query = build_dns_query("baidu.com", 1); // type A
+    let dns_server: SocketAddr = "114.114.114.114:53".parse().unwrap();
 
     udp.send_to(&dns_query, dns_server)
         .await

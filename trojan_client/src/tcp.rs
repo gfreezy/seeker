@@ -2,16 +2,17 @@ use crate::protocol::{encode_trojan_request, hash_password, CMD_CONNECT};
 use bytes::BytesMut;
 use config::Address;
 use parking_lot::Mutex;
-use std::io::{Error, Result};
+use rustls::pki_types::ServerName;
+use std::io::{Error, ErrorKind, Result};
 use std::net::SocketAddr;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
+use tcp_connection::tls::get_tls_connector;
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, ReadBuf};
 use tokio::net::TcpStream;
-use tokio_native_tls::native_tls;
-use tokio_native_tls::TlsConnector;
-use tokio_native_tls::TlsStream;
+use tokio_rustls::client::TlsStream;
+use tokio_rustls::TlsConnector;
 
 pub struct TrojanTcpStream {
     conn: Arc<Mutex<TlsStream<TcpStream>>>,
@@ -25,11 +26,7 @@ impl TrojanTcpStream {
         password: &str,
         insecure: bool,
     ) -> Result<Self> {
-        let mut builder = native_tls::TlsConnector::builder();
-        if insecure {
-            builder.danger_accept_invalid_certs(true);
-        }
-        let connector = TlsConnector::from(builder.build().map_err(Error::other)?);
+        let connector = get_tls_connector(insecure);
         Self::connect_with_connector(server, sni, addr, password, connector).await
     }
 
@@ -41,8 +38,10 @@ impl TrojanTcpStream {
         connector: TlsConnector,
     ) -> Result<Self> {
         let tcp_stream = TcpStream::connect(server).await?;
+        let server_name = ServerName::try_from(sni.to_string())
+            .map_err(|e| Error::new(ErrorKind::InvalidInput, format!("invalid SNI: {e}")))?;
         let mut tls_stream = connector
-            .connect(sni, tcp_stream)
+            .connect(server_name, tcp_stream)
             .await
             .map_err(Error::other)?;
 

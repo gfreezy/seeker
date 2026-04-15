@@ -1,4 +1,25 @@
 use crate::crypto::{VMessDataCipher, VMessEncryptMethod};
+use aes_gcm::aead::{Aead, KeyInit, Payload};
+use aes_gcm::Aes128Gcm;
+
+/// Decrypt an AES-128-GCM ciphertext with AAD; tag must be appended to ciphertext
+/// by the caller (standard AEAD convention).
+fn aes_gcm_decrypt(key: &[u8], nonce: &[u8], aad: &[u8], ct: &[u8], tag: &[u8]) -> Result<Vec<u8>> {
+    let cipher = Aes128Gcm::new_from_slice(key)
+        .map_err(|e| Error::new(ErrorKind::InvalidInput, format!("AES-GCM key: {e}")))?;
+    let mut joined = Vec::with_capacity(ct.len() + tag.len());
+    joined.extend_from_slice(ct);
+    joined.extend_from_slice(tag);
+    cipher
+        .decrypt(
+            nonce.into(),
+            Payload {
+                msg: &joined,
+                aad,
+            },
+        )
+        .map_err(|e| Error::new(ErrorKind::InvalidData, format!("AEAD decrypt: {e}")))
+}
 use crate::protocol::{
     build_command, decrypt_aead_response_header, decrypt_response_header, derive_command_key,
     derive_response_iv, derive_response_iv_aead, derive_response_key, derive_response_key_aead,
@@ -190,15 +211,8 @@ impl VMessTcpStream {
             )[..12];
 
             let (len_ct, len_tag) = self.resp_header_buf[..18].split_at(2);
-            let len_plain = openssl::symm::decrypt_aead(
-                openssl::symm::Cipher::aes_128_gcm(),
-                &len_key,
-                Some(len_iv),
-                &[],
-                len_ct,
-                len_tag,
-            )
-            .map_err(|e| Error::other(format!("AEAD resp header len: {e}")))?;
+            let len_plain = aes_gcm_decrypt(&len_key, len_iv, &[], len_ct, len_tag)
+                .map_err(|e| Error::other(format!("AEAD resp header len: {e}")))?;
 
             let header_len = u16::from_be_bytes([len_plain[0], len_plain[1]]) as usize;
             // Reserve space for the full header: 18 + header_len + 16(tag)
@@ -223,15 +237,8 @@ impl VMessTcpStream {
             )[..12];
 
             let (len_ct, len_tag) = self.resp_header_buf[..18].split_at(2);
-            let len_plain = openssl::symm::decrypt_aead(
-                openssl::symm::Cipher::aes_128_gcm(),
-                &len_key,
-                Some(len_iv),
-                &[],
-                len_ct,
-                len_tag,
-            )
-            .map_err(|e| Error::other(format!("AEAD resp header len: {e}")))?;
+            let len_plain = aes_gcm_decrypt(&len_key, len_iv, &[], len_ct, len_tag)
+                .map_err(|e| Error::other(format!("AEAD resp header len: {e}")))?;
 
             let header_len = u16::from_be_bytes([len_plain[0], len_plain[1]]) as usize;
             18 + header_len + 16

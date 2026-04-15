@@ -277,15 +277,12 @@ Table
 Plain
 
 Aes128Cfb
-Aes128Cfb1
 Aes128Cfb8
 Aes128Cfb128
 Aes192Cfb
-Aes192Cfb1
 Aes192Cfb8
 Aes192Cfb128
 Aes256Cfb
-Aes256Cfb1
 Aes256Cfb8
 Aes256Cfb128
 Aes128Ctr
@@ -295,9 +292,6 @@ Aes256Ctr
 Camellia128Cfb
 Camellia192Cfb
 Camellia256Cfb
-Camellia128Cfb1
-Camellia192Cfb1
-Camellia256Cfb1
 Camellia128Cfb8
 Camellia192Cfb8
 Camellia256Cfb8
@@ -322,6 +316,9 @@ XChaCha20IetfPoly1305
 Aes128PmacSiv
 Aes256PmacSiv
 ```
+
+NOTE: 密码学算法由 RustCrypto 套件（`aes`、`cfb-mode`、`cfb8`、`ctr`、`camellia`、`aes-gcm`、`chacha20poly1305`）和 `ring`、`libsodium` 提供。原 OpenSSL 后端已完全移除，`aes-*-cfb1` 这类 1-bit 反馈模式没有纯 Rust 实现，因此不再支持（属于已废弃的 Shadowsocks 遗留算法）。
+
 === Hysteria2 配置
 
 `seeker` 支持 Hysteria2 (hy2) 协议，基于 QUIC 的高性能代理协议。
@@ -514,16 +511,18 @@ blocked app from Allow apps downloaded from pane at the bottom of the window.
 ----
 git clone https://github.com/gfreezy/seeker.git
 cd seeker
-OPENSSL_STATIC=yes cargo build --release
+cargo build --release
 ----
 
 编译完成后，程序在 `target/release/seeker`。
+
+NOTE: `seeker` 使用纯 Rust 的密码学实现（RustCrypto 套件）和 `rustls` 作为 TLS 栈，不依赖 OpenSSL，也不再需要 `OPENSSL_STATIC=yes` 环境变量。
 
 === musl 编译
 
 [source,shell]
 ----
-docker run -v $PWD:/volume -e OPENSSL_STATIC=yes --rm -t clux/muslrust cargo build --release
+docker run -v $PWD:/volume --rm -t clux/muslrust cargo build --release
 ----
 
 会在 `target/x86_64-unknown-linux-musl/release` 目录下生成 `seeker` 文件。

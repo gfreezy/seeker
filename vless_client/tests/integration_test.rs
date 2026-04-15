@@ -140,7 +140,7 @@ async fn start_vless_vision_server_async(port: u16) -> TestContainer {
     let container = tokio::task::spawn_blocking(move || start_vless_vision_server(port))
         .await
         .expect("failed to spawn blocking task for vision container start");
-    tokio::time::sleep(Duration::from_millis(500)).await;
+    wait_port_listening(port, Duration::from_secs(30)).await;
     TestContainer::new(container)
 }
 
@@ -182,8 +182,24 @@ async fn start_vless_server_async(port: u16) -> TestContainer {
     let container = tokio::task::spawn_blocking(move || start_vless_server(port))
         .await
         .expect("failed to spawn blocking task for container start");
-    tokio::time::sleep(Duration::from_millis(500)).await;
+    wait_port_listening(port, Duration::from_secs(30)).await;
     TestContainer::new(container)
+}
+
+/// Poll `127.0.0.1:port` until a TCP connection succeeds, or the deadline passes.
+/// The container's `WaitFor` signal sometimes fires before the service has actually
+/// started listening, causing flaky "Connection refused" in subsequent connects.
+async fn wait_port_listening(port: u16, timeout: Duration) {
+    let deadline = tokio::time::Instant::now() + timeout;
+    while tokio::time::Instant::now() < deadline {
+        if tokio::net::TcpStream::connect(format!("127.0.0.1:{port}"))
+            .await
+            .is_ok()
+        {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
 }
 
 /// Test: TCP proxy — send HTTP request through VLESS proxy
@@ -245,11 +261,11 @@ async fn test_vless_tcp_proxy_https() {
     .expect("VLESS connect failed");
 
     // Layer client-side TLS on top for the target connection
-    let tls_connector = tokio_native_tls::TlsConnector::from(
-        native_tls::TlsConnector::new().expect("failed to create TLS connector"),
-    );
+    let tls_connector = tcp_connection::tls::get_tls_connector(false);
+    let server_name = rustls::pki_types::ServerName::try_from("www.baidu.com".to_string())
+        .expect("invalid SNI");
     let mut tls_stream = tls_connector
-        .connect("www.baidu.com", stream)
+        .connect(server_name, stream)
         .await
         .expect("TLS handshake with target failed");
 
@@ -289,8 +305,8 @@ async fn test_vless_udp_dns_query() {
     .expect("connection timed out")
     .expect("UDP socket creation failed");
 
-    let dns_query = build_dns_query("google.com", 1);
-    let dns_server: SocketAddr = "8.8.8.8:53".parse().unwrap();
+    let dns_query = build_dns_query("baidu.com", 1);
+    let dns_server: SocketAddr = "114.114.114.114:53".parse().unwrap();
 
     udp.send_to(&dns_query, dns_server)
         .await
@@ -396,11 +412,11 @@ async fn test_vless_tcp_proxy_https_vision() {
     // This exercises XTLS-Vision direct copy: the inner TLS handshake (ClientHello/ServerHello)
     // flows through Vision padding, and once Application Data is detected, the Vision layer
     // should switch to direct copy mode.
-    let tls_connector = tokio_native_tls::TlsConnector::from(
-        native_tls::TlsConnector::new().expect("failed to create TLS connector"),
-    );
+    let tls_connector = tcp_connection::tls::get_tls_connector(false);
+    let server_name = rustls::pki_types::ServerName::try_from("www.baidu.com".to_string())
+        .expect("invalid SNI");
     let mut tls_stream = tls_connector
-        .connect("www.baidu.com", stream)
+        .connect(server_name, stream)
         .await
         .expect("TLS handshake with target failed");
 

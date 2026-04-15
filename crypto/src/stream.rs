@@ -1,9 +1,9 @@
 //! Stream ciphers
 
-#[cfg(feature = "openssl")]
-use crate::openssl;
 #[cfg(feature = "sodium")]
 use crate::sodium;
+#[cfg(any(feature = "aes-cfb", feature = "aes-ctr", feature = "camellia-cfb"))]
+use crate::symmetric;
 use crate::{
     cipher::{CipherCategory, CipherResult, CipherType},
     dummy, table, CryptoMode,
@@ -57,11 +57,11 @@ pub fn new_stream(t: CipherType, key: &[u8], iv: &[u8], mode: CryptoMode) -> Box
         | CipherType::Aes256Cfb
         | CipherType::Aes256Cfb1
         | CipherType::Aes256Cfb8
-        | CipherType::Aes256Cfb128 => Box::new(openssl::OpenSSLCipher::new(t, key, iv, mode)),
+        | CipherType::Aes256Cfb128 => Box::new(symmetric::SymmetricCipher::new(t, key, iv, mode)),
 
         #[cfg(feature = "aes-ctr")]
         CipherType::Aes128Ctr | CipherType::Aes192Ctr | CipherType::Aes256Ctr => {
-            Box::new(openssl::OpenSSLCipher::new(t, key, iv, mode))
+            Box::new(symmetric::SymmetricCipher::new(t, key, iv, mode))
         }
 
         #[cfg(feature = "camellia-cfb")]
@@ -76,7 +76,9 @@ pub fn new_stream(t: CipherType, key: &[u8], iv: &[u8], mode: CryptoMode) -> Box
         | CipherType::Camellia256Cfb
         | CipherType::Camellia256Cfb1
         | CipherType::Camellia256Cfb8
-        | CipherType::Camellia256Cfb128 => Box::new(openssl::OpenSSLCipher::new(t, key, iv, mode)),
+        | CipherType::Camellia256Cfb128 => {
+            Box::new(symmetric::SymmetricCipher::new(t, key, iv, mode))
+        }
 
         _ => unreachable!("{} is not a stream cipher", t),
     }

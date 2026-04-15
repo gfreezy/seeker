@@ -3,8 +3,12 @@ name = "vmess_client"
 version = "20260411.0.0"
 edition = "2021"
 
+[package.metadata.cargo-machete]
+# md-5 imports as `md5`; cargo-machete can't detect the rename.
+ignored = ["md-5"]
+
 [features]
-integration-tests = ["dep:testcontainers", "dep:native-tls", "dep:tokio-native-tls"]
+integration-tests = ["dep:testcontainers"]
 
 [dependencies]
 tokio = { workspace = true }
@@ -13,15 +17,20 @@ bytes = { workspace = true }
 md-5 = { workspace = true }
 hmac = { workspace = true }
 uuid = { workspace = true }
-openssl = { workspace = true, features = ["vendored"] }
+aes = { workspace = true }
+cfb-mode = { workspace = true }
+cipher = { workspace = true }
+aes-gcm = { workspace = true }
+chacha20poly1305 = { workspace = true }
 rand = { workspace = true }
 tracing = { workspace = true }
 digest = { workspace = true }
 sha2 = { workspace = true }
 sha3 = { workspace = true }
 testcontainers = { workspace = true, optional = true }
-native-tls = { version = "0.2", optional = true }
-tokio-native-tls = { version = "0.3", optional = true }
 
 [dev-dependencies]
 tokio = { workspace = true }
+tokio-rustls = { workspace = true }
+rustls = { workspace = true }
+tcp_connection = { path = "../tcp_connection" }

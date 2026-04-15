@@ -13,19 +13,29 @@ md-5 = { workspace = true }
 digest = { workspace = true }
 byte_string = { workspace = true }
 byteorder = { workspace = true }
-openssl = { workspace = true, features = ["vendored"], optional = true }
+aes = { workspace = true, optional = true }
+cfb-mode = { workspace = true, optional = true }
+cfb8 = { workspace = true, optional = true }
+ctr = { workspace = true, optional = true }
+camellia = { workspace = true, optional = true }
+cipher = { workspace = true, optional = true }
 libc = { workspace = true }
 hkdf = { workspace = true }
 sha-1 = { workspace = true }
 libsodium-sys-stable = { workspace = true, optional = true }
 ring = { workspace = true, optional = true }
 
+[package.metadata.cargo-machete]
+# These packages rename on import (md-5 → md5, sha-1 → sha1,
+# libsodium-sys-stable → libsodium_sys), so cargo-machete can't detect use.
+ignored = ["libsodium-sys-stable", "md-5", "sha-1"]
+
 [features]
 default = ["sodium", "aes-cfb", "aes-ctr", "camellia-cfb", "use-ring"]
 sodium = ["libsodium-sys-stable"]
-aes-cfb = ["openssl"]
-aes-ctr = ["openssl"]
-camellia-cfb = ["openssl"]
+aes-cfb = ["aes", "cfb-mode", "cfb8", "cipher"]
+aes-ctr = ["aes", "ctr", "cipher"]
+camellia-cfb = ["camellia", "cfb-mode", "cfb8", "cipher"]
 use-ring = ["ring"]
 rc4 = []
 miscreant = []

@@ -7,18 +7,21 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-integration-tests = ["dep:testcontainers", "dep:native-tls", "dep:rcgen"]
+integration-tests = ["dep:testcontainers", "dep:rcgen"]
 
 [dependencies]
 tokio = { workspace = true }
 config = { path = "../config" }
+tcp_connection = { path = "../tcp_connection" }
 base64 = { workspace = true }
-tokio-native-tls = "0.3"
+tokio-rustls = { workspace = true }
+rustls = { workspace = true }
 parking_lot = { workspace = true }
 testcontainers = { workspace = true, optional = true }
-native-tls = { version = "0.2", optional = true }
 rcgen = { version = "0.13", optional = true }
 
 [dev-dependencies]
 tokio = { workspace = true }
-tokio-native-tls = "0.3"
+tokio-rustls = { workspace = true }
+rustls = { workspace = true }
+tcp_connection = { path = "../tcp_connection" }

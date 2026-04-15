@@ -491,6 +491,17 @@ fn run_tcp_echo_server(
             Ok((mut stream, addr)) => {
                 println!("TCP 服务器接受连接来自 {addr}");
 
+                // 重要: accept 出的 stream 会继承 listener 的非阻塞模式,
+                // 必须切回阻塞,否则 read_to_end 会立即返回 WouldBlock (os error 35)。
+                if let Err(e) = stream.set_nonblocking(false) {
+                    println!("TCP 设置阻塞模式失败: {e}");
+                    continue;
+                }
+                if let Err(e) = stream.set_read_timeout(Some(Duration::from_secs(2))) {
+                    println!("TCP 设置读取超时失败: {e}");
+                    continue;
+                }
+
                 // 读取所有数据
                 let mut buffer = Vec::new();
                 match stream.read_to_end(&mut buffer) {

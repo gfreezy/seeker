@@ -23,10 +23,10 @@ use store::Store;
 
 use crate::rule::Rule;
 
-const URL_SAFE_ENGINE: base64::engine::fast_portable::FastPortable =
-    base64::engine::fast_portable::FastPortable::from(
+const URL_SAFE_ENGINE: base64::engine::general_purpose::GeneralPurpose =
+    base64::engine::general_purpose::GeneralPurpose::new(
         &base64::alphabet::STANDARD,
-        base64::engine::fast_portable::FastPortableConfig::new()
+        base64::engine::general_purpose::GeneralPurposeConfig::new()
             .with_decode_padding_mode(base64::engine::DecodePaddingMode::Indifferent),
     );
 
@@ -473,22 +473,29 @@ impl Config {
 }
 
 fn read_data_from_remote_config(url: &str) -> io::Result<Vec<u8>> {
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .timeout_global(Some(Duration::from_secs(5)))
+        .build()
+        .into();
     let mut data = Vec::new();
-    let _size = ureq::get(url)
-        .set(
+    let _size = agent
+        .get(url)
+        .header(
             "User-Agent",
             "Shadowrocket/1980 CFNetwork/1496.0.7 Darwin/23.5.0",
         )
-        .timeout(Duration::from_secs(5))
         .call()
         .map_err(|_| io::Error::other("read remote config"))?
+        .into_body()
         .into_reader()
         .read_to_end(&mut data)?;
     Ok(data)
 }
 
 fn parse_remote_config_data(data: &[u8]) -> io::Result<Vec<ServerConfig>> {
-    let b64decoded = base64::decode_engine(data, &URL_SAFE_ENGINE)
+    use base64::Engine;
+    let b64decoded = URL_SAFE_ENGINE
+        .decode(data)
         .map_err(|_e| io::Error::other("b64decode"))?;
     // tracing::info!("b64decoded: {:?}", b64decoded);
     let server_urls = b64decoded.split(|&c| c == b'\n');
@@ -552,7 +559,7 @@ read_timeout: 300s
 write_timeout: 300s
 max_connect_errors: 2
 ping_urls:
-  - host: www.google.com
+  - host: www.baidu.com
     port: 80
     path: /
 
@@ -613,7 +620,7 @@ read_timeout: 300s
 write_timeout: 300s
 max_connect_errors: 2
 ping_urls:
-  - host: www.google.com
+  - host: www.baidu.com
     port: 80
     path: /
 

@@ -134,9 +134,11 @@ impl ProbeConnectivity {
             // If the address is an IP address, we assume it is a direct connection.
             return true;
         };
-        let cx = native_tls::TlsConnector::builder().build().unwrap();
-        let connector = tokio_native_tls::TlsConnector::from(cx);
-        let encrypted_stream = connector.connect(hostname, tcp_stream).await;
+        let connector = tcp_connection::tls::get_tls_connector(false);
+        let Ok(server_name) = rustls::pki_types::ServerName::try_from(hostname.to_string()) else {
+            return false;
+        };
+        let encrypted_stream = connector.connect(server_name, tcp_stream).await;
         let Ok(mut tls_stream) = encrypted_stream else {
             return false;
         };

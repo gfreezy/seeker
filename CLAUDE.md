@@ -10,24 +10,24 @@ Seeker is a transparent proxy implementation for Mac & Linux that uses TUN devic
 
 ### Building
 ```bash
-# Standard build with static OpenSSL linking
-OPENSSL_STATIC=yes cargo build --release
+# Standard build (pure-Rust crypto + rustls — no OpenSSL / native-tls)
+cargo build --release
 
 # Build output location
 # target/release/seeker
 
 # musl build (Linux static binary via Docker)
-docker run -v $PWD:/volume -e OPENSSL_STATIC=yes --rm -t clux/muslrust cargo build --release
+docker run -v $PWD:/volume --rm -t clux/muslrust cargo build --release
 # Output: target/x86_64-unknown-linux-musl/release/seeker
 ```
 
 ### Testing
 ```bash
 # Run all tests across workspace
-cargo test --all
+cargo test --all --features integration-tests
 
 # Set DNS for tests (optional)
-DNS=8.8.8.8 cargo test --all
+DNS=8.8.8.8 cargo test --all --features integration-tests
 ```
 
 ### Code Quality

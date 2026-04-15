@@ -20,7 +20,10 @@ impl HttpProxyTcpStream {
     ) -> Result<Self> {
         let mut conn = TcpStream::connect(proxy_server).await?;
         let authorization = match (username, password) {
-            (Some(username), Some(password)) => base64::encode(format!("{username}:{password}")),
+            (Some(username), Some(password)) => {
+                use base64::Engine;
+                base64::engine::general_purpose::STANDARD.encode(format!("{username}:{password}"))
+            }
             _ => "".to_string(),
         };
         let mut req_buf = vec![format!("CONNECT {addr} HTTP/1.1")];

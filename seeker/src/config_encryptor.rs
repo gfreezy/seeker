@@ -1,4 +1,6 @@
 use anyhow::Context;
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use bytes::BytesMut;
 use crypto::CipherType;
 use ssclient::{decrypt_payload, encrypt_payload};
@@ -14,7 +16,9 @@ pub fn decrypt_config<R: Read>(
     let _size = reader
         .read_to_string(&mut content)
         .context("Read http response error")?;
-    let b64decoded = base64::decode(content.trim().as_bytes()).context("base64 decode error")?;
+    let b64decoded = BASE64_STANDARD
+        .decode(content.trim().as_bytes())
+        .context("base64 decode error")?;
     let mut output = BytesMut::new();
     let size = decrypt_payload(
         cipher_type,
@@ -42,7 +46,7 @@ pub fn encrypt_config<R: Read>(
         &mut output,
     )?;
 
-    let content = base64::encode(&output[..size]);
+    let content = BASE64_STANDARD.encode(&output[..size]);
 
     Ok(content)
 }

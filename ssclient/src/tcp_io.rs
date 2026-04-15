@@ -372,7 +372,7 @@ mod tests {
             let mut buf = vec![0; 1024];
             let s = ss_server.read(&mut buf).await.unwrap();
             trace!("read data");
-            ss_server.write(data).await.unwrap();
+            ss_server.write_all(data).await.unwrap();
             assert_eq!(&buf[..s], data);
         });
 

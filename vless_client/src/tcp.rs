@@ -1,5 +1,5 @@
 use crate::protocol::{encode_vless_request, CMD_TCP, VLESS_VERSION};
-use crate::tls::{get_tls_config, get_tls_connector};
+use tcp_connection::tls::{get_tls_config, get_tls_connector};
 use crate::vision_stream::VisionStream;
 use bytes::{Buf, BytesMut};
 use config::Address;
@@ -177,7 +177,8 @@ impl VlessTcpStream {
             // our deframer, avoiding buffer sync issues with tokio-rustls.
             let tcp_stream = TcpStream::connect(server).await?;
 
-            let tls_config = get_tls_config(insecure);
+            // Browser-like ALPN for Vision fingerprint mimicry.
+            let tls_config = get_tls_config(insecure, &[b"h2", b"http/1.1"]);
             let session = ClientConnection::new(tls_config, server_name.clone())
                 .map_err(|e| Error::other(format!("TLS session init: {e}")))?;
 
