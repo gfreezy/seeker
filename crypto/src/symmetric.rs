@@ -191,30 +191,30 @@ fn build_inner(t: cipher::CipherType, key: &[u8], iv: &[u8], mode: CryptoMode) -
 
         #[cfg(feature = "aes-cfb")]
         CipherType::Aes128Cfb8 => match mode {
-            CryptoMode::Encrypt => Inner::Aes128Cfb8Enc(
-                Aes128Cfb8Enc::new_from_slices(key, iv).expect("valid key/iv"),
-            ),
-            CryptoMode::Decrypt => Inner::Aes128Cfb8Dec(
-                Aes128Cfb8Dec::new_from_slices(key, iv).expect("valid key/iv"),
-            ),
+            CryptoMode::Encrypt => {
+                Inner::Aes128Cfb8Enc(Aes128Cfb8Enc::new_from_slices(key, iv).expect("valid key/iv"))
+            }
+            CryptoMode::Decrypt => {
+                Inner::Aes128Cfb8Dec(Aes128Cfb8Dec::new_from_slices(key, iv).expect("valid key/iv"))
+            }
         },
         #[cfg(feature = "aes-cfb")]
         CipherType::Aes192Cfb8 => match mode {
-            CryptoMode::Encrypt => Inner::Aes192Cfb8Enc(
-                Aes192Cfb8Enc::new_from_slices(key, iv).expect("valid key/iv"),
-            ),
-            CryptoMode::Decrypt => Inner::Aes192Cfb8Dec(
-                Aes192Cfb8Dec::new_from_slices(key, iv).expect("valid key/iv"),
-            ),
+            CryptoMode::Encrypt => {
+                Inner::Aes192Cfb8Enc(Aes192Cfb8Enc::new_from_slices(key, iv).expect("valid key/iv"))
+            }
+            CryptoMode::Decrypt => {
+                Inner::Aes192Cfb8Dec(Aes192Cfb8Dec::new_from_slices(key, iv).expect("valid key/iv"))
+            }
         },
         #[cfg(feature = "aes-cfb")]
         CipherType::Aes256Cfb8 => match mode {
-            CryptoMode::Encrypt => Inner::Aes256Cfb8Enc(
-                Aes256Cfb8Enc::new_from_slices(key, iv).expect("valid key/iv"),
-            ),
-            CryptoMode::Decrypt => Inner::Aes256Cfb8Dec(
-                Aes256Cfb8Dec::new_from_slices(key, iv).expect("valid key/iv"),
-            ),
+            CryptoMode::Encrypt => {
+                Inner::Aes256Cfb8Enc(Aes256Cfb8Enc::new_from_slices(key, iv).expect("valid key/iv"))
+            }
+            CryptoMode::Decrypt => {
+                Inner::Aes256Cfb8Dec(Aes256Cfb8Dec::new_from_slices(key, iv).expect("valid key/iv"))
+            }
         },
 
         #[cfg(feature = "aes-cfb")]
@@ -290,9 +290,7 @@ fn build_inner(t: cipher::CipherType, key: &[u8], iv: &[u8], mode: CryptoMode) -
             ),
         },
         #[cfg(feature = "camellia-cfb")]
-        CipherType::Camellia128Cfb1
-        | CipherType::Camellia192Cfb1
-        | CipherType::Camellia256Cfb1 => {
+        CipherType::Camellia128Cfb1 | CipherType::Camellia192Cfb1 | CipherType::Camellia256Cfb1 => {
             panic!("Camellia CFB-1 ciphers are not supported (no pure-Rust implementation)")
         }
 

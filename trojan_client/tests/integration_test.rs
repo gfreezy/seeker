@@ -191,8 +191,8 @@ async fn test_trojan_tcp_proxy_https() {
 
     // Layer client-side TLS on top for the target connection
     let tls_connector = tcp_connection::tls::get_tls_connector(false);
-    let server_name = rustls::pki_types::ServerName::try_from("www.baidu.com".to_string())
-        .expect("invalid SNI");
+    let server_name =
+        rustls::pki_types::ServerName::try_from("www.baidu.com".to_string()).expect("invalid SNI");
     let mut tls_stream = tls_connector
         .connect(server_name, stream)
         .await
@@ -256,10 +256,8 @@ async fn test_trojan_tcp_multiple_streams() {
                 connector,
             )
             .await?;
-            s.write_all(
-                b"GET / HTTP/1.1\r\nHost: www.baidu.com\r\nConnection: close\r\n\r\n",
-            )
-            .await?;
+            s.write_all(b"GET / HTTP/1.1\r\nHost: www.baidu.com\r\nConnection: close\r\n\r\n")
+                .await?;
             let mut buf = Vec::new();
             s.read_to_end(&mut buf).await?;
             Ok::<_, std::io::Error>(String::from_utf8_lossy(&buf).to_string())

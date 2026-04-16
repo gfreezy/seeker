@@ -201,9 +201,7 @@ impl VMessDataCipher {
             VMessEncryptMethod::Aes128Cfb => {
                 Ok(Self::Cfb(Box::new(CfbCipher::new_encrypt(key, iv)?)))
             }
-            VMessEncryptMethod::Aes128Gcm => {
-                Ok(Self::Aead(Box::new(AeadCipher::new_gcm(key, iv))))
-            }
+            VMessEncryptMethod::Aes128Gcm => Ok(Self::Aead(Box::new(AeadCipher::new_gcm(key, iv)))),
             VMessEncryptMethod::ChaCha20Poly1305 => {
                 Ok(Self::Aead(Box::new(AeadCipher::new_chacha20(key, iv))))
             }
@@ -216,9 +214,7 @@ impl VMessDataCipher {
             VMessEncryptMethod::Aes128Cfb => {
                 Ok(Self::Cfb(Box::new(CfbCipher::new_decrypt(key, iv)?)))
             }
-            VMessEncryptMethod::Aes128Gcm => {
-                Ok(Self::Aead(Box::new(AeadCipher::new_gcm(key, iv))))
-            }
+            VMessEncryptMethod::Aes128Gcm => Ok(Self::Aead(Box::new(AeadCipher::new_gcm(key, iv)))),
             VMessEncryptMethod::ChaCha20Poly1305 => {
                 Ok(Self::Aead(Box::new(AeadCipher::new_chacha20(key, iv))))
             }

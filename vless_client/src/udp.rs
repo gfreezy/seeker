@@ -1,11 +1,11 @@
 use crate::protocol::{encode_vless_request, CMD_UDP, VLESS_VERSION};
-use tcp_connection::tls::get_tls_connector;
 use bytes::{BufMut, BytesMut};
 use config::Address;
 use rustls::pki_types::ServerName;
 use std::io::{Error, ErrorKind, Result};
 use std::net::SocketAddr;
 use std::sync::Arc;
+use tcp_connection::tls::get_tls_connector;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt, ReadHalf, WriteHalf};
 use tokio::net::TcpStream;
 use tokio::sync::{Mutex, Notify};

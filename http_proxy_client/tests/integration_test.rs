@@ -165,8 +165,8 @@ async fn test_https_proxy_tcp() {
 
     // Layer client-side TLS on top for the target connection
     let connector = tcp_connection::tls::get_tls_connector(false);
-    let server_name = rustls::pki_types::ServerName::try_from("www.baidu.com".to_string())
-        .expect("invalid SNI");
+    let server_name =
+        rustls::pki_types::ServerName::try_from("www.baidu.com".to_string()).expect("invalid SNI");
     let mut tls_stream = connector
         .connect(server_name, stream)
         .await

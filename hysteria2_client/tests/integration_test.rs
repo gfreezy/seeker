@@ -233,8 +233,8 @@ async fn test_hy2_tcp_proxy_https() {
         .expect("TCP proxy connect failed");
 
     let connector = tcp_connection::tls::get_tls_connector(false);
-    let server_name = rustls::pki_types::ServerName::try_from("www.baidu.com".to_string())
-        .expect("invalid SNI");
+    let server_name =
+        rustls::pki_types::ServerName::try_from("www.baidu.com".to_string()).expect("invalid SNI");
     let mut tls_stream = connector
         .connect(server_name, stream)
         .await
@@ -286,10 +286,8 @@ async fn test_hy2_tcp_multiple_streams() {
         async {
             let target = config::Address::DomainNameAddress("www.baidu.com".to_string(), 80);
             let mut s = Hy2TcpStream::connect(&client, target).await?;
-            s.write_all(
-                b"GET / HTTP/1.1\r\nHost: www.baidu.com\r\nConnection: close\r\n\r\n",
-            )
-            .await?;
+            s.write_all(b"GET / HTTP/1.1\r\nHost: www.baidu.com\r\nConnection: close\r\n\r\n")
+                .await?;
             let mut buf = Vec::new();
             s.read_to_end(&mut buf).await?;
             Ok::<_, std::io::Error>(String::from_utf8_lossy(&buf).to_string())

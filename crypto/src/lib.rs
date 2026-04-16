@@ -13,8 +13,6 @@ pub mod aead;
 pub mod cipher;
 pub mod digest;
 pub mod dummy;
-#[cfg(any(feature = "aes-cfb", feature = "aes-ctr", feature = "camellia-cfb"))]
-pub mod symmetric;
 #[cfg(feature = "use-ring")]
 pub mod ring;
 #[cfg(feature = "miscreant")]
@@ -22,6 +20,8 @@ pub mod siv;
 #[cfg(feature = "sodium")]
 pub mod sodium;
 pub mod stream;
+#[cfg(any(feature = "aes-cfb", feature = "aes-ctr", feature = "camellia-cfb"))]
+pub mod symmetric;
 pub mod table;
 
 /// Crypto mode, encrypt or decrypt

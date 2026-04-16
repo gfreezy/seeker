@@ -1,5 +1,4 @@
 use crate::protocol::{encode_vless_request, CMD_TCP, VLESS_VERSION};
-use tcp_connection::tls::{get_tls_config, get_tls_connector};
 use crate::vision_stream::VisionStream;
 use bytes::{Buf, BytesMut};
 use config::Address;
@@ -9,6 +8,7 @@ use std::io::{Error, ErrorKind, Result};
 use std::net::SocketAddr;
 use std::pin::Pin;
 use std::task::{ready, Context, Poll};
+use tcp_connection::tls::{get_tls_config, get_tls_connector};
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, ReadBuf};
 use tokio::net::TcpStream;
 use tracing::info;

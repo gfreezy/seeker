@@ -37,13 +37,7 @@ fn aes_gcm_decrypt(key: &[u8], nonce: &[u8], aad: &[u8], ct: &[u8], tag: &[u8]) 
     joined.extend_from_slice(ct);
     joined.extend_from_slice(tag);
     cipher
-        .decrypt(
-            nonce.into(),
-            Payload {
-                msg: &joined,
-                aad,
-            },
-        )
+        .decrypt(nonce.into(), Payload { msg: &joined, aad })
         .map_err(|e| Error::new(ErrorKind::InvalidData, format!("AEAD decrypt: {e}")))
 }
 

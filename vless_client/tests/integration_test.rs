@@ -262,8 +262,8 @@ async fn test_vless_tcp_proxy_https() {
 
     // Layer client-side TLS on top for the target connection
     let tls_connector = tcp_connection::tls::get_tls_connector(false);
-    let server_name = rustls::pki_types::ServerName::try_from("www.baidu.com".to_string())
-        .expect("invalid SNI");
+    let server_name =
+        rustls::pki_types::ServerName::try_from("www.baidu.com".to_string()).expect("invalid SNI");
     let mut tls_stream = tls_connector
         .connect(server_name, stream)
         .await
@@ -413,8 +413,8 @@ async fn test_vless_tcp_proxy_https_vision() {
     // flows through Vision padding, and once Application Data is detected, the Vision layer
     // should switch to direct copy mode.
     let tls_connector = tcp_connection::tls::get_tls_connector(false);
-    let server_name = rustls::pki_types::ServerName::try_from("www.baidu.com".to_string())
-        .expect("invalid SNI");
+    let server_name =
+        rustls::pki_types::ServerName::try_from("www.baidu.com".to_string()).expect("invalid SNI");
     let mut tls_stream = tls_connector
         .connect(server_name, stream)
         .await
