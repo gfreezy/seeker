@@ -4,9 +4,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-pub const FAILURE_LATENCY: Duration = Duration::from_secs(60); // 60秒表示服务器不可用
-pub const DEFAULT_SCORE: f64 = 100000.0; // 未测试过的服务器返回无穷大
-pub const DEFAULT_LATENCY: f64 = 100000.0; // 未测试过的服务器返回无穷大
+// 未测试或全部失败的服务器返回的哨兵分数/延迟，取一个远大于任何真实分数的有限值以便 JSON 序列化
+pub const DEFAULT_SCORE: f64 = 1e12;
+pub const DEFAULT_LATENCY: f64 = 1e12;
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct PingUrlResult {
@@ -97,44 +97,46 @@ impl ServerPerformance {
             return DEFAULT_SCORE;
         }
 
-        let mut success_weight = 0.0;
         let mut total_weight = 0.0;
-        let mut latency_sum = 0.0;
+        let mut success_weight = 0.0;
+        let mut success_latency_weighted = 0.0;
 
         for record in &self.history {
             let age = now.duration_since(record.timestamp);
             let weight = 2.0_f64.powf(-age.as_secs_f64() / self.half_life.as_secs_f64());
             total_weight += weight;
             success_weight += weight * record.success_ratio;
-            latency_sum += record.latency.as_secs_f64() * 1000.0 * weight;
+            success_latency_weighted +=
+                weight * record.success_ratio * record.latency.as_secs_f64() * 1000.0;
         }
 
-        if total_weight == 0.0 || success_weight == 0.0 {
+        if success_weight == 0.0 {
             return DEFAULT_SCORE;
         }
 
+        let avg_latency = success_latency_weighted / success_weight;
         let success_rate = success_weight / total_weight;
-        let avg_latency = latency_sum / total_weight;
 
         avg_latency / success_rate
     }
 
     pub fn get_stats(&self) -> ServerPerformanceStats {
         let now = Instant::now();
-        let mut success_weight = 0.0;
         let mut total_weight = 0.0;
-        let mut latency_sum = 0.0;
+        let mut success_weight = 0.0;
+        let mut success_latency_weighted = 0.0;
 
         for record in &self.history {
             let age = now.duration_since(record.timestamp);
             let weight = 2.0_f64.powf(-age.as_secs_f64() / self.half_life.as_secs_f64());
             total_weight += weight;
             success_weight += weight * record.success_ratio;
-            latency_sum += record.latency.as_secs_f64() * 1000.0 * weight;
+            success_latency_weighted +=
+                weight * record.success_ratio * record.latency.as_secs_f64() * 1000.0;
         }
 
-        let avg_latency = if total_weight > 0.0 {
-            latency_sum / total_weight
+        let avg_latency = if success_weight > 0.0 {
+            success_latency_weighted / success_weight
         } else {
             DEFAULT_LATENCY
         };

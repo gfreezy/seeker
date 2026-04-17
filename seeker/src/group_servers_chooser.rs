@@ -455,24 +455,21 @@ impl GroupServersChooser {
             }
         }
 
-        use crate::server_performance::FAILURE_LATENCY;
-
         let success_count = ping_results.iter().filter(|r| r.success).count();
-        let failure_latency_ms = FAILURE_LATENCY.as_secs_f64() * 1000.0;
         let success_ratio = success_count as f64 / ping_results.len() as f64;
 
-        let total_latency_ms: f64 = ping_results
-            .iter()
-            .map(|r| {
-                if r.success {
-                    r.latency_ms.unwrap_or(failure_latency_ms)
-                } else {
-                    failure_latency_ms
-                }
-            })
-            .sum();
-        let avg_ms = total_latency_ms / ping_results.len() as f64;
-        let latency = Duration::from_secs_f64(avg_ms / 1000.0);
+        // latency 只聚合成功 URL 的实际耗时；全失败时 success_ratio=0，
+        // latency 乘以 0 不参与分数计算，给 Duration::ZERO 即可
+        let latency = if success_count > 0 {
+            let total_success_latency_ms: f64 = ping_results
+                .iter()
+                .filter(|r| r.success)
+                .map(|r| r.latency_ms.unwrap_or(0.0))
+                .sum();
+            Duration::from_secs_f64(total_success_latency_ms / success_count as f64 / 1000.0)
+        } else {
+            Duration::ZERO
+        };
 
         (latency, success_ratio, ping_results)
     }

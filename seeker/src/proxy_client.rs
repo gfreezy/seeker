@@ -268,7 +268,7 @@ impl ProxyClient {
                 {
                     performance_tracker.add_result(
                         &server_config,
-                        crate::server_performance::FAILURE_LATENCY,
+                        std::time::Duration::ZERO,
                         0.0,
                         vec![],
                     );
