@@ -138,7 +138,8 @@ impl ProbeConnectivity {
         let Ok(server_name) = rustls::pki_types::ServerName::try_from(hostname.to_string()) else {
             return false;
         };
-        let encrypted_stream = connector.connect(server_name, tcp_stream).await;
+        let encrypted_stream =
+            tcp_connection::tls::connect_tls(&connector, server_name, tcp_stream).await;
         let Ok(mut tls_stream) = encrypted_stream else {
             return false;
         };

@@ -5,7 +5,7 @@ use rustls::pki_types::ServerName;
 use std::io::{Error, ErrorKind, Result};
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tcp_connection::tls::get_tls_connector;
+use tcp_connection::tls::{connect_tls, get_tls_connector};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt, ReadHalf, WriteHalf};
 use tokio::net::TcpStream;
 use tokio::sync::{Mutex, Notify};
@@ -52,8 +52,7 @@ impl PlainVlessUdpSocket {
         let server_name = ServerName::try_from(sni.to_string())
             .map_err(|e| Error::other(format!("invalid SNI: {e}")))?;
         let tcp_stream = TcpStream::connect(server).await?;
-        let mut tls_stream = connector
-            .connect(server_name, tcp_stream)
+        let mut tls_stream = connect_tls(&connector, server_name, tcp_stream)
             .await
             .map_err(Error::other)?;
 

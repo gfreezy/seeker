@@ -7,7 +7,7 @@ use rustls::pki_types::ServerName;
 use std::io::{Error, ErrorKind, Result};
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tcp_connection::tls::get_tls_connector;
+use tcp_connection::tls::{connect_tls, get_tls_connector};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::Mutex;
@@ -38,8 +38,7 @@ impl TrojanUdpSocket {
         let tcp_stream = TcpStream::connect(server).await?;
         let server_name = ServerName::try_from(sni.to_string())
             .map_err(|e| Error::new(ErrorKind::InvalidInput, format!("invalid SNI: {e}")))?;
-        let mut tls_stream = connector
-            .connect(server_name, tcp_stream)
+        let mut tls_stream = connect_tls(&connector, server_name, tcp_stream)
             .await
             .map_err(Error::other)?;
 

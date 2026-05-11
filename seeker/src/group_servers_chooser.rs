@@ -554,7 +554,7 @@ async fn ping_server(
             .map_err(|e| std::io::Error::other(format!(
                 "server={server_name}({server_addr}), url={url_str}, stage=tls_handshake, error: invalid SNI: {e}"
             )))?;
-        let mut conn = timeout(connect_timeout, connector.connect(sn, stream))
+        let mut conn = timeout(connect_timeout, tcp_connection::tls::connect_tls(&connector, sn, stream))
             .await
             .map_err(|_| std::io::Error::other(format!(
                 "server={server_name}({server_addr}), url={url_str}, stage=tls_handshake, error: timeout after {connect_timeout:?}"

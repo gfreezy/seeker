@@ -3,6 +3,8 @@
 use rustls::pki_types::ServerName;
 use rustls::ClientConfig;
 use std::sync::Arc;
+use tokio::io::{AsyncRead, AsyncWrite};
+use tokio_rustls::client::TlsStream;
 use tokio_rustls::TlsConnector;
 
 /// Cached `webpki-roots` root certificate store. Cloned into each new config —
@@ -47,6 +49,27 @@ pub fn get_tls_config(insecure: bool, alpn_protocols: &[&[u8]]) -> Arc<ClientCon
 /// top of a tunnel, where you want the server to speak HTTP/1.1.
 pub fn get_tls_connector(insecure: bool) -> TlsConnector {
     TlsConnector::from(get_tls_config(insecure, &[]))
+}
+
+/// Perform a TLS client handshake and disable the rustls received-plaintext
+/// buffer limit on the resulting connection.
+///
+/// rustls 0.23 defaults the limit to 64 KB, which is too tight for relay
+/// workloads where downstream backpressure can cause plaintext to accumulate
+/// faster than we drain it (manifests as `"received plaintext buffer full"`
+/// io errors mid-stream). With `None`, per-connection plaintext is bounded
+/// by the kernel TCP receive buffer instead.
+pub async fn connect_tls<IO>(
+    connector: &TlsConnector,
+    server_name: ServerName<'static>,
+    stream: IO,
+) -> std::io::Result<TlsStream<IO>>
+where
+    IO: AsyncRead + AsyncWrite + Unpin,
+{
+    let mut tls = connector.connect(server_name, stream).await?;
+    tls.get_mut().1.set_buffer_limit(None);
+    Ok(tls)
 }
 
 /// Certificate verifier that accepts any certificate. Only for tests / insecure mode.

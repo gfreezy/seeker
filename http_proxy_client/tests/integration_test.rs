@@ -167,8 +167,7 @@ async fn test_https_proxy_tcp() {
     let connector = tcp_connection::tls::get_tls_connector(false);
     let server_name =
         rustls::pki_types::ServerName::try_from("www.baidu.com".to_string()).expect("invalid SNI");
-    let mut tls_stream = connector
-        .connect(server_name, stream)
+    let mut tls_stream = tcp_connection::tls::connect_tls(&connector, server_name, stream)
         .await
         .expect("TLS handshake with target failed");
 

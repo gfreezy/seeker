@@ -177,8 +177,7 @@ async fn test_vmess_tcp_proxy_https_gcm() {
     let tls_connector = tcp_connection::tls::get_tls_connector(false);
     let server_name =
         rustls::pki_types::ServerName::try_from("www.baidu.com".to_string()).expect("invalid SNI");
-    let mut tls_stream = tls_connector
-        .connect(server_name, stream)
+    let mut tls_stream = tcp_connection::tls::connect_tls(&tls_connector, server_name, stream)
         .await
         .expect("TLS handshake with target failed");
 

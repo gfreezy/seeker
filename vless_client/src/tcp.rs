@@ -8,7 +8,7 @@ use std::io::{Error, ErrorKind, Result};
 use std::net::SocketAddr;
 use std::pin::Pin;
 use std::task::{ready, Context, Poll};
-use tcp_connection::tls::{get_tls_config, get_tls_connector};
+use tcp_connection::tls::{connect_tls, get_tls_config, get_tls_connector};
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, ReadBuf};
 use tokio::net::TcpStream;
 use tracing::info;
@@ -179,8 +179,9 @@ impl VlessTcpStream {
 
             // Browser-like ALPN for Vision fingerprint mimicry.
             let tls_config = get_tls_config(insecure, &[b"h2", b"http/1.1"]);
-            let session = ClientConnection::new(tls_config, server_name.clone())
+            let mut session = ClientConnection::new(tls_config, server_name.clone())
                 .map_err(|e| Error::other(format!("TLS session init: {e}")))?;
+            session.set_buffer_limit(None);
 
             let mut vision = VisionStream::new_client(tcp_stream, session, *uuid_parsed.as_bytes());
 
@@ -207,8 +208,7 @@ impl VlessTcpStream {
             // Xray sends it prepended to the first target response data.
             let connector = get_tls_connector(insecure);
             let tcp_stream = TcpStream::connect(server).await?;
-            let mut tls_stream = connector
-                .connect(server_name, tcp_stream)
+            let mut tls_stream = connect_tls(&connector, server_name, tcp_stream)
                 .await
                 .map_err(Error::other)?;
 

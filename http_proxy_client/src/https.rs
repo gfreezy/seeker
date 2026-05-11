@@ -7,7 +7,7 @@ use std::net::SocketAddr;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
-use tcp_connection::tls::get_tls_connector;
+use tcp_connection::tls::{connect_tls, get_tls_connector};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio_rustls::client::TlsStream;
@@ -49,8 +49,7 @@ impl HttpsProxyTcpStream {
         let stream = TcpStream::connect(proxy_server).await?;
         let server_name = ServerName::try_from(proxy_server_domain.to_string())
             .map_err(|e| Error::new(ErrorKind::InvalidInput, format!("invalid SNI: {e}")))?;
-        let mut conn = connector
-            .connect(server_name, stream)
+        let mut conn = connect_tls(&connector, server_name, stream)
             .await
             .map_err(Error::other)?;
         let authorization = match (username, password) {
