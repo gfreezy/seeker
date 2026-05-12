@@ -1,6 +1,6 @@
 [package]
 name = "http_proxy_client"
-version = "20260512.0.1"
+version = "20260512.0.2"
 authors = ["Alex.F <gfreezy@gmail.com>"]
 edition = "2021"
 
