@@ -577,41 +577,44 @@ impl<IO: AsyncRead + AsyncWrite + Unpin> VisionStream<IO> {
         cx: &mut Context<'_>,
         buf: &mut ReadBuf<'_>,
     ) -> Poll<io::Result<()>> {
-        // Let rustls control reads via SyncReadAdapter
-        let mut reader = SyncReadAdapter {
-            io: &mut self.tcp,
-            cx,
-        };
-        match self.session.read_tls(&mut reader) {
-            Ok(0) => return Poll::Ready(Ok(())), // EOF
-            Ok(_) => {}
-            Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => return Poll::Pending,
-            Err(e) => return Poll::Ready(Err(e)),
-        }
-
-        match self.session.process_new_packets() {
-            Ok(state) => {
-                let available = state.plaintext_bytes_to_read();
-                if available == 0 {
-                    cx.waker().wake_by_ref();
-                    return Poll::Pending;
-                }
+        loop {
+            // Drain buffered plaintext before pulling more from TCP. rustls
+            // hardcodes a 16 KB cap on `received_plaintext`; calling `read_tls`
+            // again while plaintext is still buffered (e.g. the caller's `buf`
+            // was smaller than one decoded record) trips
+            // `"received plaintext buffer full"`.
+            {
                 let mut reader = self.session.reader();
                 match reader.fill_buf() {
-                    Ok([]) => Poll::Ready(Ok(())),
-                    Ok(data) => {
+                    Ok(data) if !data.is_empty() => {
                         let len = buf.remaining().min(data.len());
                         buf.put_slice(&data[..len]);
                         reader.consume(len);
-                        Poll::Ready(Ok(()))
+                        return Poll::Ready(Ok(()));
                     }
-                    Err(e) => Poll::Ready(Err(e)),
+                    Ok(_) => {} // empty — fall through and read more
+                    Err(e) if e.kind() == io::ErrorKind::WouldBlock => {}
+                    Err(e) => return Poll::Ready(Err(e)),
                 }
             }
-            Err(e) => Poll::Ready(Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!("TLS process_new_packets: {e}"),
-            ))),
+
+            let mut reader = SyncReadAdapter {
+                io: &mut self.tcp,
+                cx,
+            };
+            match self.session.read_tls(&mut reader) {
+                Ok(0) => return Poll::Ready(Ok(())), // EOF
+                Ok(_) => {}
+                Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => return Poll::Pending,
+                Err(e) => return Poll::Ready(Err(e)),
+            }
+
+            self.session.process_new_packets().map_err(|e| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("TLS process_new_packets: {e}"),
+                )
+            })?;
         }
     }
 
