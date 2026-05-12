@@ -1,6 +1,6 @@
 [package]
 name = "vmess_client"
-version = "20260512.0.0"
+version = "20260512.0.1"
 edition = "2021"
 
 [package.metadata.cargo-machete]
