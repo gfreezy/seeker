@@ -126,7 +126,7 @@ async fn tunnel_tcp_stream<
     let on_update_activity_clone = on_update_activity.clone();
 
     let f1 = async move {
-        let mut buf = vec![0; 1600];
+        let mut buf = vec![0; 16 * 1024];
         let mut first_read = true;
         loop {
             if !on_update_activity() {
@@ -146,7 +146,7 @@ async fn tunnel_tcp_stream<
         }
     };
     let f2 = async move {
-        let mut buf = vec![0; 1600];
+        let mut buf = vec![0; 16 * 1024];
         let mut first_read = true;
         loop {
             if !on_update_activity_clone() {

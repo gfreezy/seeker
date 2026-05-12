@@ -3568,6 +3568,7 @@ dependencies = [
  "nanorand 0.8.0",
  "rustls",
  "serde",
+ "serde_json",
  "testcontainers",
  "tokio",
  "tokio-rustls",
