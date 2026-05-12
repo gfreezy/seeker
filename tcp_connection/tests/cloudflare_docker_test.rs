@@ -99,15 +99,24 @@ async fn fetch_first_layer_digest(token: &str) -> io::Result<String> {
             let arch = entry["platform"]["architecture"].as_str().unwrap_or("");
             if os == PLATFORM_OS && arch == PLATFORM_ARCH {
                 let digest = entry["digest"].as_str().ok_or_else(|| {
-                    io::Error::new(io::ErrorKind::InvalidData, "platform manifest missing digest")
+                    io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "platform manifest missing digest",
+                    )
                 })?;
                 let inner = fetch_manifest(token, digest).await?;
                 let layers = inner["layers"].as_array().ok_or_else(|| {
                     io::Error::new(io::ErrorKind::InvalidData, "inner manifest has no layers")
                 })?;
-                let d = layers.first().and_then(|l| l["digest"].as_str()).ok_or_else(|| {
-                    io::Error::new(io::ErrorKind::InvalidData, "inner manifest layer missing digest")
-                })?;
+                let d = layers
+                    .first()
+                    .and_then(|l| l["digest"].as_str())
+                    .ok_or_else(|| {
+                        io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            "inner manifest layer missing digest",
+                        )
+                    })?;
                 return Ok(d.to_string());
             }
         }
@@ -143,9 +152,12 @@ async fn fetch_blob_redirect(token: &str, digest: &str) -> io::Result<(String, S
         let lower = line.to_ascii_lowercase();
         if let Some(rest) = lower.strip_prefix("location:") {
             let value = line[line.len() - rest.len()..].trim();
-            let url = value
-                .strip_prefix("https://")
-                .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, format!("non-https redirect: {value}")))?;
+            let url = value.strip_prefix("https://").ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("non-https redirect: {value}"),
+                )
+            })?;
             let (host, path) = match url.split_once('/') {
                 Some((h, p)) => (h.to_string(), format!("/{p}")),
                 None => (url.to_string(), "/".to_string()),
@@ -232,7 +244,8 @@ fn decode_body(resp: &str) -> io::Result<Vec<u8>> {
         .filter_map(|l| l.split_once(':'))
         .any(|(k, v)| {
             k.eq_ignore_ascii_case("transfer-encoding")
-                && v.split(',').any(|t| t.trim().eq_ignore_ascii_case("chunked"))
+                && v.split(',')
+                    .any(|t| t.trim().eq_ignore_ascii_case("chunked"))
         });
 
     if chunked {
@@ -249,11 +262,13 @@ fn decode_chunked(mut body: &[u8]) -> io::Result<Vec<u8>> {
             .windows(2)
             .position(|w| w == b"\r\n")
             .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "chunked: no size CRLF"))?;
-        let size_line = std::str::from_utf8(&body[..line_end])
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("chunk size utf8: {e}")))?;
+        let size_line = std::str::from_utf8(&body[..line_end]).map_err(|e| {
+            io::Error::new(io::ErrorKind::InvalidData, format!("chunk size utf8: {e}"))
+        })?;
         let size_str = size_line.split(';').next().unwrap_or(size_line).trim();
-        let size = usize::from_str_radix(size_str, 16)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("chunk size hex: {e}")))?;
+        let size = usize::from_str_radix(size_str, 16).map_err(|e| {
+            io::Error::new(io::ErrorKind::InvalidData, format!("chunk size hex: {e}"))
+        })?;
         body = &body[line_end + 2..];
         if size == 0 {
             return Ok(out);
