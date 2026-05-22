@@ -45,10 +45,14 @@ pub struct Config {
     #[serde(alias = "proxies")]
     #[serde(default)]
     pub servers: Arc<Vec<ServerConfig>>,
+    #[serde(skip)]
+    local_servers: Arc<Vec<ServerConfig>>,
     #[serde(default)]
     pub proxy_groups: Arc<Vec<ProxyGroup>>,
     #[serde(default)]
     pub remote_config_urls: Vec<String>,
+    #[serde(with = "duration_opt", default)]
+    pub remote_config_refresh_interval: Option<Duration>,
     geo_ip: Option<PathBuf>,
     pub dns_start_ip: Ipv4Addr,
     pub db_path: Option<PathBuf>,
@@ -198,6 +202,24 @@ mod ipv4_cidr {
     }
 }
 
+mod duration_opt {
+    use super::duration::parse_duration;
+    use serde::de::Error;
+    use serde::{Deserialize, Deserializer};
+    use std::time::Duration;
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<Duration>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s: Option<String> = Option::deserialize(deserializer)?;
+        let Some(s) = s else { return Ok(None) };
+        parse_duration(&s)
+            .map(Some)
+            .map_err(|_| Error::invalid_value(serde::de::Unexpected::Str(&s), &"10s or 10ms"))
+    }
+}
+
 mod duration {
     use serde::de::Error;
     use serde::{Deserialize, Deserializer};
@@ -217,7 +239,12 @@ mod duration {
         match chars.into_iter().collect::<String>().as_str() {
             "s" => Ok(Duration::from_secs(n)),
             "ms" => Ok(Duration::from_millis(n)),
-            _ => Err(format!("invalid value: {}, expected 10s or 10ms", &s)),
+            "m" => Ok(Duration::from_secs(n * 60)),
+            "h" => Ok(Duration::from_secs(n * 3600)),
+            _ => Err(format!(
+                "invalid value: {}, expected 10s, 10ms, 5m or 1h",
+                &s
+            )),
         }
     }
 
@@ -271,10 +298,10 @@ impl Config {
     pub fn from_reader<R: Read>(reader: R) -> io::Result<Self> {
         let mut conf: Config =
             serde_yaml::from_reader(reader).expect("serde yaml deserialize error");
-        if conf.servers.is_empty() {
+        if conf.servers.is_empty() && conf.remote_config_urls.is_empty() {
             return Err(io::Error::new(
                 ErrorKind::InvalidData,
-                "servers can not be empty.",
+                "either `servers` or `remote_config_urls` must be provided.",
             ));
         };
         if conf.dns_listens.is_empty() {
@@ -294,6 +321,7 @@ impl Config {
             Store::setup_global("seeker.sqlite", conf.dns_start_ip);
         }
 
+        conf.local_servers = conf.servers.clone();
         conf.load_remote_servers();
         conf.add_proxy_servers_to_direct_rules();
         conf.rules.set_geo_ip_path(conf.geo_ip.clone());
@@ -326,50 +354,26 @@ impl Config {
         let remote_config = self.remote_config_urls.clone();
         let servers = Arc::make_mut(&mut self.servers);
         for url in remote_config {
-            let data = match read_data_from_remote_config(&url) {
-                Ok(servers) => {
-                    if let Err(e) = store::Store::global().cache_remote_config_data(&url, &servers)
-                    {
-                        eprintln!("Cache remote config `{url}` error: {e}");
-                    }
-                    servers
-                }
-                Err(e) => {
-                    eprintln!("Load servers from remote config `{url}` error: {e}");
-
-                    let Ok(Some(data)) = store::Store::global().get_cached_remote_config_data(&url)
-                    else {
-                        eprintln!("No cached config for `{url}`.");
-                        continue;
-                    };
-                    eprintln!("Use config for `{url}` from cache instead.");
-                    data
-                }
+            let Some(extra_servers) = fetch_remote_servers_with_cache_fallback(&url) else {
+                continue;
             };
-            let extra_servers = match parse_remote_config_data(&data) {
-                Ok(extra_servers) => extra_servers,
-                Err(e) => {
-                    eprintln!("Parse config error for `{url}: {e}`.");
-                    continue;
-                }
-            };
-            if !extra_servers.is_empty() {
-                tracing::info!(
-                    "Load {} extra servers from remote config `{url}`.",
-                    extra_servers.len()
-                );
-            }
-            for server in &extra_servers {
-                tracing::info!("Load extra server: {}", server.name());
-            }
-            servers.extend(extra_servers.into_iter().filter(|s| {
-                let dominated = s.addr().to_string() == "8.8.8.8:12345";
-                if dominated {
-                    tracing::info!("Skip server: {} ({})", s.name(), s.addr());
-                }
-                !dominated
-            }));
+            servers.extend(extra_servers);
         }
+    }
+
+    /// Re-fetch all `remote_config_urls` and return a new merged server list
+    /// (local servers + freshly-fetched remote servers).
+    ///
+    /// Returns `None` if any URL fails — caller should keep the existing in-memory
+    /// list and retry on the next tick. Does not consult the SQLite cache, since
+    /// the in-memory list is already a known-good fallback.
+    pub fn refresh_remote_servers(&self) -> Option<Vec<ServerConfig>> {
+        let mut merged: Vec<ServerConfig> = (*self.local_servers).clone();
+        for url in &self.remote_config_urls {
+            let extra_servers = fetch_remote_servers_no_fallback(url)?;
+            merged.extend(extra_servers);
+        }
+        Some(merged)
     }
 
     fn add_default_proxy_group(&mut self) {
@@ -472,6 +476,69 @@ impl Config {
     }
 }
 
+fn filter_dominated_servers(servers: Vec<ServerConfig>) -> Vec<ServerConfig> {
+    servers
+        .into_iter()
+        .filter(|s| {
+            let dominated = s.addr().to_string() == "8.8.8.8:12345";
+            if dominated {
+                tracing::info!("Skip server: {} ({})", s.name(), s.addr());
+            }
+            !dominated
+        })
+        .collect()
+}
+
+fn fetch_and_parse_remote(url: &str) -> io::Result<Vec<ServerConfig>> {
+    let data = read_data_from_remote_config(url)?;
+    if let Err(e) = store::Store::global().cache_remote_config_data(url, &data) {
+        eprintln!("Cache remote config `{url}` error: {e}");
+    }
+    let parsed = parse_remote_config_data(&data)?;
+    Ok(filter_dominated_servers(parsed))
+}
+
+fn fetch_remote_servers_with_cache_fallback(url: &str) -> Option<Vec<ServerConfig>> {
+    let servers = match fetch_and_parse_remote(url) {
+        Ok(servers) => servers,
+        Err(e) => {
+            eprintln!("Load servers from remote config `{url}` error: {e}");
+            let Ok(Some(data)) = store::Store::global().get_cached_remote_config_data(url) else {
+                eprintln!("No cached config for `{url}`.");
+                return None;
+            };
+            eprintln!("Use config for `{url}` from cache instead.");
+            match parse_remote_config_data(&data) {
+                Ok(parsed) => filter_dominated_servers(parsed),
+                Err(e) => {
+                    eprintln!("Parse cached config error for `{url}: {e}`.");
+                    return None;
+                }
+            }
+        }
+    };
+    if !servers.is_empty() {
+        tracing::info!(
+            "Load {} extra servers from remote config `{url}`.",
+            servers.len()
+        );
+    }
+    for server in &servers {
+        tracing::info!("Load extra server: {}", server.name());
+    }
+    Some(servers)
+}
+
+fn fetch_remote_servers_no_fallback(url: &str) -> Option<Vec<ServerConfig>> {
+    match fetch_and_parse_remote(url) {
+        Ok(servers) => Some(servers),
+        Err(e) => {
+            tracing::warn!("Refresh remote config `{url}` failed: {e}");
+            None
+        }
+    }
+}
+
 fn read_data_from_remote_config(url: &str) -> io::Result<Vec<u8>> {
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .timeout_global(Some(Duration::from_secs(5)))
@@ -492,12 +559,20 @@ fn read_data_from_remote_config(url: &str) -> io::Result<Vec<u8>> {
     Ok(data)
 }
 
+#[derive(Deserialize)]
+struct RemoteProxiesConfig {
+    proxies: Vec<ServerConfig>,
+}
+
 fn parse_remote_config_data(data: &[u8]) -> io::Result<Vec<ServerConfig>> {
+    if let Ok(parsed) = serde_yaml::from_slice::<RemoteProxiesConfig>(data) {
+        return Ok(parsed.proxies);
+    }
+
     use base64::Engine;
     let b64decoded = URL_SAFE_ENGINE
         .decode(data)
         .map_err(|_e| io::Error::other("b64decode"))?;
-    // tracing::info!("b64decoded: {:?}", b64decoded);
     let server_urls = b64decoded.split(|&c| c == b'\n');
     let ret = server_urls
         .filter_map(|url| std::str::from_utf8(url).ok())
@@ -524,6 +599,48 @@ mod tests {
     fn test_parse_duration() {
         assert_eq!(parse_duration("10s"), Ok(Duration::from_secs(10)));
         assert_eq!(parse_duration("8ms"), Ok(Duration::from_millis(8)));
+    }
+
+    #[test]
+    fn test_parse_refresh_interval_units() {
+        use std::time::Duration;
+        #[derive(Deserialize)]
+        struct T {
+            #[serde(with = "duration_opt", default)]
+            interval: Option<Duration>,
+        }
+        let parse =
+            |s: &str| -> Option<Duration> { serde_yaml::from_str::<T>(s).unwrap().interval };
+        assert_eq!(parse("interval: 30s"), Some(Duration::from_secs(30)));
+        assert_eq!(parse("interval: 5m"), Some(Duration::from_secs(300)));
+        assert_eq!(parse("interval: 1h"), Some(Duration::from_secs(3600)));
+        assert_eq!(parse("interval: 250ms"), Some(Duration::from_millis(250)));
+        assert_eq!(parse("interval: ~"), None);
+        assert_eq!(parse(""), None);
+    }
+
+    #[test]
+    fn test_parse_remote_yaml_proxies() -> std::io::Result<()> {
+        let data = br#"
+proxies:
+  - name: "HK-SS"
+    type: ss
+    server: example.com
+    port: 8388
+    cipher: chacha20-ietf-poly1305
+    password: pw
+  - name: "SOCKS5"
+    type: socks5
+    server: 127.0.0.1
+    port: 1080
+"#;
+        let servers = parse_remote_config_data(data)?;
+        assert_eq!(servers.len(), 2);
+        assert_eq!(servers[0].name(), "HK-SS");
+        assert_eq!(servers[0].protocol(), ServerProtocol::Shadowsocks);
+        assert_eq!(servers[1].name(), "SOCKS5");
+        assert_eq!(servers[1].protocol(), ServerProtocol::Socks5);
+        Ok(())
     }
 
     #[test]

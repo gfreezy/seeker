@@ -10,7 +10,7 @@ use config::{Address, PingURL, ServerConfig};
 use futures_util::StreamExt;
 use futures_util::stream::FuturesUnordered;
 use parking_lot::{Mutex, RwLock};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, Instant};
@@ -35,8 +35,8 @@ pub struct GroupServersChooser {
     connect_timeout: Duration,
     read_timeout: Duration,
     write_timeout: Duration,
-    servers: Arc<Vec<ServerConfig>>,
-    selected_server: Arc<Mutex<ServerConfig>>,
+    servers: Arc<RwLock<Arc<Vec<ServerConfig>>>>,
+    selected_server: Arc<Mutex<Option<ServerConfig>>>,
     dns_client: DnsClient,
     live_connections: Arc<RwLock<Vec<Box<dyn ProxyConnection + Send + Sync>>>>,
     show_stats: bool,
@@ -60,7 +60,7 @@ impl GroupServersChooser {
         write_timeout: Duration,
         show_stats: bool,
     ) -> Self {
-        let selected = servers.first().cloned().expect("no server available");
+        let selected = servers.first().cloned();
         let chooser = GroupServersChooser {
             name,
             ping_urls,
@@ -68,7 +68,7 @@ impl GroupServersChooser {
             connect_timeout,
             read_timeout,
             write_timeout,
-            servers,
+            servers: Arc::new(RwLock::new(servers)),
             dns_client,
             live_connections: Arc::new(RwLock::new(vec![])),
             selected_server: Arc::new(Mutex::new(selected)),
@@ -89,6 +89,83 @@ impl GroupServersChooser {
             .for_each(|stream| stream.shutdown());
     }
 
+    fn servers_snapshot(&self) -> Arc<Vec<ServerConfig>> {
+        self.servers.read().clone()
+    }
+
+    /// Swap in a new server list for this group. Performance tracker entries for
+    /// removed servers are dropped, their live connections are shut down, and
+    /// the selected server is reassigned if it disappeared.
+    ///
+    /// If `new_servers` is empty the group is left in a "no available servers"
+    /// state — subsequent `proxy_connect` calls will return an error.
+    pub fn update_servers(&self, new_servers: Arc<Vec<ServerConfig>>) {
+        let old_snapshot = {
+            let mut guard = self.servers.write();
+            let old = std::mem::replace(&mut *guard, new_servers.clone());
+            drop(guard);
+            old
+        };
+
+        let new_addrs: HashSet<String> = new_servers.iter().map(|s| s.addr().to_string()).collect();
+
+        let removed: Vec<&ServerConfig> = old_snapshot
+            .iter()
+            .filter(|s| !new_addrs.contains(&s.addr().to_string()))
+            .collect();
+
+        if !removed.is_empty() {
+            info!(
+                group = self.name,
+                removed = removed.len(),
+                kept = new_addrs.len(),
+                "Updating group servers"
+            );
+        }
+
+        for server in &removed {
+            tracing::info!(
+                group = self.name,
+                name = server.name(),
+                addr = %server.addr(),
+                "Removing server from group; shutting down its live connections"
+            );
+            self.set_server_down(server);
+        }
+
+        self.performance_tracker.retain_addrs(&new_addrs);
+
+        let mut selected = self.selected_server.lock();
+        let still_valid = selected
+            .as_ref()
+            .is_some_and(|s| new_addrs.contains(&s.addr().to_string()));
+        if !still_valid {
+            let old_addr = selected.as_ref().map(|s| s.addr().to_string());
+            match new_servers.first().cloned() {
+                Some(replacement) => {
+                    info!(
+                        group = self.name,
+                        old = ?old_addr,
+                        new = %replacement.addr(),
+                        "Selecting new server (previous was removed or unset)"
+                    );
+                    *selected = Some(replacement);
+                    self.consecutive_failures.store(0, Ordering::SeqCst);
+                    *self.last_switch_time.lock() = Instant::now();
+                }
+                None => {
+                    if old_addr.is_some() {
+                        tracing::warn!(
+                            group = self.name,
+                            "Selected server was removed and no replacement available; group is empty"
+                        );
+                    }
+                    *selected = None;
+                }
+            }
+        }
+    }
+
     fn recycle_live_connections(&self) {
         self.live_connections
             .write()
@@ -103,7 +180,12 @@ impl GroupServersChooser {
         &self,
         remote_addr: &Address,
     ) -> std::io::Result<CandidateTcpStream> {
-        let config = self.selected_server.lock().clone();
+        let Some(config) = self.selected_server.lock().clone() else {
+            return Err(std::io::Error::other(format!(
+                "proxy group {} has no available servers",
+                self.name
+            )));
+        };
         let stream =
             ProxyTcpStream::connect(remote_addr.clone(), Some(&config), self.dns_client.clone())
                 .await;
@@ -143,7 +225,12 @@ impl GroupServersChooser {
                 None,
             ),
             Action::Proxy(_) => {
-                let config = self.selected_server.lock().clone();
+                let Some(config) = self.selected_server.lock().clone() else {
+                    return Err(std::io::Error::other(format!(
+                        "proxy group {} has no available servers",
+                        self.name
+                    )));
+                };
                 tracing::info!(group = self.name, "Using server: {}", config.addr());
                 let socket = ProxyUdpSocket::new(Some(&config), self.dns_client.clone()).await;
                 if socket.is_err() {
@@ -194,15 +281,17 @@ impl GroupServersChooser {
         }
 
         let current_server = self.selected_server.lock().clone();
-        let current_score = self
-            .performance_tracker
-            .get_server_score(&current_server, now);
+        let current_score = current_server
+            .as_ref()
+            .map(|s| self.performance_tracker.get_server_score(s, now))
+            .unwrap_or(f64::MAX);
 
+        let servers = self.servers_snapshot();
         let mut best_score = f64::MAX;
         let mut best_server = None;
 
         // Find the server with the best performance score
-        for server in self.servers.iter() {
+        for server in servers.iter() {
             let score = self.performance_tracker.get_server_score(server, now);
             if score < best_score {
                 best_score = score;
@@ -212,12 +301,16 @@ impl GroupServersChooser {
 
         if let Some(new_server) = best_server {
             // 如果最佳服务器就是当前服务器，不切换
-            if new_server.addr() == current_server.addr() {
+            if current_server
+                .as_ref()
+                .is_some_and(|cur| new_server.addr() == cur.addr())
+            {
                 return;
             }
 
             // 非强制切换时，检查阈值：新服务器分数需要比当前低 10% 以上才切换
-            if !force {
+            // 当前未选定 server 时直接切换（current_score 为 MAX）。
+            if !force && current_server.is_some() {
                 let threshold = current_score * SWITCH_THRESHOLD_RATIO;
                 if best_score >= threshold {
                     tracing::debug!(
@@ -231,11 +324,13 @@ impl GroupServersChooser {
                 }
             }
 
-            self.set_server_down(&current_server);
+            if let Some(ref cur) = current_server {
+                self.set_server_down(cur);
+            }
             info!(
                 group = self.name,
-                old_name = current_server.name(),
-                old_server = ?current_server.addr(),
+                old_name = current_server.as_ref().map(|s| s.name().to_string()),
+                old_server = ?current_server.as_ref().map(|s| s.addr().to_string()),
                 old_score = current_score,
                 new_name = new_server.name(),
                 new_server = ?new_server.addr(),
@@ -243,7 +338,7 @@ impl GroupServersChooser {
                 force = force,
                 "Change shadowsocks server"
             );
-            *self.selected_server.lock() = new_server;
+            *self.selected_server.lock() = Some(new_server);
             *self.last_switch_time.lock() = now;
             // 切换后重置失败计数
             self.consecutive_failures.store(0, Ordering::SeqCst);
@@ -357,12 +452,12 @@ impl GroupServersChooser {
     }
 
     pub async fn ping_servers(&self, wait_for_all: bool) {
-        if self.ping_urls.is_empty() || self.servers.len() <= 1 {
+        let servers = self.servers_snapshot();
+        if self.ping_urls.is_empty() || servers.len() <= 1 {
             return;
         }
 
-        let mut fut: FuturesUnordered<_> = self
-            .servers
+        let mut fut: FuturesUnordered<_> = servers
             .iter()
             .map(|config| {
                 let self_clone = self.clone();
@@ -478,7 +573,7 @@ impl GroupServersChooser {
         self.performance_tracker.clone()
     }
 
-    pub fn get_selected_server(&self) -> ServerConfig {
+    pub fn get_selected_server(&self) -> Option<ServerConfig> {
         self.selected_server.lock().clone()
     }
 

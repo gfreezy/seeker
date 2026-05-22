@@ -228,4 +228,10 @@ impl ServerPerformanceTracker {
     pub fn reset(&self) {
         self.performance_history.lock().clear();
     }
+
+    /// Drop performance entries whose server addr is not in `keep_addrs`.
+    pub fn retain_addrs(&self, keep_addrs: &std::collections::HashSet<String>) {
+        let mut history = self.performance_history.lock();
+        history.retain(|addr, _| keep_addrs.contains(addr));
+    }
 }

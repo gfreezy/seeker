@@ -68,20 +68,31 @@ ping_urls:
     port: 80
     path: /
 
-# SS 订阅地址（标准 SS 订阅格式），启动时自动拉取配置，并将配置的服务器地址自动加入服务器列表
+# SS 订阅地址，启动时自动拉取配置，并将配置的服务器地址自动加入服务器列表
 # 支持大多数 SS 服务商提供的订阅链接
 #
-# 订阅格式要求：
-# - 远程 URL 返回的内容必须是 Base64 编码的文本
-# - Base64 解码后，每行一个 ss:// 格式的 Shadowsocks URL
-# - 示例解码后内容：
-#   ss://YWVzLTI1Ni1nY206cGFzc3dvcmQ=@server.example.com:8388/#Server-Name
-#   ss://Y2hhY2hhMjAtaWV0Zi1wb2x5MTMwNTpwd2Q=@another.example.com:443/#HK-01
+# 支持两种订阅格式（自动识别）：
+# 1. Base64 编码的 ss:// URL 列表（每行一个）：
+#    ss://YWVzLTI1Ni1nY206cGFzc3dvcmQ=@server.example.com:8388/#Server-Name
+#    ss://Y2hhY2hhMjAtaWV0Zi1wb2x5MTMwNTpwd2Q=@another.example.com:443/#HK-01
+# 2. YAML 格式（顶层 proxies 数组，每项为 Clash 风格的 server 配置）：
+#    proxies:
+#      - { name: HK-01, type: ss, server: hk.example.com, port: 8388,
+#          cipher: chacha20-ietf-poly1305, password: pw }
+#      - { name: JP-01, type: vless, server: jp.example.com, port: 443,
+#          uuid: "...", tls: true, flow: xtls-rprx-vision }
 #
 # 可以配置多个订阅地址，所有订阅的服务器会合并使用
 remote_config_urls:
   - https://your-ss-provider.com/subscribe
   - https://another-provider.com/subscription
+
+# 定期重新拉取 remote_config_urls 并更新内存中的 server 列表（运行时热更新）。
+# 默认 1 小时；设为 0s 或省略字段都可禁用。支持 ms / s / m / h 单位。
+# 拉取失败保留当前内存数据，下一轮重试。
+# 注意：若上游删除了某个 server，而 proxy_groups 仍然引用它，则该组会"缩短"；
+# 若该组因此变空，路由到该组的连接会返回错误，直到下次拉取恢复。
+remote_config_refresh_interval: 1h
 
 # 注意：remote_config_urls 和命令行的 --config-url 是不同的功能：
 # - remote_config_urls: 订阅 SS 服务器列表（Base64 编码的 ss:// URL）

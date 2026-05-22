@@ -13,9 +13,10 @@ type GroupPerformanceStats = (
 );
 use anyhow::Result;
 use config::rule::Action;
-use config::{Address, Config, ServerConfig};
+use config::{Address, Config, ProxyGroup, ServerConfig};
 use futures_util::future::join_all;
 use std::collections::HashMap;
+use std::sync::Arc;
 use tokio::task;
 
 #[derive(Clone)]
@@ -170,18 +171,63 @@ impl ServerChooser {
         let mut result = HashMap::new();
         for (group_name, chooser) in &self.group_servers_chooser {
             let tracker = chooser.get_performance_tracker();
-            let selected = chooser.get_selected_server();
+            let (name, addr, protocol) = match chooser.get_selected_server() {
+                Some(s) => (
+                    s.name().to_string(),
+                    s.addr().to_string(),
+                    s.protocol().to_string(),
+                ),
+                None => (String::new(), String::new(), String::new()),
+            };
             result.insert(
                 group_name.clone(),
-                (
-                    selected.name().to_string(),
-                    selected.addr().to_string(),
-                    selected.protocol().to_string(),
-                    tracker.get_all_server_stats(),
-                ),
+                (name, addr, protocol, tracker.get_all_server_stats()),
             );
         }
         result
+    }
+
+    /// Replace each group's server list, resolving from the new flat `servers`
+    /// list via `proxy_groups[].proxies` (server names).
+    ///
+    /// Dangling names (referenced by a group but not present in `servers`) are
+    /// dropped with a warning. Groups can end up with zero servers — subsequent
+    /// `proxy_connect` calls against such groups will return an error until the
+    /// next refresh.
+    pub fn update_servers_for_groups(&self, servers: &[ServerConfig], proxy_groups: &[ProxyGroup]) {
+        let by_name: HashMap<&str, &ServerConfig> = servers.iter().map(|s| (s.name(), s)).collect();
+
+        for group in proxy_groups {
+            let Some(chooser) = self.group_servers_chooser.get(&group.name) else {
+                tracing::warn!(
+                    group = group.name,
+                    "Refresh: group not registered in chooser; skipping"
+                );
+                continue;
+            };
+
+            // The auto-injected anonymous default group tracks the full server
+            // list rather than a fixed name list, so any newly-added remote
+            // servers automatically join it.
+            let resolved: Vec<ServerConfig> = if group.name.is_empty() {
+                servers.to_vec()
+            } else {
+                let mut acc = Vec::with_capacity(group.proxies.len());
+                for proxy_name in &group.proxies {
+                    match by_name.get(proxy_name.as_str()) {
+                        Some(server) => acc.push((*server).clone()),
+                        None => tracing::warn!(
+                            group = group.name,
+                            proxy = proxy_name,
+                            "Refresh: proxy name referenced by group is no longer in the server list; dropping"
+                        ),
+                    }
+                }
+                acc
+            };
+
+            chooser.update_servers(Arc::new(resolved));
+        }
     }
 
     /// Reset all group servers choosers

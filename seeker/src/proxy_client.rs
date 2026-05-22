@@ -59,6 +59,8 @@ impl ProxyClient {
         let (server_chooser, chooser_handle) =
             setup_server_chooser(config.clone(), dns_client.clone(), show_stats).await;
 
+        spawn_remote_config_refresher(config.clone(), server_chooser.clone());
+
         let (network_change_tx, network_change_rx) = mpsc::unbounded_channel();
         spawn_network_monitor(network_change_tx);
 
@@ -387,6 +389,53 @@ async fn setup_dns_server(
             .await
     });
     (resolver, handle)
+}
+
+/// Spawn a periodic task that re-fetches `remote_config_urls` and atomically
+/// swaps the server list inside each `GroupServersChooser`.
+///
+/// No-op when `remote_config_urls` is empty. When unset, the refresh interval
+/// defaults to 1 hour.
+fn spawn_remote_config_refresher(config: Config, server_chooser: ServerChooser) {
+    if config.remote_config_urls.is_empty() {
+        return;
+    }
+    let interval = config
+        .remote_config_refresh_interval
+        .unwrap_or_else(|| std::time::Duration::from_secs(3600));
+    if interval.is_zero() {
+        tracing::info!("remote_config_refresh_interval is zero; periodic refresh disabled");
+        return;
+    }
+
+    tracing::info!(
+        interval_secs = interval.as_secs(),
+        urls = config.remote_config_urls.len(),
+        "Spawning remote config refresh task"
+    );
+
+    tokio::spawn(async move {
+        let mut tick = tokio::time::interval(interval);
+        tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        // Skip the immediate first tick — fresh data was just loaded at startup.
+        tick.tick().await;
+        loop {
+            tick.tick().await;
+            let cfg = config.clone();
+            let refreshed = tokio::task::spawn_blocking(move || cfg.refresh_remote_servers())
+                .await
+                .unwrap_or(None);
+            let Some(new_servers) = refreshed else {
+                tracing::warn!("Remote config refresh failed; keeping in-memory data");
+                continue;
+            };
+            tracing::info!(
+                count = new_servers.len(),
+                "Remote config refresh succeeded; applying to groups"
+            );
+            server_chooser.update_servers_for_groups(&new_servers, &config.proxy_groups);
+        }
+    });
 }
 
 async fn setup_server_chooser(
