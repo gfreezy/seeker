@@ -1,6 +1,6 @@
 [package]
 name = "vless_client"
-version = "20260512.0.2"
+version = "20260522.0.0"
 authors = ["Alex.F <gfreezy@gmail.com>"]
 edition = "2021"
 
