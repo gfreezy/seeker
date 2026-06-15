@@ -24,6 +24,7 @@ use tokio::time::timeout;
 use std::net::IpAddr;
 
 use std::sync::Arc;
+use sysconfig::DNSSetup;
 use tracing::{error, instrument, trace, trace_span};
 use tracing_futures::Instrument;
 use tun_nat::{SessionManager, run_nat_with_icmp};
@@ -46,13 +47,19 @@ pub struct ProxyClient {
     resolver: RuleBasedDnsResolver,
     dns_client: DnsClient,
     server_chooser: ServerChooser,
+    dns_setup: Arc<parking_lot::Mutex<DNSSetup>>,
     background_tasks: Option<BackgroundTasks>,
     #[allow(dead_code)]
     icmp_relay: Option<IcmpRelay>,
 }
 
 impl ProxyClient {
-    pub async fn new(config: Config, uid: Option<u32>, show_stats: bool) -> Self {
+    pub async fn new(
+        config: Config,
+        uid: Option<u32>,
+        show_stats: bool,
+        dns_setup: Arc<parking_lot::Mutex<DNSSetup>>,
+    ) -> Self {
         let dns_client = DnsClient::new(&config.dns_servers, config.dns_timeout).await;
         let (session_manager, nat_handle, icmp_relay) = setup_nat(&config, &dns_client);
         let (resolver, dns_handle) = setup_dns_server(&config, dns_client.resolver()).await;
@@ -73,6 +80,7 @@ impl ProxyClient {
             uid,
             session_manager,
             server_chooser,
+            dns_setup,
             background_tasks: Some(BackgroundTasks {
                 nat: nat_handle,
                 dns: dns_handle,
@@ -177,6 +185,7 @@ impl ProxyClient {
             tasks.network_change_rx,
             self.server_chooser.clone(),
             self.udp_manager.clone(),
+            self.dns_setup.clone(),
         );
 
         let ret = tokio::select! {
@@ -459,6 +468,7 @@ async fn run_network_change_handler(
     mut rx: mpsc::UnboundedReceiver<()>,
     server_chooser: ServerChooser,
     udp_manager: UdpManager,
+    dns_setup: Arc<parking_lot::Mutex<DNSSetup>>,
 ) {
     const DEBOUNCE_DURATION: std::time::Duration = std::time::Duration::from_secs(5);
     const STARTUP_GRACE_PERIOD: std::time::Duration = std::time::Duration::from_secs(10);
@@ -480,7 +490,15 @@ async fn run_network_change_handler(
             }
         }
 
-        tracing::info!("Network change detected, resetting all connections");
+        tracing::info!("Network change detected, reapplying DNS and resetting all connections");
+        let dns_setup_clone = dns_setup.clone();
+        if let Err(e) = tokio::task::spawn_blocking(move || {
+            dns_setup_clone.lock().reapply();
+        })
+        .await
+        {
+            tracing::error!(?e, "failed to reapply DNS after network change");
+        }
         server_chooser.reset_all();
         udp_manager.write().clear();
         tracing::info!("Connection reset completed");

@@ -22,9 +22,11 @@ mod server_performance;
 mod traffic;
 
 use clap::Parser;
+use parking_lot::Mutex;
 use std::env::current_dir;
 use std::net::SocketAddrV4;
 use std::path::Path;
+use std::sync::Arc;
 use std::time::Duration;
 
 use crate::config_encryptor::encrypt_config_file;
@@ -140,9 +142,7 @@ async fn main() -> anyhow::Result<()> {
         .iter()
         .map(|addr| addr.parse::<SocketAddrV4>().unwrap().ip().to_string())
         .collect();
-    // Linux system needs to be mut.
-    #[allow(unused_mut)]
-    let mut dns_setup = DNSSetup::new(dns);
+    let dns_setup = Arc::new(Mutex::new(DNSSetup::new(dns)));
 
     let uid = args.user_id;
     let show_stats = args.stats;
@@ -168,12 +168,12 @@ async fn main() -> anyhow::Result<()> {
     {
         let cidr = config.tun_cidr.to_string();
         let redir_mode = config.redir_mode;
-        let client = ProxyClient::new(config, uid, show_stats)
+        let client = ProxyClient::new(config, uid, show_stats, dns_setup.clone())
             .instrument(tracing::trace_span!("ProxyClient.new"))
             .await;
         eprint!(".");
 
-        dns_setup.start();
+        dns_setup.lock().start();
         eprintln!("Started!");
 
         let mut _iptables_setup: Option<IptablesSetup> = None;

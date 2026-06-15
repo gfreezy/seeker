@@ -1,13 +1,15 @@
 use crate::command::run_cmd;
+use std::collections::BTreeMap;
 use std::net::IpAddr;
-use tracing::info;
+use std::process::Command;
+use tracing::{info, warn};
 
 pub struct DNSSetup {
-    primary_network: String,
+    primary_network: Option<String>,
     // DNS servers from scutil. Real used DNS servers.
     original_real_dns: Vec<String>,
     // DNS servers from networksetup. DHCP dns servers are not included.
-    original_manual_dns: Vec<String>,
+    original_manual_dns: BTreeMap<String, Vec<String>>,
     // DNS servers to be set.
     dns: Vec<String>,
 }
@@ -15,41 +17,45 @@ pub struct DNSSetup {
 impl DNSSetup {
     #[allow(clippy::new_without_default)]
     pub fn new(dns: Vec<String>) -> Self {
-        let network = get_primary_network();
-        info!("Primary netowrk service is {}", &network);
-        let original_manual_dns = run_cmd("networksetup", &["-getdnsservers", &network])
-            .lines()
-            .filter_map(|l| l.parse::<IpAddr>().ok())
-            .map(|ip| ip.to_string())
-            .collect::<Vec<_>>();
-
         // Get macos dns servers from terminal
         let original_dns = get_current_dns();
 
         DNSSetup {
-            primary_network: network,
+            primary_network: None,
             original_real_dns: original_dns,
-            original_manual_dns,
+            original_manual_dns: BTreeMap::new(),
             dns,
         }
     }
 
-    pub fn start(&self) {
-        let original_dns = &self.original_manual_dns;
-        let network = &self.primary_network;
-        if self.dns.is_empty() {
-            let _ = run_cmd("networksetup", &["-setdnsservers", network, "127.0.0.1"]);
-        } else {
-            let to_set = self.dns.join(" ");
-            let _ = run_cmd(
-                "networksetup",
-                &["-setdnsservers", network, "127.0.0.1", &to_set],
+    pub fn start(&mut self) {
+        self.reapply();
+    }
+
+    pub fn reapply(&mut self) {
+        let Some(network) = get_primary_network() else {
+            warn!("Skip DNS setup because primary network service was not found");
+            return;
+        };
+
+        if self.primary_network.as_deref() != Some(network.as_str()) {
+            info!(
+                "Primary network service changed from {:?} to {}",
+                self.primary_network, network
             );
         }
 
+        self.original_manual_dns
+            .entry(network.clone())
+            .or_insert_with(|| get_manual_dns(&network));
+        set_dns(&network, &self.dns);
+        self.primary_network = Some(network.clone());
+
         info!(
             "Setup DNS: {:?}, Original DNS is {:?}, Original real DNS is {:?}",
-            &self.dns, &self.original_manual_dns, &original_dns,
+            &self.dns,
+            self.original_manual_dns.get(&network),
+            &self.original_real_dns,
         );
     }
 
@@ -60,17 +66,9 @@ impl DNSSetup {
 
 impl Drop for DNSSetup {
     fn drop(&mut self) {
-        let mut args = vec!["-setdnsservers", &self.primary_network];
-        if self.original_manual_dns.is_empty() {
-            args.push("empty");
-        } else {
-            for dns in &self.original_manual_dns {
-                args.push(dns);
-            }
-        };
-        info!("Restore original DNS: {:?}", self.original_manual_dns);
-
-        let _ = run_cmd("networksetup", &args);
+        for (network, original_manual_dns) in &self.original_manual_dns {
+            restore_dns(network, original_manual_dns);
+        }
     }
 }
 
@@ -82,32 +80,92 @@ pub fn setup_ip(tun_name: &str, ip: &str, cidr: &str, additional_cidrs: Vec<Stri
     }
 }
 
-fn get_primary_network() -> String {
-    let route_ret = run_cmd("route", &["-n", "get", "0.0.0.0"]);
+fn get_primary_network() -> Option<String> {
+    let route_ret = try_run_cmd("route", &["-n", "get", "0.0.0.0"])?;
     let device = route_ret
         .lines()
         .find(|l| l.contains("interface:"))
         .and_then(|l| l.split_whitespace().last())
-        .map(|s| s.trim())
-        .expect("get primary device");
+        .map(|s| s.trim())?;
     info!("Primary device is {}", device);
-    let network_services = run_cmd("networksetup", &["-listallhardwareports"]);
+    let network_services = try_run_cmd("networksetup", &["-listallhardwareports"])?;
+    let network = find_network_service_for_device(&network_services, device)?;
+    info!("Primary network service is {}", &network);
+    Some(network)
+}
+
+fn find_network_service_for_device(network_services: &str, device: &str) -> Option<String> {
     let mut iter = network_services.lines().peekable();
-    loop {
-        if let Some(line) = iter.next() {
-            if let Some(next_line) = iter.peek() {
-                if next_line.split(':').next_back().map(|l| l.contains(device)) == Some(true) {
-                    if let Some(network) = line.split(':').next_back().map(|s| s.trim()) {
-                        return network.to_string();
-                    }
+    while let Some(line) = iter.next() {
+        if let Some(next_line) = iter.peek() {
+            if next_line.split(':').next_back().map(|l| l.contains(device)) == Some(true) {
+                if let Some(network) = line.split(':').next_back().map(|s| s.trim()) {
+                    return Some(network.to_string());
                 }
-            } else {
-                panic!("No primary network found");
             }
-        } else {
-            panic!("No primary network found");
         }
     }
+    None
+}
+
+fn get_manual_dns(network: &str) -> Vec<String> {
+    let Some(output) = try_run_cmd("networksetup", &["-getdnsservers", network]) else {
+        warn!("Failed to get manual DNS for network service {}", network);
+        return vec![];
+    };
+
+    output
+        .lines()
+        .filter_map(|l| l.parse::<IpAddr>().ok())
+        .map(|ip| ip.to_string())
+        .collect::<Vec<_>>()
+}
+
+fn set_dns(network: &str, dns: &[String]) {
+    let mut args = vec!["-setdnsservers", network, "127.0.0.1"];
+    args.extend(dns.iter().map(String::as_str));
+
+    if try_run_cmd("networksetup", &args).is_none() {
+        warn!("Failed to setup DNS for network service {}", network);
+    }
+}
+
+fn restore_dns(network: &str, original_manual_dns: &[String]) {
+    let mut args = vec!["-setdnsservers", network];
+    if original_manual_dns.is_empty() {
+        args.push("empty");
+    } else {
+        args.extend(original_manual_dns.iter().map(String::as_str));
+    }
+    info!(
+        "Restore original DNS for {}: {:?}",
+        network, original_manual_dns
+    );
+
+    if try_run_cmd("networksetup", &args).is_none() {
+        warn!("Failed to restore DNS for network service {}", network);
+    }
+}
+
+fn try_run_cmd(cmd: &str, args: &[&str]) -> Option<String> {
+    let output = Command::new(cmd).args(args).output().ok()?;
+    let stdout = std::str::from_utf8(&output.stdout).ok()?;
+    let stderr = std::str::from_utf8(&output.stderr).unwrap_or("");
+    info!("cmd: {cmd}, args: {:?}", args);
+    info!("stdout: {}", stdout);
+    info!("stderr: {}", stderr);
+
+    if !output.status.success() {
+        warn!(
+            "{} {}\nstdout: {}\nstderr: {}",
+            cmd,
+            args.join(" "),
+            stdout,
+            stderr
+        );
+        return None;
+    }
+    Some(stdout.to_string())
 }
 
 pub fn get_current_dns() -> Vec<String> {
@@ -210,5 +268,27 @@ mod tests {
         "#;
         let ret = parse_scutil_dns(lines);
         assert_eq!(ret, vec!["192.168.2.1"]);
+    }
+
+    #[test]
+    fn test_find_network_service_for_device() {
+        let network_services = r#"
+Hardware Port: Ethernet Adapter (en4)
+Device: en4
+Ethernet Address: 7e:f9:13:0a:fb:66
+
+Hardware Port: AX88772A
+Device: en14
+Ethernet Address: 00:0e:c6:d6:30:b1
+
+Hardware Port: Wi-Fi
+Device: en0
+Ethernet Address: 84:2f:57:31:a0:bb
+"#;
+
+        assert_eq!(
+            find_network_service_for_device(network_services, "en14"),
+            Some("AX88772A".to_string())
+        );
     }
 }

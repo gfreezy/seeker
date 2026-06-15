@@ -35,11 +35,19 @@ impl DNSSetup {
     fn set_with_dnsresolv_conf(&mut self) {
         let original_dns = get_current_dns();
         info!("original dns: {:?}", &original_dns);
-        let mut resolv = OpenOptions::new().write(true).open(RESOLV_PATH).unwrap();
-        resolv
-            .write_all(generate_resolve_file(&self.dns).as_slice())
-            .unwrap();
+        Self::write_resolv_conf(&self.dns);
         self.original_dns = original_dns;
+    }
+
+    fn write_resolv_conf(dns: &[String]) {
+        let mut resolv = OpenOptions::new()
+            .write(true)
+            .truncate(true)
+            .open(RESOLV_PATH)
+            .unwrap();
+        resolv
+            .write_all(generate_resolve_file(dns).as_slice())
+            .unwrap();
     }
 
     fn is_system_using_resolved() -> bool {
@@ -82,6 +90,14 @@ impl DNSSetup {
             self.set_with_systemd_resolved();
         } else {
             self.set_with_dnsresolv_conf();
+        }
+    }
+
+    pub fn reapply(&mut self) {
+        if self.use_resolved {
+            self.set_with_systemd_resolved();
+        } else {
+            Self::write_resolv_conf(&self.dns);
         }
     }
 }
