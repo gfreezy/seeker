@@ -391,7 +391,8 @@ impl Config {
     fn add_default_proxy_group(&mut self) {
         // Check if rules contain PROXY and PROBE rules with no name
         let has_default_proxy = self.rules.has_empty_proxy_or_probe_rules();
-        if has_default_proxy {
+        let has_configured_default = self.proxy_groups.iter().any(|group| group.name.is_empty());
+        if has_default_proxy && !has_configured_default {
             let groups = Arc::make_mut(&mut self.proxy_groups);
             let servers: Vec<String> = self.servers.iter().map(|s| s.name().to_string()).collect();
             groups.push(ProxyGroup {
@@ -422,17 +423,22 @@ impl Config {
         }
         // Validate all proxy names in groups reference valid servers
         for group in self.proxy_groups.iter() {
-            for proxy in group.proxies.iter() {
-                if !seen_server_names.contains(proxy.as_str()) {
-                    eprintln!(
-                        "Invalid proxy name '{}' in group '{}' - server not found",
-                        proxy, group.name
-                    );
-                    tracing::error!(
-                        "Invalid proxy name '{}' in group '{}' - server not found",
-                        proxy,
-                        group.name
-                    );
+            // An anonymous default group always tracks every loaded server. Its
+            // serialized proxies list is informational and may be stale after a
+            // remote subscription refresh, so only named groups validate it.
+            if !group.name.is_empty() {
+                for proxy in group.proxies.iter() {
+                    if !seen_server_names.contains(proxy.as_str()) {
+                        eprintln!(
+                            "Invalid proxy name '{}' in group '{}' - server not found",
+                            proxy, group.name
+                        );
+                        tracing::error!(
+                            "Invalid proxy name '{}' in group '{}' - server not found",
+                            proxy,
+                            group.name
+                        );
+                    }
                 }
             }
             if let Some(default_selected) = group.default_selected.as_deref() {
@@ -441,7 +447,11 @@ impl Config {
                         group = group.name,
                         "Ignoring default_selected on a non-select proxy group"
                     );
-                } else if !group.proxies.iter().any(|proxy| proxy == default_selected) {
+                } else if if group.name.is_empty() {
+                    !seen_server_names.contains(default_selected)
+                } else {
+                    !group.proxies.iter().any(|proxy| proxy == default_selected)
+                } {
                     tracing::warn!(
                         group = group.name,
                         default_selected,
@@ -482,17 +492,21 @@ impl Config {
     }
 
     pub fn get_servers_by_name(&self, name: &str) -> Arc<Vec<ServerConfig>> {
-        // find proxy group by name, and get proxy servers
-        let proxy_servers = self
-            .proxy_groups
-            .iter()
-            .find(|g| g.name == name)
-            .map(|g| &g.proxies);
-        // if no proxy group found, return empty servers
-        if let Some(proxy_servers) = proxy_servers {
+        // Find the proxy group by name. The anonymous default group always
+        // tracks all loaded servers, whether it was injected or persisted in
+        // the configuration.
+        let Some(group) = self.proxy_groups.iter().find(|group| group.name == name) else {
+            return Arc::new(vec![]);
+        };
+        if group.name.is_empty() {
+            return self.servers.clone();
+        }
+
+        {
             // Resolve in proxy-group order. For a select group this ensures the
             // first proxy is also the default when default_selected is absent.
-            let servers = proxy_servers
+            let servers = group
+                .proxies
                 .iter()
                 .filter_map(|proxy_name| {
                     self.servers
@@ -502,8 +516,6 @@ impl Config {
                 })
                 .collect();
             Arc::new(servers)
-        } else {
-            Arc::new(vec![])
         }
     }
 }
@@ -627,6 +639,58 @@ mod tests {
     use super::*;
     use std::time::Duration;
 
+    fn test_server(name: &str, port: u16) -> ServerConfig {
+        ServerConfig::new(
+            name.to_string(),
+            format!("127.0.0.1:{port}").parse().unwrap(),
+            ServerProtocol::Http,
+            None,
+            None,
+            None,
+            None,
+        )
+    }
+
+    fn test_config(proxy_groups: Vec<ProxyGroup>, rules: Vec<Rule>) -> Config {
+        let servers = Arc::new(vec![
+            test_server("first", 1080),
+            test_server("second", 1081),
+        ]);
+        Config {
+            servers: servers.clone(),
+            local_servers: servers,
+            proxy_groups: Arc::new(proxy_groups),
+            remote_config_urls: vec![],
+            remote_config_refresh_interval: None,
+            geo_ip: None,
+            dns_start_ip: "11.0.0.10".parse().unwrap(),
+            db_path: None,
+            dns_servers: vec![],
+            redir_mode: false,
+            tun_bypass_direct: true,
+            tun_name: "utun4".to_string(),
+            tun_ip: "11.0.0.1".parse().unwrap(),
+            verbose: false,
+            tun_cidr: Ipv4Cidr::new("11.0.0.0".parse().unwrap(), 16),
+            queue_number: 1,
+            threads_per_queue: 1,
+            rules: ProxyRules::new(rules, None),
+            dns_listen: None,
+            dns_listens: vec!["127.0.0.1:5353".to_string()],
+            gateway_mode: false,
+            ping_timeout: Duration::from_secs(1),
+            ping_urls: vec![],
+            dns_timeout: Duration::from_secs(1),
+            probe_timeout: Duration::from_secs(1),
+            connect_timeout: Duration::from_secs(1),
+            read_timeout: Duration::from_secs(1),
+            write_timeout: Duration::from_secs(1),
+            idle_timeout: Duration::from_secs(1),
+            max_connect_errors: 1,
+            api_addr: None,
+        }
+    }
+
     #[test]
     fn test_parse_duration() {
         assert_eq!(parse_duration("10s"), Ok(Duration::from_secs(10)));
@@ -683,6 +747,65 @@ type: fallback
 proxies: [server-1]
 "#;
         assert!(serde_yaml::from_str::<ProxyGroup>(yaml).is_err());
+    }
+
+    #[test]
+    fn test_adds_automatic_implicit_default_group() {
+        let mut config = test_config(
+            vec![],
+            vec![Rule::Match(rule::Action::Proxy(String::new()))],
+        );
+
+        config.add_default_proxy_group();
+
+        assert_eq!(config.proxy_groups.len(), 1);
+        let group = &config.proxy_groups[0];
+        assert!(group.name.is_empty());
+        assert_eq!(group.group_type, ProxyGroupType::UrlTest);
+        assert_eq!(group.proxies, vec!["first", "second"]);
+    }
+
+    #[test]
+    fn test_persisted_default_group_is_not_duplicated_and_tracks_all_servers() {
+        let persisted_default = ProxyGroup {
+            name: String::new(),
+            group_type: ProxyGroupType::Select,
+            default_selected: Some("second".to_string()),
+            proxies: vec!["stale-entry".to_string()],
+            ping_timeout: None,
+            ping_urls: vec![],
+        };
+        let mut config = test_config(
+            vec![persisted_default],
+            vec![Rule::Match(rule::Action::Proxy(String::new()))],
+        );
+
+        config.add_default_proxy_group();
+
+        assert_eq!(config.proxy_groups.len(), 1);
+        assert_eq!(config.proxy_groups[0].group_type, ProxyGroupType::Select);
+        assert_eq!(
+            config.proxy_groups[0].default_selected.as_deref(),
+            Some("second")
+        );
+        assert_eq!(
+            config
+                .get_servers_by_name("")
+                .iter()
+                .map(|server| server.name())
+                .collect::<Vec<_>>(),
+            vec!["first", "second"]
+        );
+
+        Arc::make_mut(&mut config.servers).push(test_server("remote", 1082));
+        assert_eq!(
+            config
+                .get_servers_by_name("")
+                .iter()
+                .map(|server| server.name())
+                .collect::<Vec<_>>(),
+            vec!["first", "second", "remote"]
+        );
     }
 
     #[test]

@@ -208,9 +208,9 @@ impl ServerChooser {
                 continue;
             };
 
-            // The auto-injected anonymous default group tracks the full server
-            // list rather than a fixed name list, so any newly-added remote
-            // servers automatically join it.
+            // The anonymous default group tracks the full server list whether
+            // it was injected or persisted, so newly-added remote servers
+            // automatically join it.
             let resolved: Vec<ServerConfig> = if group.name.is_empty() {
                 servers.to_vec()
             } else {

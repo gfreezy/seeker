@@ -246,6 +246,7 @@ rules:
 * `select`: 固定使用 `default_selected` 指定的代理，不会因测速或连续连接失败自动切换。如果 `default_selected` 未设置或指定的代理不在组内，则使用 `proxies` 第一项。
 * `url_test`: 根据延迟和成功率自动选择最佳代理。为保持兼容，未配置 `type` 的代理组默认使用 `url_test`。
 * 默认路由组通过最后一条 `MATCH,PROXY(group-name)` 规则指定。
+* 裸 `PROXY`/`PROBE` 使用名称为空的默认组。需要固定该组时，可在 `proxy_groups` 中配置 `name: ""`、`type: select` 和 `default_selected`；该组始终包含全部当前服务器。
 
 === 服务器切换优化
 
