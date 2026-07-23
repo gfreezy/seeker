@@ -9,6 +9,7 @@ use testcontainers::core::WaitFor;
 use testcontainers::runners::SyncRunner;
 use testcontainers::{Container, GenericImage, ImageExt};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::task::JoinHandle;
 
 /// Atomic port counter so each test gets a unique port (tests run in parallel).
 static NEXT_PORT: AtomicU16 = AtomicU16::new(18080);
@@ -107,19 +108,45 @@ async fn wait_port_listening(port: u16, timeout: Duration) {
     }
 }
 
+/// Start a one-shot HTTP server on the CI host so proxy tests do not depend on
+/// external DNS or internet reachability.
+async fn start_http_target() -> (SocketAddr, JoinHandle<()>) {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("failed to bind local HTTP target");
+    let addr = listener.local_addr().unwrap();
+    let handle = tokio::spawn(async move {
+        let (mut stream, _) = listener
+            .accept()
+            .await
+            .expect("failed to accept proxied connection");
+        let mut request = [0u8; 1024];
+        stream
+            .read(&mut request)
+            .await
+            .expect("failed to read proxied request");
+        stream
+            .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok")
+            .await
+            .expect("failed to write target response");
+    });
+    (addr, handle)
+}
+
 #[tokio::test]
 async fn test_http_proxy_tcp() {
+    let (target_addr, target_server) = start_http_target().await;
     let port = next_port();
     let container = start_http_proxy_async(port).await;
 
     let proxy_addr: SocketAddr = format!("127.0.0.1:{port}").parse().unwrap();
-    let target = Address::DomainNameAddress("www.baidu.com".to_string(), 80);
+    let target = Address::SocketAddress(target_addr);
 
     let mut stream = HttpProxyTcpStream::connect(proxy_addr, target, None, None)
         .await
         .expect("HTTP proxy connect failed");
 
-    let request = "GET / HTTP/1.1\r\nHost: www.baidu.com\r\nConnection: close\r\n\r\n";
+    let request = "GET / HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n";
     stream
         .write_all(request.as_bytes())
         .await
@@ -138,21 +165,23 @@ async fn test_http_proxy_tcp() {
         "expected 200 OK in response"
     );
 
+    target_server.await.expect("local HTTP target failed");
     container.cleanup().await;
 }
 
 #[tokio::test]
 async fn test_https_proxy_tcp() {
+    let (target_addr, target_server) = start_http_target().await;
     let port = next_port();
     let container = start_https_proxy_async(port).await;
 
     let proxy_addr: SocketAddr = format!("127.0.0.1:{port}").parse().unwrap();
-    let target = Address::DomainNameAddress("www.baidu.com".to_string(), 443);
+    let target = Address::SocketAddress(target_addr);
 
     // Use a TLS connector that accepts self-signed certs for the proxy connection
     let tls_connector = tcp_connection::tls::get_tls_connector(true);
 
-    let stream = HttpsProxyTcpStream::connect_with_connector(
+    let mut stream = HttpsProxyTcpStream::connect_with_connector(
         proxy_addr,
         "localhost",
         target,
@@ -163,31 +192,19 @@ async fn test_https_proxy_tcp() {
     .await
     .expect("HTTPS proxy connect failed");
 
-    // Layer client-side TLS on top for the target connection
-    let connector = tcp_connection::tls::get_tls_connector(false);
-    let server_name =
-        rustls::pki_types::ServerName::try_from("www.baidu.com".to_string()).expect("invalid SNI");
-    let mut tls_stream = tcp_connection::tls::connect_tls(&connector, server_name, stream)
-        .await
-        .expect("TLS handshake with target failed");
-
-    let request = "GET / HTTP/1.1\r\nHost: www.baidu.com\r\nConnection: close\r\n\r\n";
-    tls_stream
+    let request = "GET / HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n";
+    stream
         .write_all(request.as_bytes())
         .await
         .expect("write failed");
 
     let mut response = vec![0u8; 4096];
-    let n = tls_stream.read(&mut response).await.expect("read failed");
+    let n = stream.read(&mut response).await.expect("read failed");
     let response_str = String::from_utf8_lossy(&response[..n]);
 
     println!("response (first {n} bytes):\n{response_str}");
-    assert!(
-        response_str.contains("200")
-            || response_str.contains("301")
-            || response_str.contains("302"),
-        "expected HTTP success/redirect status"
-    );
+    assert!(response_str.contains("200 OK"), "expected 200 OK status");
 
+    target_server.await.expect("local HTTP target failed");
     container.cleanup().await;
 }

@@ -13,6 +13,7 @@
 ### Fixed
 
 - Parse proxy-group `ping_timeout` values with the documented duration syntax such as `2s`.
+- Make HTTP and HTTPS proxy integration tests use a local target server instead of a public website, avoiding CI failures caused by external DNS or network availability.
 
 ### Refactor
 
