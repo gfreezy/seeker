@@ -203,6 +203,10 @@ servers:
 proxy_groups:
   # 代理组名称，名称不能重复。用来在规则中引用：PROXY(proxy-group-1) PROBE(proxy-group-1)
   - name: proxy-group-1
+    # select 固定使用 default_selected 指定的代理，不会根据测速或连接失败自动切换。
+    type: select
+    # 可选。未设置或指定的名称不在 proxies 中时，使用 proxies 第一项。
+    default_selected: server-ss1
     # 代理组中的代理服务器列表,名称必须是 servers 列表中定义的服务器名称
     proxies:
       - server-http
@@ -217,6 +221,8 @@ proxy_groups:
     ping_timeout: 1s
 
   - name: proxy-group-2
+    # url_test 根据测速和成功率自动选择最佳代理。不设置 type 时默认为 url_test。
+    type: url_test
     proxies:
       - server-ss2
     ping_urls:
@@ -238,7 +244,7 @@ proxy_groups:
 # 规则动作：
 # DIRECT: 直接访问
 # REJECT: 直接拒绝
-# PROXY(proxy-group-name): 使用代理组 proxy-group-name 中自动选择最快的代理服务器
+# PROXY(proxy-group-name): 使用代理组 proxy-group-name，具体选择方式由代理组的 type 决定
 # PROBE(proxy-group-name): 同时发起两个连接，一个使用代理，一个直接连接。哪一个先连接成功则使用哪一个。
 # 并且缓存每一个域名的 PROBE 结果，下次先用缓存的结果连接，同时再重新发起探测。
 rules:

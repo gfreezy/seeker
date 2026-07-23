@@ -2,9 +2,17 @@
 
 ## Unreleased
 
+### Added
+
+- Add proxy-group selection strategies modeled after Clash: `type: select` pins a configured `default_selected` proxy (falling back to the first group member), while `type: url_test` keeps automatic performance-based selection. Omitted `type` remains `url_test` for backward compatibility.
+
 ### Improved
 
 - Improve server performance `success_rate` calculation: use per-URL success ratio instead of binary per-round success. Previously, if any single ping URL succeeded, the entire round was marked as 100% success. Now `success_rate` accurately reflects the proportion of successful URL pings (e.g., 2/3 URLs success = 66.67%). The `success`/`failure` counters now track individual URL results.
+
+### Fixed
+
+- Parse proxy-group `ping_timeout` values with the documented duration syntax such as `2s`.
 
 ### Refactor
 

@@ -53,6 +53,8 @@ impl ServerChooser {
                 group.name.clone(),
                 GroupServersChooser::new(
                     group.name.clone(),
+                    group.group_type,
+                    group.default_selected.clone(),
                     servers,
                     dns_client.clone(),
                     ping_urls,

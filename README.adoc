@@ -219,9 +219,37 @@ sudo seeker --config-url https://your-server.com/encrypted-config.txt --key mypa
 * `ping_timeout`: ping 超时时间（默认 3 秒）。
 * `probe_timeout`: 探测超时时间（默认 3 秒）。用于 `PROBE` 规则判断是否走代理。
 
+=== 代理组选择策略
+
+`seeker` 的 `proxy_groups` 支持 `select` 和 `url_test` 两种选择策略：
+
+[source,yaml]
+----
+proxy_groups:
+  - name: default
+    type: select
+    default_selected: server-ss2
+    proxies:
+      - server-ss1
+      - server-ss2
+
+  - name: auto
+    type: url_test
+    proxies:
+      - server-ss1
+      - server-ss2
+
+rules:
+  - 'MATCH,PROXY(default)'
+----
+
+* `select`: 固定使用 `default_selected` 指定的代理，不会因测速或连续连接失败自动切换。如果 `default_selected` 未设置或指定的代理不在组内，则使用 `proxies` 第一项。
+* `url_test`: 根据延迟和成功率自动选择最佳代理。为保持兼容，未配置 `type` 的代理组默认使用 `url_test`。
+* 默认路由组通过最后一条 `MATCH,PROXY(group-name)` 规则指定。
+
 === 服务器切换优化
 
-`seeker` 在代理组中自动选择最佳服务器时，采用以下优化策略以减少频繁切换：
+`seeker` 在 `url_test` 代理组中自动选择最佳服务器时，采用以下优化策略以减少频繁切换：
 
 * **切换阈值**: 新服务器分数需比当前服务器低 10% 以上才会切换，避免因微小差异频繁切换。
 * **最小切换间隔**: 两次服务器切换之间至少间隔 60 秒，防止短时间内多次切换。

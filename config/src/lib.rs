@@ -30,11 +30,23 @@ const URL_SAFE_ENGINE: base64::engine::general_purpose::GeneralPurpose =
             .with_decode_padding_mode(base64::engine::DecodePaddingMode::Indifferent),
     );
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum ProxyGroupType {
+    Select,
+    #[default]
+    UrlTest,
+}
+
 #[derive(Clone, Debug, Deserialize)]
 pub struct ProxyGroup {
     pub name: String,
-    pub proxies: Vec<String>,
+    #[serde(rename = "type", default)]
+    pub group_type: ProxyGroupType,
     #[serde(default)]
+    pub default_selected: Option<String>,
+    pub proxies: Vec<String>,
+    #[serde(with = "duration_opt", default)]
     pub ping_timeout: Option<Duration>,
     #[serde(default)]
     pub ping_urls: Vec<PingURL>,
@@ -384,6 +396,8 @@ impl Config {
             let servers: Vec<String> = self.servers.iter().map(|s| s.name().to_string()).collect();
             groups.push(ProxyGroup {
                 name: "".to_string(),
+                group_type: ProxyGroupType::UrlTest,
+                default_selected: None,
                 ping_timeout: None,
                 proxies: servers,
                 ping_urls: self.ping_urls.clone(),
@@ -421,6 +435,20 @@ impl Config {
                     );
                 }
             }
+            if let Some(default_selected) = group.default_selected.as_deref() {
+                if group.group_type != ProxyGroupType::Select {
+                    tracing::warn!(
+                        group = group.name,
+                        "Ignoring default_selected on a non-select proxy group"
+                    );
+                } else if !group.proxies.iter().any(|proxy| proxy == default_selected) {
+                    tracing::warn!(
+                        group = group.name,
+                        default_selected,
+                        "default_selected is not a member of the proxy group; using the first proxy"
+                    );
+                }
+            }
         }
 
         let rules = self.rules.rules.read();
@@ -455,19 +483,23 @@ impl Config {
 
     pub fn get_servers_by_name(&self, name: &str) -> Arc<Vec<ServerConfig>> {
         // find proxy group by name, and get proxy servers
-        let proxy_servers: Option<Vec<_>> = self
+        let proxy_servers = self
             .proxy_groups
             .iter()
             .find(|g| g.name == name)
-            .map(|g| g.proxies.iter().map(|s| s.as_str()).collect());
+            .map(|g| &g.proxies);
         // if no proxy group found, return empty servers
         if let Some(proxy_servers) = proxy_servers {
-            // find servers by names
-            let servers = self
-                .servers
+            // Resolve in proxy-group order. For a select group this ensures the
+            // first proxy is also the default when default_selected is absent.
+            let servers = proxy_servers
                 .iter()
-                .filter(|s| proxy_servers.contains(&s.name()))
-                .cloned()
+                .filter_map(|proxy_name| {
+                    self.servers
+                        .iter()
+                        .find(|server| server.name() == proxy_name)
+                        .cloned()
+                })
                 .collect();
             Arc::new(servers)
         } else {
@@ -620,6 +652,40 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_proxy_group_types_and_default_selected() {
+        let yaml = r#"
+- name: manual
+  type: select
+  default_selected: server-2
+  proxies: [server-1, server-2]
+- name: auto
+  type: url_test
+  proxies: [server-1, server-2]
+  ping_timeout: 2s
+- name: legacy-auto
+  proxies: [server-1]
+"#;
+        let groups: Vec<ProxyGroup> = serde_yaml::from_str(yaml).unwrap();
+
+        assert_eq!(groups[0].group_type, ProxyGroupType::Select);
+        assert_eq!(groups[0].default_selected.as_deref(), Some("server-2"));
+        assert_eq!(groups[1].group_type, ProxyGroupType::UrlTest);
+        assert_eq!(groups[1].ping_timeout, Some(Duration::from_secs(2)));
+        assert_eq!(groups[2].group_type, ProxyGroupType::UrlTest);
+        assert!(groups[2].default_selected.is_none());
+    }
+
+    #[test]
+    fn test_reject_unknown_proxy_group_type() {
+        let yaml = r#"
+name: unsupported
+type: fallback
+proxies: [server-1]
+"#;
+        assert!(serde_yaml::from_str::<ProxyGroup>(yaml).is_err());
+    }
+
+    #[test]
     fn test_parse_remote_yaml_proxies() -> std::io::Result<()> {
         let data = br#"
 proxies:
@@ -695,9 +761,11 @@ proxies:
 
 proxy_groups:
   - name: proxy-group-1
+    type: select
+    default_selected: "[SS] Hong Kong-20"
     proxies:
-      - "[SS] Hong Kong-20"
       - "SOCKS5 Proxy"
+      - "[SS] Hong Kong-20"
 
 rules:
   - 'DOMAIN,google.com,PROXY(proxy-group-1)'
@@ -709,6 +777,12 @@ rules:
         assert_eq!(config.servers[0].protocol(), ServerProtocol::Shadowsocks);
         assert_eq!(config.servers[1].name(), "SOCKS5 Proxy");
         assert_eq!(config.servers[1].protocol(), ServerProtocol::Socks5);
+        let group = &config.proxy_groups[0];
+        assert_eq!(group.group_type, ProxyGroupType::Select);
+        assert_eq!(group.default_selected.as_deref(), Some("[SS] Hong Kong-20"));
+        let group_servers = config.get_servers_by_name("proxy-group-1");
+        assert_eq!(group_servers[0].name(), "SOCKS5 Proxy");
+        assert_eq!(group_servers[1].name(), "[SS] Hong Kong-20");
     }
 
     #[test]

@@ -6,7 +6,7 @@ use crate::server_chooser::{CandidateTcpStream, CandidateUdpSocket};
 use crate::server_performance::{PingUrlResult, ServerPerformanceTracker};
 use anyhow::Result;
 use config::rule::Action;
-use config::{Address, PingURL, ServerConfig};
+use config::{Address, PingURL, ProxyGroupType, ServerConfig};
 use futures_util::StreamExt;
 use futures_util::stream::FuturesUnordered;
 use parking_lot::{Mutex, RwLock};
@@ -30,6 +30,8 @@ const CONSECUTIVE_FAILURES_THRESHOLD: u32 = 3;
 #[derive(Clone)]
 pub struct GroupServersChooser {
     name: String,
+    group_type: ProxyGroupType,
+    default_selected: Option<String>,
     ping_urls: Vec<PingURL>,
     ping_timeout: Duration,
     connect_timeout: Duration,
@@ -51,6 +53,8 @@ impl GroupServersChooser {
     #[allow(clippy::too_many_arguments)]
     pub async fn new(
         name: String,
+        group_type: ProxyGroupType,
+        default_selected: Option<String>,
         servers: Arc<Vec<ServerConfig>>,
         dns_client: DnsClient,
         ping_urls: Vec<PingURL>,
@@ -60,9 +64,23 @@ impl GroupServersChooser {
         write_timeout: Duration,
         show_stats: bool,
     ) -> Self {
-        let selected = servers.first().cloned();
+        let selected = initial_server(&servers, group_type, default_selected.as_deref());
+        if group_type == ProxyGroupType::Select
+            && let Some(default_selected) = default_selected.as_deref()
+            && selected
+                .as_ref()
+                .is_none_or(|server| server.name() != default_selected)
+        {
+            tracing::warn!(
+                group = name,
+                default_selected,
+                "default_selected is unavailable; using the first proxy"
+            );
+        }
         let chooser = GroupServersChooser {
             name,
+            group_type,
+            default_selected,
             ping_urls,
             ping_timeout,
             connect_timeout,
@@ -141,7 +159,11 @@ impl GroupServersChooser {
             .is_some_and(|s| new_addrs.contains(&s.addr().to_string()));
         if !still_valid {
             let old_addr = selected.as_ref().map(|s| s.addr().to_string());
-            match new_servers.first().cloned() {
+            match initial_server(
+                &new_servers,
+                self.group_type,
+                self.default_selected.as_deref(),
+            ) {
                 Some(replacement) => {
                     info!(
                         group = self.name,
@@ -200,7 +222,9 @@ impl GroupServersChooser {
                 config.addr()
             );
             // 只有连续失败超过阈值才切换
-            if failures >= CONSECUTIVE_FAILURES_THRESHOLD {
+            if self.group_type == ProxyGroupType::UrlTest
+                && failures >= CONSECUTIVE_FAILURES_THRESHOLD
+            {
                 self.move_to_next_server(true);
             }
         } else {
@@ -241,7 +265,9 @@ impl GroupServersChooser {
                         "Failed to connect to server: {}",
                         config.addr()
                     );
-                    if failures >= CONSECUTIVE_FAILURES_THRESHOLD {
+                    if self.group_type == ProxyGroupType::UrlTest
+                        && failures >= CONSECUTIVE_FAILURES_THRESHOLD
+                    {
                         self.move_to_next_server(true);
                     }
                 } else {
@@ -263,6 +289,10 @@ impl GroupServersChooser {
     /// 切换到下一个最佳服务器
     /// force: 是否强制切换（连续失败时使用），强制切换时跳过阈值检查但仍检查间隔时间
     pub fn move_to_next_server(&self, force: bool) {
+        if self.group_type != ProxyGroupType::UrlTest {
+            return;
+        }
+
         let now = Instant::now();
 
         // 检查最小切换间隔
@@ -486,8 +516,10 @@ impl GroupServersChooser {
             }
         }
 
-        // ping 后的切换不是强制切换，需要满足阈值条件
-        self.move_to_next_server(!wait_for_all);
+        if self.group_type == ProxyGroupType::UrlTest {
+            // ping 后的切换不是强制切换，需要满足阈值条件
+            self.move_to_next_server(!wait_for_all);
+        }
     }
 
     async fn ping_server(
@@ -595,6 +627,22 @@ impl GroupServersChooser {
 
         info!(group = self.name, "Group servers chooser reset completed");
     }
+}
+
+fn initial_server(
+    servers: &[ServerConfig],
+    group_type: ProxyGroupType,
+    default_selected: Option<&str>,
+) -> Option<ServerConfig> {
+    if group_type == ProxyGroupType::Select
+        && let Some(default_selected) = default_selected
+        && let Some(server) = servers
+            .iter()
+            .find(|server| server.name() == default_selected)
+    {
+        return Some(server.clone());
+    }
+    servers.first().cloned()
 }
 
 async fn ping_server(
@@ -708,6 +756,45 @@ async fn ping_server(
         )));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod selection_tests {
+    use super::*;
+    use config::ServerProtocol;
+
+    fn server(name: &str, port: u16) -> ServerConfig {
+        ServerConfig::new(
+            name.to_string(),
+            format!("127.0.0.1:{port}").parse().unwrap(),
+            ServerProtocol::Http,
+            None,
+            None,
+            None,
+            None,
+        )
+    }
+
+    #[test]
+    fn select_uses_default_selected() {
+        let servers = vec![server("first", 1080), server("preferred", 1081)];
+        let selected = initial_server(&servers, ProxyGroupType::Select, Some("preferred")).unwrap();
+        assert_eq!(selected.name(), "preferred");
+    }
+
+    #[test]
+    fn select_falls_back_to_first_server() {
+        let servers = vec![server("first", 1080), server("second", 1081)];
+        let selected = initial_server(&servers, ProxyGroupType::Select, Some("missing")).unwrap();
+        assert_eq!(selected.name(), "first");
+    }
+
+    #[test]
+    fn url_test_ignores_default_selected() {
+        let servers = vec![server("first", 1080), server("second", 1081)];
+        let selected = initial_server(&servers, ProxyGroupType::UrlTest, Some("second")).unwrap();
+        assert_eq!(selected.name(), "first");
+    }
 }
 
 #[cfg(all(test, feature = "integration-tests"))]
