@@ -33,8 +33,8 @@ pub(crate) type UdpManager = Arc<RwLock<HashMap<u16, (CandidateUdpSocket, Socket
 
 struct BackgroundTasks {
     nat: Option<JoinHandle<()>>,
-    dns: JoinHandle<()>,
-    chooser: JoinHandle<()>,
+    dns: JoinHandle<Result<()>>,
+    chooser: JoinHandle<Result<()>>,
     network_change_rx: mpsc::UnboundedReceiver<()>,
 }
 
@@ -176,7 +176,7 @@ impl ProxyClient {
         }
     }
 
-    pub async fn run(mut self) {
+    pub async fn run(mut self) -> Result<()> {
         let Some(tasks) = self.background_tasks.take() else {
             panic!("run() called without background tasks");
         };
@@ -188,18 +188,20 @@ impl ProxyClient {
             self.dns_setup.clone(),
         );
 
-        let ret = tokio::select! {
-            r = self.run_tcp_relay_server().instrument(trace_span!("run_tcp_relay_server")) => r,
-            r = self.run_udp_relay_server_if_enabled() => r,
-            r = wait_for_handle(Some(tasks.chooser)) => r,
-            r = wait_for_handle(Some(tasks.dns)) => r,
-            r = wait_for_handle(tasks.nat) => r,
+        tokio::select! {
+            r = self.run_tcp_relay_server().instrument(trace_span!("run_tcp_relay_server")) => {
+                unexpected_server_stop("TCP relay server", r)
+            },
+            r = self.run_udp_relay_server_if_enabled() => {
+                unexpected_server_stop("UDP relay server", r)
+            },
+            r = wait_for_result_handle(tasks.chooser, "server chooser") => r,
+            r = wait_for_result_handle(tasks.dns, "DNS server") => r,
+            r = wait_for_handle(tasks.nat, "NAT") => r,
             _ = network_change_task => {
-                tracing::info!("Network change handler exited");
-                Ok(())
+                Err(Error::other("network change handler stopped unexpectedly"))
             }
-        };
-        ret.expect("run proxy client");
+        }
     }
 
     async fn run_udp_relay_server_if_enabled(&self) -> Result<()> {
@@ -383,7 +385,7 @@ fn setup_nat(
 async fn setup_dns_server(
     config: &Config,
     resolver: TokioResolver,
-) -> (RuleBasedDnsResolver, JoinHandle<()>) {
+) -> (RuleBasedDnsResolver, JoinHandle<Result<()>>) {
     let (dns_server, resolver) = create_dns_server(
         config.dns_listens.clone(),
         config.tun_bypass_direct,
@@ -451,7 +453,7 @@ async fn setup_server_chooser(
     config: Config,
     dns_client: DnsClient,
     show_stats: bool,
-) -> (ServerChooser, JoinHandle<()>) {
+) -> (ServerChooser, JoinHandle<Result<()>>) {
     let chooser = ServerChooser::new(config, dns_client, show_stats).await;
     let chooser_clone = chooser.clone();
     let handle = tokio::task::spawn(async move {
@@ -459,7 +461,7 @@ async fn setup_server_chooser(
             .run_background_tasks()
             .instrument(trace_span!("ServerChooser.run_background_tasks"))
             .await
-            .unwrap()
+            .map_err(|error| Error::other(format!("server chooser failed: {error}")))
     });
     (chooser, handle)
 }
@@ -505,12 +507,39 @@ async fn run_network_change_handler(
     }
 }
 
-async fn wait_for_handle(handle: Option<JoinHandle<()>>) -> Result<()> {
+async fn wait_for_handle(handle: Option<JoinHandle<()>>, task_name: &str) -> Result<()> {
     match handle {
-        Some(h) => h.await.unwrap(),
-        None => pending::<()>().await,
+        Some(handle) => match handle.await {
+            Ok(()) => Err(Error::other(format!(
+                "{task_name} task stopped unexpectedly"
+            ))),
+            Err(error) => Err(Error::other(format!("{task_name} task failed: {error}"))),
+        },
+        None => pending::<Result<()>>().await,
     }
-    Ok(())
+}
+
+async fn wait_for_result_handle(handle: JoinHandle<Result<()>>, task_name: &str) -> Result<()> {
+    match handle.await {
+        Ok(Ok(())) => Err(Error::other(format!(
+            "{task_name} task stopped unexpectedly"
+        ))),
+        Ok(Err(error)) => Err(Error::new(
+            error.kind(),
+            format!("{task_name} task failed: {error}"),
+        )),
+        Err(error) => Err(Error::other(format!("{task_name} task failed: {error}"))),
+    }
+}
+
+fn unexpected_server_stop(task_name: &str, result: Result<()>) -> Result<()> {
+    match result {
+        Ok(()) => Err(Error::other(format!("{task_name} stopped unexpectedly"))),
+        Err(error) => Err(Error::new(
+            error.kind(),
+            format!("{task_name} failed: {error}"),
+        )),
+    }
 }
 
 #[cfg(target_arch = "x86_64")]

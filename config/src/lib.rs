@@ -255,7 +255,7 @@ mod duration {
             "h" => Ok(Duration::from_secs(n * 3600)),
             _ => Err(format!(
                 "invalid value: {}, expected 10s, 10ms, 5m or 1h",
-                &s
+                s
             )),
         }
     }

@@ -55,7 +55,7 @@ mod macos {
     ) {
         let mut meaningful_change = false;
         for key in changed_keys.iter() {
-            let key_str = format!("{}", &*key);
+            let key_str = format!("{}", *key);
             if key_str.contains("vmenet") || key_str.contains("bridge") || key_str.contains("utun")
             {
                 tracing::debug!("Ignored network change for virtual interface: {}", key_str);

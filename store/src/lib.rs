@@ -62,7 +62,7 @@ impl Store {
             Err(e) => {
                 eprintln!(
                     "Open db `{:?}` error: {}.\nDelete and reinitialize db",
-                    &path, e
+                    path, e
                 );
                 std::fs::remove_dir_all(&path)?;
                 Connection::open(&path)?

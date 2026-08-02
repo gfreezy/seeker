@@ -8,7 +8,7 @@ fn main() {
         let mut buf = vec![0; 1500];
         loop {
             let (size, addr) = udp_socket.recv_from(&mut buf).unwrap();
-            println!("recv {} bytes from {}", size, &addr);
+            println!("recv {} bytes from {}", size, addr);
             udp_socket.send_to(&buf[..size], addr).unwrap();
         }
     });
@@ -18,7 +18,7 @@ fn main() {
         thread::spawn(move || {
             let mut buf = vec![0; 1500];
             let size = conn.read(&mut buf).unwrap();
-            println!("recv {} bytes from {}", size, &addr);
+            println!("recv {} bytes from {}", size, addr);
             conn.write_all(&buf[..size]).unwrap();
         });
     }

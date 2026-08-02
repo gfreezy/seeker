@@ -176,7 +176,7 @@ impl AsyncRead for ObfsTlsTcpStream {
               Poll::Pending // Data not ready, continue.
                   => {
                   // If the first response is not ready, truncate the receive buffer. Avoid dirtying the buffer.
-                  recv_buf.truncate(0);
+                recv_buf.clear();
                   Poll::Pending
               }
           };

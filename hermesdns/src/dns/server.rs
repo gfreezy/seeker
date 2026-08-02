@@ -4,6 +4,7 @@ use crate::dns::buffer::{BytePacketBuffer, PacketBuffer, VectorPacketBuffer};
 use crate::dns::context::ServerContext;
 use crate::dns::protocol::{DnsPacket, DnsRecord, QueryType, ResultCode};
 use crate::dns::resolve::DnsResolver;
+use std::io::{self, Result};
 use std::sync::Arc;
 use tokio::net::UdpSocket;
 use tracing::Instrument;
@@ -166,15 +167,18 @@ impl DnsUdpServer {
     ///
     /// This method takes ownership of the server, preventing the method from
     /// being called multiple times.
-    pub async fn run_server(self) {
+    pub async fn run_server(self) -> Result<()> {
         let mut handles = Vec::new();
         for listen in &self.context.listens {
             let listen = listen.clone();
             let context = self.context.clone();
+            let socket = Arc::new(UdpSocket::bind(&listen).await.map_err(|error| {
+                io::Error::new(
+                    error.kind(),
+                    format!("failed to bind DNS UDP listener {listen}: {error}"),
+                )
+            })?);
             let h = tokio::task::spawn(async move {
-                // Bind the socket
-                let socket = Arc::new(UdpSocket::bind(&listen).await.unwrap());
-
                 loop {
                     // Read a query packet
                     let mut req_buffer = BytePacketBuffer::new();
@@ -232,8 +236,10 @@ impl DnsUdpServer {
         }
 
         for h in handles {
-            let _ = h.await;
+            h.await
+                .map_err(|error| io::Error::other(format!("DNS listener task failed: {error}")))?;
         }
+        Ok(())
     }
 }
 
@@ -413,5 +419,26 @@ mod tests {
             assert_eq!(ResultCode::SERVFAIL, res.header.rescode);
             assert_eq!(0, res.answers.len());
         };
+    }
+
+    #[tokio::test]
+    async fn reports_listener_bind_errors() {
+        let occupied_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let occupied_address = occupied_socket.local_addr().unwrap().to_string();
+        let context = create_test_context(
+            Box::new(|_, _, _, _| Err(Error::new(ErrorKind::NotFound, "unused"))),
+            ResolveStrategy::Recursive,
+        )
+        .await;
+        let mut context = Arc::try_unwrap(context).ok().unwrap();
+        context.listens = vec![occupied_address.clone()];
+        let server = DnsUdpServer {
+            context: Arc::new(context),
+        };
+
+        let error = server.run_server().await.unwrap_err();
+
+        assert_eq!(error.kind(), ErrorKind::AddrInUse);
+        assert!(error.to_string().contains(&occupied_address));
     }
 }

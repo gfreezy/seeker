@@ -191,13 +191,22 @@ async fn main() -> anyhow::Result<()> {
             None
         };
 
-        tokio::select! {
-            _ = client.run().instrument(tracing::trace_span!("ProxyClient.run")) => {},
+        let run_result: anyhow::Result<()> = tokio::select! {
+            result = client.run().instrument(tracing::trace_span!("ProxyClient.run")) => {
+                result.context("Proxy client stopped with an error")
+            },
             _ = rx.recv().instrument(tracing::trace_span!("Signal receiver")) => {
                 println!("Received shutdown signal");
+                Ok(())
             }
-            _ = async { api_server_handle.unwrap().await }, if api_server_handle.is_some() => {},
-        }
+            result = async { api_server_handle.unwrap().await }, if api_server_handle.is_some() => {
+                match result {
+                    Ok(()) => Err(anyhow::anyhow!("API server stopped unexpectedly")),
+                    Err(error) => Err(anyhow::anyhow!("API server task failed: {error}")),
+                }
+            },
+        };
+        run_result?;
     }
 
     println!("Stop server. Bye bye....");
