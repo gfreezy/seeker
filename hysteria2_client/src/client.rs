@@ -70,17 +70,7 @@ impl Hy2Client {
     }
 
     async fn connect(&self) -> io::Result<Connection> {
-        let mut tls_config = rustls::ClientConfig::builder()
-            .with_root_certificates(Self::root_certs())
-            .with_no_client_auth();
-
-        tls_config.alpn_protocols = vec![b"h3".to_vec()];
-
-        if self.config.insecure {
-            tls_config
-                .dangerous()
-                .set_certificate_verifier(Arc::new(SkipServerVerification));
-        }
+        let tls_config = tcp_connection::tls::get_tls_config(self.config.insecure, &[b"h3"]);
 
         let mut transport_config = quinn::TransportConfig::default();
         transport_config.max_idle_timeout(Some(
@@ -214,64 +204,5 @@ impl Hy2Client {
         driver_handle.abort();
 
         Ok(())
-    }
-
-    fn root_certs() -> rustls::RootCertStore {
-        let mut roots = rustls::RootCertStore::empty();
-        for cert in rustls_native_certs::load_native_certs().expect("failed to load native certs") {
-            roots.add(cert).ok();
-        }
-        roots
-    }
-}
-
-/// Skip server certificate verification (for insecure mode)
-#[derive(Debug)]
-struct SkipServerVerification;
-
-impl rustls::client::danger::ServerCertVerifier for SkipServerVerification {
-    fn verify_server_cert(
-        &self,
-        _end_entity: &rustls::pki_types::CertificateDer<'_>,
-        _intermediates: &[rustls::pki_types::CertificateDer<'_>],
-        _server_name: &rustls::pki_types::ServerName<'_>,
-        _ocsp_response: &[u8],
-        _now: rustls::pki_types::UnixTime,
-    ) -> Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
-        Ok(rustls::client::danger::ServerCertVerified::assertion())
-    }
-
-    fn verify_tls12_signature(
-        &self,
-        _message: &[u8],
-        _cert: &rustls::pki_types::CertificateDer<'_>,
-        _dss: &rustls::DigitallySignedStruct,
-    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
-        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
-    }
-
-    fn verify_tls13_signature(
-        &self,
-        _message: &[u8],
-        _cert: &rustls::pki_types::CertificateDer<'_>,
-        _dss: &rustls::DigitallySignedStruct,
-    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
-        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
-    }
-
-    fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
-        vec![
-            rustls::SignatureScheme::RSA_PKCS1_SHA256,
-            rustls::SignatureScheme::RSA_PKCS1_SHA384,
-            rustls::SignatureScheme::RSA_PKCS1_SHA512,
-            rustls::SignatureScheme::ECDSA_NISTP256_SHA256,
-            rustls::SignatureScheme::ECDSA_NISTP384_SHA384,
-            rustls::SignatureScheme::ECDSA_NISTP521_SHA512,
-            rustls::SignatureScheme::RSA_PSS_SHA256,
-            rustls::SignatureScheme::RSA_PSS_SHA384,
-            rustls::SignatureScheme::RSA_PSS_SHA512,
-            rustls::SignatureScheme::ED25519,
-            rustls::SignatureScheme::ED448,
-        ]
     }
 }

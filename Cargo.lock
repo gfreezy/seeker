@@ -1618,7 +1618,6 @@ dependencies = [
  "rand",
  "rcgen",
  "rustls",
- "rustls-native-certs",
  "tcp_connection",
  "testcontainers",
  "tokio",
