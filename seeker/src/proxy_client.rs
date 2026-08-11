@@ -3,6 +3,7 @@ use crate::dns_client::DnsClient;
 use crate::icmp_relay::IcmpRelay;
 use crate::network_monitor::spawn_network_monitor;
 use crate::probe_connectivity::ProbeConnectivity;
+use crate::proxy_connection::spawn_connection_cleanup_task;
 use crate::relay_tcp_stream::relay_tcp_stream;
 use crate::relay_udp_socket::relay_udp_socket;
 use crate::server_chooser::{CandidateUdpSocket, ServerChooser};
@@ -35,6 +36,7 @@ struct BackgroundTasks {
     nat: Option<JoinHandle<()>>,
     dns: JoinHandle<Result<()>>,
     chooser: JoinHandle<Result<()>>,
+    connection_cleanup: JoinHandle<()>,
     network_change_rx: mpsc::UnboundedReceiver<()>,
 }
 
@@ -67,6 +69,7 @@ impl ProxyClient {
             setup_server_chooser(config.clone(), dns_client.clone(), show_stats).await;
 
         spawn_remote_config_refresher(config.clone(), server_chooser.clone());
+        let connection_cleanup = spawn_connection_cleanup_task();
 
         let (network_change_tx, network_change_rx) = mpsc::unbounded_channel();
         spawn_network_monitor(network_change_tx);
@@ -85,6 +88,7 @@ impl ProxyClient {
                 nat: nat_handle,
                 dns: dns_handle,
                 chooser: chooser_handle,
+                connection_cleanup,
                 network_change_rx,
             }),
             icmp_relay,
@@ -198,6 +202,7 @@ impl ProxyClient {
             r = wait_for_result_handle(tasks.chooser, "server chooser") => r,
             r = wait_for_result_handle(tasks.dns, "DNS server") => r,
             r = wait_for_handle(tasks.nat, "NAT") => r,
+            r = wait_for_handle(Some(tasks.connection_cleanup), "connection cleanup") => r,
             _ = network_change_task => {
                 Err(Error::other("network change handler stopped unexpectedly"))
             }

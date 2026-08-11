@@ -232,9 +232,10 @@ impl ProxyConnection for ProxyTcpStream {
     }
 
     fn shutdown(&self) {
-        self.alive.store(false, Ordering::SeqCst);
-        if let Some(l) = &self.event_listener {
-            l.on_shutdown(self);
+        if self.alive.swap(false, Ordering::SeqCst) {
+            if let Some(l) = &self.event_listener {
+                l.on_shutdown(self);
+            }
         }
     }
 
@@ -292,6 +293,15 @@ impl ProxyConnection for ProxyTcpStream {
 
     fn sent_bytes(&self) -> usize {
         self.traffic.sent_bytes()
+    }
+}
+
+impl Drop for ProxyTcpStream {
+    fn drop(&mut self) {
+        // A normal TCP EOF can cause the relay's split halves to be dropped
+        // without polling AsyncWrite::shutdown. Make sure the store still sees
+        // the connection transition to its closed state.
+        self.shutdown();
     }
 }
 
@@ -429,5 +439,62 @@ impl AsyncWrite for ProxyTcpStream {
         });
         self.shutdown();
         Poll::Ready(ret)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::AtomicUsize;
+    use tokio::net::TcpListener;
+
+    #[derive(Default)]
+    struct CountingListener {
+        shutdowns: AtomicUsize,
+    }
+
+    impl ProxyConnectionEventListener for CountingListener {
+        fn on_connect(&self, _conn: &dyn ProxyConnection) {}
+
+        fn on_shutdown(&self, _conn: &dyn ProxyConnection) {
+            self.shutdowns.fetch_add(1, Ordering::SeqCst);
+        }
+
+        fn on_recv_bytes(&self, _conn: &dyn ProxyConnection, _bytes: usize) {}
+
+        fn on_send_bytes(&self, _conn: &dyn ProxyConnection, _bytes: usize) {}
+    }
+
+    async fn test_stream(listener: Arc<CountingListener>) -> ProxyTcpStream {
+        let tcp_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = tcp_listener.local_addr().unwrap();
+        let accept = tokio::spawn(async move { tcp_listener.accept().await.unwrap().0 });
+        let stream = TcpStream::connect(addr).await.unwrap();
+        let _peer = accept.await.unwrap();
+
+        ProxyTcpStream {
+            id: 1,
+            inner: ProxyTcpStreamInner::Direct(stream),
+            alive: Arc::new(AtomicBool::new(true)),
+            remote_addr: Address::SocketAddress(addr),
+            config: None,
+            traffic: Traffic::default(),
+            connect_time: Instant::now(),
+            event_listener: Some(listener),
+        }
+    }
+
+    #[tokio::test]
+    async fn dropping_stream_reports_shutdown_exactly_once() {
+        let listener = Arc::new(CountingListener::default());
+
+        drop(test_stream(listener.clone()).await);
+        assert_eq!(listener.shutdowns.load(Ordering::SeqCst), 1);
+
+        let stream = test_stream(listener.clone()).await;
+        stream.shutdown();
+        stream.shutdown();
+        drop(stream);
+        assert_eq!(listener.shutdowns.load(Ordering::SeqCst), 2);
     }
 }

@@ -1,5 +1,6 @@
 use std::sync::atomic::AtomicUsize;
 use std::time::{Duration, Instant};
+use tokio::task::JoinHandle;
 
 use crate::traffic::Traffic;
 use config::{Address, ServerConfig, rule::Action};
@@ -10,6 +11,33 @@ pub static CONNECTION_ID: AtomicUsize = AtomicUsize::new(0);
 
 pub fn next_connection_id() -> u64 {
     CONNECTION_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst) as u64
+}
+
+const DEAD_CONNECTION_RETENTION: Duration = Duration::from_secs(30 * 60);
+const CONNECTION_CLEANUP_INTERVAL: Duration = Duration::from_secs(5 * 60);
+
+/// Periodically remove closed connection history after its retention window.
+///
+/// `shutdown_connection` also performs opportunistic cleanup, but that does not
+/// run when the proxy is otherwise idle. This task guarantees cleanup continues
+/// independently of new connection events.
+pub fn spawn_connection_cleanup_task() -> JoinHandle<()> {
+    tokio::spawn(async {
+        let mut tick = tokio::time::interval(CONNECTION_CLEANUP_INTERVAL);
+        tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+
+        // The connections table is cleared during startup, so skip the
+        // interval's immediate first tick.
+        tick.tick().await;
+        loop {
+            tick.tick().await;
+            if let Err(error) =
+                Store::global().clear_dead_connections(DEAD_CONNECTION_RETENTION.as_secs())
+            {
+                tracing::error!(?error, "Failed to clean up closed connections");
+            }
+        }
+    })
 }
 
 #[allow(dead_code)]

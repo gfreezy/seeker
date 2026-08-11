@@ -159,6 +159,8 @@ impl Store {
                 is_alive INTEGER NOT NULL
             );
             DELETE FROM {table};
+            CREATE INDEX IF NOT EXISTS {table}_lifecycle
+                ON {table} (is_alive, last_update);
             "#,
             table = Self::TABLE_CONNECTIONS,
         ))?;

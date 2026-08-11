@@ -158,7 +158,7 @@ impl Store {
             "#,
                 Self::TABLE_CONNECTIONS,
             ),
-            params![now() - timeout_secs],
+            params![now().saturating_sub(timeout_secs)],
         )?;
         Ok(())
     }

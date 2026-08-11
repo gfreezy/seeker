@@ -13,6 +13,7 @@
 
 ### Fixed
 
+- Bound `connections` table growth by marking normally dropped TCP streams as closed and periodically deleting closed connection history after 30 minutes.
 - Parse proxy-group `ping_timeout` values with the documented duration syntax such as `2s`.
 - Make HTTP and HTTPS proxy integration tests use a local target server instead of a public website, avoiding CI failures caused by external DNS or network availability.
 - Prevent Hysteria 2 reconnects from panicking after macOS wakes from sleep when Keychain trust settings temporarily return an I/O error.
