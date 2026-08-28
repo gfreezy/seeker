@@ -16,7 +16,8 @@ redir_mode: false
 queue_number: 2
 # 每个队列的线程数量，主要工作是处理 tun 数据转发时对数据包进行 checksum 计算。一般 2-3 就可以处理一个 queue 的转发。
 threads_per_queue: 3
-tun_name: utun4
+# TUN 设备名可选；不设置或留空时由系统自动选择空闲设备（例如 macOS 上的 utunN）
+# tun_name: utun4
 tun_ip: 11.0.0.1
 tun_cidr: 11.0.0.0/16
 # 数据库路径，如果使用相对路径，相对于可执行文件的路径。默认会搜索可执行文件同级目录下的 seeker.sqlite 文件

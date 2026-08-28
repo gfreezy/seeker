@@ -134,6 +134,8 @@ pub fn run_nat_with_icmp(
     // Create TUN device with IPv4 configuration using tun-rs
     let netmask = tun_cidr.prefix_len();
     let tun = TunDevice::new_with_ipv4(tun_name, tun_ip, netmask, None)?;
+    let device_name = tun.name()?;
+    tracing::info!(tun_name = %device_name, "TUN device created");
 
     // Enable the device
     tun.set_enabled(true)?;
@@ -142,8 +144,6 @@ pub fn run_nat_with_icmp(
     if !addition_cidrs.is_empty() {
         let mut route_manager = RouteManager::new()
             .map_err(|e| std::io::Error::other(format!("Failed to create route manager: {e}")))?;
-
-        let device_name = tun.name()?;
 
         for additional_cidr in addition_cidrs {
             // Convert Ipv4Cidr to IpAddr for route_manager

@@ -74,7 +74,7 @@ sudo seeker --config path/to/config.yml --encrypt --key encrypt-key
 * `DIRECT` 直连
 * `REJECT` 拒绝
 * `PROBE(proxy-group-name)` 默认尝试直连，如果超时，则走 proxy-group-name 代理组。
-* 确保系统没有重复的 `tun_name`
+* `tun_name` 可选；不设置或留空时由系统自动选择空闲设备。显式设置时，请确保系统没有重复的设备名。
 * 确保 TUN 的网络 `tun_ip` 和 `tun_cidr` 与当前所处网络环境不在一个网段
 * `seeker` 支持 socks5 代理、http 代理、shadowsocks 代理、Hysteria2、Trojan、VMess 和 VLESS 代理。
 * `redir` 模式下使用 iptables 的 redirect 功能，只支持 tcp 流量。

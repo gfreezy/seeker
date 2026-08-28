@@ -21,10 +21,19 @@ impl Clone for TunDevice {
 }
 
 impl TunDevice {
+    fn builder(name: &str) -> DeviceBuilder {
+        let builder = DeviceBuilder::new();
+        let name = name.trim();
+        if name.is_empty() {
+            builder
+        } else {
+            builder.name(name)
+        }
+    }
+
     /// Create a new TUN device with the given name
     pub fn new(name: &str) -> Result<Self> {
-        let device = DeviceBuilder::new()
-            .name(name)
+        let device = Self::builder(name)
             // TODO: Enable multi_queue when platform supports it
             // .multi_queue(true)
             .build_sync()
@@ -46,8 +55,7 @@ impl TunDevice {
         netmask: u8,
         destination: Option<Ipv4Addr>,
     ) -> Result<Self> {
-        let device = DeviceBuilder::new()
-            .name(name)
+        let device = Self::builder(name)
             .ipv4(address, netmask, destination)
             // TODO: Enable multi_queue when platform supports it
             // .multi_queue(true)
@@ -65,8 +73,7 @@ impl TunDevice {
 
     /// Create a new TUN device with IPv6 configuration
     pub fn new_with_ipv6(name: &str, address: Ipv6Addr, prefix: u8) -> Result<Self> {
-        let device = DeviceBuilder::new()
-            .name(name)
+        let device = Self::builder(name)
             .ipv6(address, prefix)
             // TODO: Enable multi_queue when platform supports it
             // .multi_queue(true)
@@ -84,8 +91,7 @@ impl TunDevice {
 
     /// Create a new TUN device with custom MTU
     pub fn new_with_mtu(name: &str, mtu: u16) -> Result<Self> {
-        let device = DeviceBuilder::new()
-            .name(name)
+        let device = Self::builder(name)
             .mtu(mtu)
             // TODO: Enable multi_queue when platform supports it
             // .multi_queue(true)

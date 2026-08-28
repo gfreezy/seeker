@@ -70,7 +70,7 @@ cargo install cargo-release
 Seeker implements transparent proxying by intercepting network traffic at the IP layer:
 
 1. **DNS Interception**: Seeker runs a local DNS server that assigns fake IPs (from `dns_start_ip` range, e.g., 11.0.0.10+) to domain names, mapping them internally
-2. **TUN Device**: Creates a virtual network interface (default: `utun4` on Mac, configurable `tun_name` on Linux) with IP `tun_ip` (e.g., 11.0.0.1)
+2. **TUN Device**: Creates a virtual network interface (automatically named when `tun_name` is omitted, or explicitly configurable) with IP `tun_ip` (e.g., 11.0.0.1)
 3. **Traffic Routing**: System routes packets for the configured CIDR (e.g., 11.0.0.0/16) to the TUN device
 4. **Packet Processing**: Seeker reads IP packets from TUN, reconstructs TCP/UDP streams, and applies routing rules
 5. **NAT & Relay**: Uses session tracking to NAT connections and relay them through proxy servers or direct connections based on rules

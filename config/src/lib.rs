@@ -73,6 +73,7 @@ pub struct Config {
     #[serde(default)]
     pub redir_mode: bool,
     pub tun_bypass_direct: bool,
+    #[serde(default)]
     pub tun_name: String,
     pub tun_ip: Ipv4Addr,
     #[serde(default)]
@@ -852,7 +853,6 @@ tun_bypass_direct: true
 redir_mode: false
 queue_number: 2
 threads_per_queue: 3
-tun_name: utun4
 tun_ip: 11.0.0.1
 tun_cidr: 11.0.0.0/16
 dns_listens:
@@ -895,6 +895,7 @@ rules:
   - 'MATCH,DIRECT'
 "#;
         let config: Config = serde_yaml::from_str(yaml).unwrap();
+        assert!(config.tun_name.is_empty());
         assert_eq!(config.servers.len(), 2);
         assert_eq!(config.servers[0].name(), "[SS] Hong Kong-20");
         assert_eq!(config.servers[0].protocol(), ServerProtocol::Shadowsocks);

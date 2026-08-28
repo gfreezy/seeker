@@ -8,6 +8,7 @@
 
 ### Improved
 
+- Allow `tun_name` to be omitted or left empty so macOS and Linux can automatically allocate an available TUN device name, while preserving explicitly configured names.
 - Improve server performance `success_rate` calculation: use per-URL success ratio instead of binary per-round success. Previously, if any single ping URL succeeded, the entire round was marked as 100% success. Now `success_rate` accurately reflects the proportion of successful URL pings (e.g., 2/3 URLs success = 66.67%). The `success`/`failure` counters now track individual URL results.
 - Allow the anonymous default proxy group used by bare `PROXY`/`PROBE` rules to be persisted as `name: ""`; persisted default groups keep tracking all current servers and can use `type: select` with `default_selected`.
 
