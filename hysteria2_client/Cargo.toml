@@ -1,6 +1,6 @@
 [package]
 name = "hysteria2_client"
-version = "20260828.0.0"
+version = "20261030.0.0"
 authors = ["gfreezy <gfreezy@gmail.com>"]
 edition.workspace = true
 
