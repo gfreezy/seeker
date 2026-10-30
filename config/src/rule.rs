@@ -4,7 +4,7 @@ use parking_lot::{Mutex, RwLock};
 use smoltcp::wire::Ipv4Cidr;
 use std::fmt::{self, Formatter};
 use std::fs::File;
-use std::io::{copy, BufWriter};
+use std::io::{BufWriter, copy};
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;

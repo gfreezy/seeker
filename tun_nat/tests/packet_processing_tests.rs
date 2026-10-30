@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
-use tun_nat::{run_nat, SessionManager};
+use tun_nat::{SessionManager, run_nat};
 
 /// 数据包收发集成测试
 #[test]
@@ -769,7 +769,9 @@ fn run_tcp_connection_test(config: TcpTestConfig) -> Result<TcpTestStats, String
                 if echoed_data == sent_data {
                     println!("✓ TCP 连接 {conn_id} 成功，数据一致性验证通过: '{sent_data}'");
                 } else {
-                    println!("✗ TCP 连接 {conn_id} 数据不一致! 发送: '{sent_data}', 接收: '{echoed_data}'");
+                    println!(
+                        "✗ TCP 连接 {conn_id} 数据不一致! 发送: '{sent_data}', 接收: '{echoed_data}'"
+                    );
                 }
             }
             Err(e) => {

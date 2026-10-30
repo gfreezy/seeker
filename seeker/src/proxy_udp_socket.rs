@@ -228,10 +228,10 @@ impl ProxyConnection for ProxyUdpSocket {
     }
 
     fn shutdown(&self) {
-        if self.alive.swap(false, Ordering::SeqCst) {
-            if let Some(listener) = &self.listener {
-                listener.on_shutdown(self);
-            }
+        if self.alive.swap(false, Ordering::SeqCst)
+            && let Some(listener) = &self.listener
+        {
+            listener.on_shutdown(self);
         }
     }
 

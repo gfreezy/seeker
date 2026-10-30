@@ -1,10 +1,10 @@
 use crate::client::Hy2Client;
-use crate::protocol::{decode_udp_message, encode_udp_message, UdpMessage};
+use crate::protocol::{UdpMessage, decode_udp_message, encode_udp_message};
 use bytes::BytesMut;
 use std::io::{self, Error, ErrorKind};
 use std::net::SocketAddr;
-use std::sync::atomic::{AtomicU16, AtomicU32, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU16, AtomicU32, Ordering};
 use tracing::{debug, error};
 
 /// Maximum payload size per UDP datagram fragment.

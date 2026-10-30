@@ -1,4 +1,4 @@
-use crate::protocol::{encode_vless_request, CMD_UDP, VLESS_VERSION};
+use crate::protocol::{CMD_UDP, VLESS_VERSION, encode_vless_request};
 use bytes::{BufMut, BytesMut};
 use config::Address;
 use rustls::pki_types::ServerName;

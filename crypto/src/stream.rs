@@ -5,8 +5,9 @@ use crate::sodium;
 #[cfg(any(feature = "aes-cfb", feature = "aes-ctr", feature = "camellia-cfb"))]
 use crate::symmetric;
 use crate::{
+    CryptoMode,
     cipher::{CipherCategory, CipherResult, CipherType},
-    dummy, table, CryptoMode,
+    dummy, table,
 };
 
 use bytes::BufMut;

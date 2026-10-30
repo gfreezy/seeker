@@ -92,8 +92,9 @@ mod test {
         let uid = unsafe { libc::getuid() };
         let _socket = std::net::TcpListener::bind("0.0.0.0:65532").unwrap();
         let s = list_user_proc_socks(uid).unwrap();
-        assert!(s
-            .values()
-            .any(|sockets| sockets.iter().any(|s| s.local.port() == 65532)));
+        assert!(
+            s.values()
+                .any(|sockets| sockets.iter().any(|s| s.local.port() == 65532))
+        );
     }
 }

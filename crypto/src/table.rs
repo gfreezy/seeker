@@ -3,8 +3,8 @@
 use std::io::Cursor;
 
 use crate::{
-    digest::{self, Digest, DigestType},
     CipherResult, CryptoMode, StreamCipher,
+    digest::{self, Digest, DigestType},
 };
 
 use byteorder::{LittleEndian, ReadBytesExt};

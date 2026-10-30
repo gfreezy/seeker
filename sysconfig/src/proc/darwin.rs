@@ -1,8 +1,8 @@
 #![allow(dead_code)]
 use super::SocketInfo;
 use libproc::libproc::proc_pid::{
-    listpidinfo, listpids, pidfdinfo, InSockInfo, ListFDs, ProcFDType, ProcType, SocketFDInfo,
-    SocketInfoKind,
+    InSockInfo, ListFDs, ProcFDType, ProcType, SocketFDInfo, SocketInfoKind, listpidinfo, listpids,
+    pidfdinfo,
 };
 use std::collections::HashMap;
 use std::io::Result;
@@ -109,9 +109,10 @@ mod test {
         let uid = unsafe { libc::getuid() };
         let _socket = std::net::TcpListener::bind("0.0.0.0:8888").unwrap();
         let s = list_user_proc_socks(uid).unwrap();
-        assert!(s
-            .values()
-            .find(|sockets| sockets.iter().find(|s| s.local.port() == 8888).is_some())
-            .is_some());
+        assert!(
+            s.values()
+                .find(|sockets| sockets.iter().find(|s| s.local.port() == 8888).is_some())
+                .is_some()
+        );
     }
 }

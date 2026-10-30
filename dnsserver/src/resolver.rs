@@ -1,9 +1,9 @@
 use async_trait::async_trait;
 use config::rule::{Action, ProxyRules};
 use hermesdns::{DnsPacket, DnsRecord, DnsResolver, Hosts, QueryType, TransientTtl};
+use hickory_resolver::TokioResolver;
 use hickory_resolver::proto::rr::rdata::{A, AAAA};
 use hickory_resolver::proto::rr::{RData, RecordType};
-use hickory_resolver::TokioResolver;
 use std::any::Any;
 use std::io;
 use std::io::Result;
@@ -164,8 +164,7 @@ impl RuleBasedDnsResolver {
             // resolve real ip only when `bypass_direct` is false.
             real_packet = self.resolve_real(domain, qtype).await;
             if let Ok(p) = &real_packet {
-                let real_ip = p
-                    .answers
+                p.answers
                     .iter()
                     .filter_map(|record| {
                         if let DnsRecord::A { addr, .. } = record {
@@ -174,8 +173,7 @@ impl RuleBasedDnsResolver {
                             None
                         }
                     })
-                    .next();
-                real_ip
+                    .next()
             } else {
                 None
             }
@@ -253,12 +251,14 @@ mod tests {
                 resolver.lookup_host(&baidu_ip.unwrap()),
                 Some("baidu.com".to_string())
             );
-            assert!(resolver
-                .resolve("allsunday.io", QueryType::TXT)
-                .await
-                .unwrap()
-                .get_txt()
-                .is_some());
+            assert!(
+                resolver
+                    .resolve("allsunday.io", QueryType::TXT)
+                    .await
+                    .unwrap()
+                    .get_txt()
+                    .is_some()
+            );
             assert_eq!(resolver.lookup_host("10.1.0.1"), None);
         });
     }

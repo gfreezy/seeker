@@ -1,6 +1,6 @@
 use crate::types::{
-    Address, Command, HandshakeRequest, HandshakeResponse, Reply, TcpRequestHeader,
-    TcpResponseHeader, SOCKS5_AUTH_METHOD_NONE,
+    Address, Command, HandshakeRequest, HandshakeResponse, Reply, SOCKS5_AUTH_METHOD_NONE,
+    TcpRequestHeader, TcpResponseHeader,
 };
 use std::io::{Error, ErrorKind, Result};
 use std::net::SocketAddr;

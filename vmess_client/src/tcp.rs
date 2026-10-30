@@ -1,6 +1,6 @@
 use crate::crypto::{VMessDataCipher, VMessEncryptMethod};
-use aes_gcm::aead::{Aead, KeyInit, Payload};
 use aes_gcm::Aes128Gcm;
+use aes_gcm::aead::{Aead, KeyInit, Payload};
 
 /// Decrypt an AES-128-GCM ciphertext with AAD; tag must be appended to ciphertext
 /// by the caller (standard AEAD convention).
@@ -15,16 +15,16 @@ fn aes_gcm_decrypt(key: &[u8], nonce: &[u8], aad: &[u8], ct: &[u8], tag: &[u8]) 
         .map_err(|e| Error::new(ErrorKind::InvalidData, format!("AEAD decrypt: {e}")))
 }
 use crate::protocol::{
-    build_command, decrypt_aead_response_header, decrypt_response_header, derive_command_key,
-    derive_response_iv, derive_response_iv_aead, derive_response_key, derive_response_key_aead,
-    encrypt_command, generate_auth, parse_uuid, seal_vmess_aead_header, CMD_TCP,
+    CMD_TCP, build_command, decrypt_aead_response_header, decrypt_response_header,
+    derive_command_key, derive_response_iv, derive_response_iv_aead, derive_response_key,
+    derive_response_key_aead, encrypt_command, generate_auth, parse_uuid, seal_vmess_aead_header,
 };
 use crate::stream::{ChunkReader, ChunkWriter};
 use config::Address;
 use std::io::{Error, ErrorKind, Result};
 use std::net::SocketAddr;
 use std::pin::Pin;
-use std::task::{ready, Context, Poll};
+use std::task::{Context, Poll, ready};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, ReadBuf};
 use tokio::net::TcpStream;

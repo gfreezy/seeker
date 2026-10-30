@@ -2,7 +2,7 @@ use bytes::{Buf, BytesMut};
 use rustls::ClientConnection;
 use std::io::{self, BufRead, Write};
 use std::pin::Pin;
-use std::task::{ready, Context, Poll};
+use std::task::{Context, Poll, ready};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tracing::debug;
 
@@ -175,7 +175,7 @@ impl<IO: AsyncRead + AsyncWrite + Unpin> VisionStream<IO> {
                 while self.session.wants_write() {
                     match self.write_tls_direct(cx) {
                         Poll::Ready(Ok(0)) => {
-                            return Poll::Ready(Err(io::ErrorKind::WriteZero.into()))
+                            return Poll::Ready(Err(io::ErrorKind::WriteZero.into()));
                         }
                         Poll::Ready(Ok(_)) => continue,
                         Poll::Pending => return Poll::Pending,
@@ -550,7 +550,7 @@ impl<IO: AsyncRead + AsyncWrite + Unpin> VisionStream<IO> {
                         match self.read_mode {
                             VisionMode::Tls => return self.poll_read_tls(cx, buf),
                             VisionMode::Direct => {
-                                return Pin::new(&mut self.tcp).poll_read(cx, buf)
+                                return Pin::new(&mut self.tcp).poll_read(cx, buf);
                             }
                             _ => unreachable!(),
                         }
@@ -841,7 +841,7 @@ impl<IO: AsyncRead + AsyncWrite + Unpin> AsyncRead for VisionStream<IO> {
                             VisionMode::PaddingTls => {}
                             VisionMode::Tls => return this.poll_read_tls(cx, buf),
                             VisionMode::Direct => {
-                                return Pin::new(&mut this.tcp).poll_read(cx, buf)
+                                return Pin::new(&mut this.tcp).poll_read(cx, buf);
                             }
                         }
                     }

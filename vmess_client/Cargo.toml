@@ -1,7 +1,7 @@
 [package]
 name = "vmess_client"
 version = "20260828.0.0"
-edition = "2021"
+edition.workspace = true
 
 [package.metadata.cargo-machete]
 # md-5 imports as `md5`; cargo-machete can't detect the rename.

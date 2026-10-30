@@ -15,6 +15,7 @@ pub struct Hy2Config {
     pub obfs_password: Option<String>,
     pub insecure: bool,
     pub recv_window: Option<u64>,
+    pub mimic: Option<config::MimicConfig>,
 }
 
 /// Shared Hysteria 2 client that manages QUIC connections.
@@ -24,6 +25,9 @@ pub struct Hy2Client {
     connection: Mutex<Option<Connection>>,
     udp_enabled: Mutex<bool>,
     endpoint: Mutex<Option<Endpoint>>,
+    h3_driver: Mutex<Option<tokio::task::JoinHandle<()>>>,
+    connecting: tokio::sync::Mutex<()>,
+    mimic_transport: Mutex<Option<Arc<crate::mimic::MimicSocket>>>,
 }
 
 impl Hy2Client {
@@ -33,11 +37,17 @@ impl Hy2Client {
             connection: Mutex::new(None),
             udp_enabled: Mutex::new(false),
             endpoint: Mutex::new(None),
+            h3_driver: Mutex::new(None),
+            connecting: tokio::sync::Mutex::new(()),
+            mimic_transport: Mutex::new(None),
         })
     }
 
     /// Get or create a QUIC connection with HTTP/3 authentication
     pub async fn get_connection(self: &Arc<Self>) -> io::Result<Connection> {
+        // Only one handshake/transport per client, including concurrent TCP
+        // and UDP requests and reconnects after a failed connection.
+        let _connecting = self.connecting.lock().await;
         // Check if we have an existing valid connection
         {
             let conn = self.connection.lock();
@@ -50,10 +60,19 @@ impl Hy2Client {
         }
 
         // Establish new connection
-        let conn = self.connect().await?;
+        let conn = match Box::pin(self.connect()).await {
+            Ok(conn) => conn,
+            Err(error) => {
+                self.shutdown().await;
+                return Err(error);
+            }
+        };
 
         // Authenticate via HTTP/3
-        self.authenticate(&conn).await?;
+        if let Err(error) = self.authenticate(&conn).await {
+            self.shutdown().await;
+            return Err(error);
+        }
 
         // Store the connection
         {
@@ -69,7 +88,27 @@ impl Hy2Client {
         *self.udp_enabled.lock()
     }
 
+    /// Stop the transport and release its TUN/NAT resources before the async
+    /// runtime exits (the global client pool otherwise lives until exit).
+    pub async fn shutdown(&self) {
+        if let Some(endpoint) = self.endpoint.lock().take() {
+            endpoint.close(0u32.into(), b"shutdown");
+        }
+        self.connection.lock().take();
+        *self.udp_enabled.lock() = false;
+        let driver = self.h3_driver.lock().take();
+        if let Some(driver) = driver {
+            driver.abort();
+            let _ = driver.await;
+        }
+        let transport = self.mimic_transport.lock().take();
+        if let Some(transport) = transport {
+            transport.close().await;
+        }
+    }
+
     async fn connect(&self) -> io::Result<Connection> {
+        self.shutdown().await;
         let tls_config = tcp_connection::tls::get_tls_config(self.config.insecure, &[b"h3"]);
 
         let mut transport_config = quinn::TransportConfig::default();
@@ -79,13 +118,36 @@ impl Hy2Client {
         ));
         transport_config.keep_alive_interval(Some(std::time::Duration::from_secs(15)));
 
+        let mimic_socket = if let Some(config) = self.config.mimic.as_ref().filter(|c| c.enabled) {
+            let socket = crate::mimic::MimicSocket::connect(
+                config.clone(),
+                self.config.server_addr,
+                self.config.obfs_password.as_deref(),
+            )
+            .await?;
+            let mut mtu = quinn::MtuDiscoveryConfig::default();
+            mtu.upper_bound(socket.max_payload() as u16);
+            transport_config.mtu_discovery_config(Some(mtu));
+            Some(Arc::new(socket))
+        } else {
+            None
+        };
+
         let mut client_config = quinn::ClientConfig::new(Arc::new(
             quinn::crypto::rustls::QuicClientConfig::try_from(tls_config)
                 .map_err(|e| Error::new(ErrorKind::InvalidData, e))?,
         ));
         client_config.transport_config(Arc::new(transport_config));
 
-        let endpoint = if let Some(obfs_password) = &self.config.obfs_password {
+        let endpoint = if let Some(socket) = mimic_socket {
+            let runtime =
+                quinn::default_runtime().ok_or_else(|| Error::other("no async runtime found"))?;
+            *self.mimic_transport.lock() = Some(socket.clone());
+            let mut endpoint =
+                Endpoint::new_with_abstract_socket(Default::default(), None, socket, runtime)?;
+            endpoint.set_default_client_config(client_config);
+            endpoint
+        } else if let Some(obfs_password) = &self.config.obfs_password {
             // Use Salamander obfuscated socket
             let std_socket = std::net::UdpSocket::bind("0.0.0.0:0").map_err(Error::other)?;
 
@@ -142,11 +204,16 @@ impl Hy2Client {
             .await
             .map_err(|e| Error::new(ErrorKind::ConnectionRefused, e.to_string()))?;
 
-        // Drive the HTTP/3 connection in background
+        // Keep the HTTP/3 critical streams open for the lifetime of Hy2's
+        // shared QUIC connection. Dropping the last request sender also tells
+        // the driver to close QUIC, so retain one sender inside the task.
+        let keepalive = send_request.clone();
         let driver_handle = tokio::spawn(async move {
+            let _keepalive = keepalive;
             let e = futures_util::future::poll_fn(|cx| driver.poll_close(cx)).await;
             warn!("h3 driver closed: {e}");
         });
+        *self.h3_driver.lock() = Some(driver_handle);
 
         let mut headers = http::Request::builder()
             .method("POST")
@@ -200,9 +267,14 @@ impl Hy2Client {
 
         info!(udp_enabled, "Hysteria 2 authentication successful");
 
-        // Cancel the driver since we don't need HTTP/3 anymore
-        driver_handle.abort();
-
         Ok(())
+    }
+}
+
+impl Drop for Hy2Client {
+    fn drop(&mut self) {
+        if let Some(driver) = self.h3_driver.get_mut().take() {
+            driver.abort();
+        }
     }
 }

@@ -2,11 +2,11 @@
 
 pub use self::{
     aead::{
-        new_aead_decryptor, new_aead_encryptor, AeadDecryptor, AeadEncryptor, BoxAeadDecryptor,
-        BoxAeadEncryptor,
+        AeadDecryptor, AeadEncryptor, BoxAeadDecryptor, BoxAeadEncryptor, new_aead_decryptor,
+        new_aead_encryptor,
     },
     cipher::{CipherCategory, CipherResult, CipherType},
-    stream::{new_stream, BoxStreamCipher, StreamCipher},
+    stream::{BoxStreamCipher, StreamCipher, new_stream},
 };
 
 pub mod aead;

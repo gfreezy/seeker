@@ -13,8 +13,8 @@ type Aes128CfbEnc = cfb_mode::BufEncryptor<aes::Aes128>;
 type Aes128CfbDec = cfb_mode::BufDecryptor<aes::Aes128>;
 
 fn aes_gcm_encrypt(key: &[u8], nonce: &[u8], aad: &[u8], plaintext: &[u8]) -> Result<Vec<u8>> {
-    use aes_gcm::aead::{Aead, KeyInit, Payload};
     use aes_gcm::Aes128Gcm;
+    use aes_gcm::aead::{Aead, KeyInit, Payload};
     let cipher = Aes128Gcm::new_from_slice(key)
         .map_err(|e| Error::new(ErrorKind::InvalidInput, format!("AES-GCM key: {e}")))?;
     cipher
@@ -29,8 +29,8 @@ fn aes_gcm_encrypt(key: &[u8], nonce: &[u8], aad: &[u8], plaintext: &[u8]) -> Re
 }
 
 fn aes_gcm_decrypt(key: &[u8], nonce: &[u8], aad: &[u8], ct: &[u8], tag: &[u8]) -> Result<Vec<u8>> {
-    use aes_gcm::aead::{Aead, KeyInit, Payload};
     use aes_gcm::Aes128Gcm;
+    use aes_gcm::aead::{Aead, KeyInit, Payload};
     let cipher = Aes128Gcm::new_from_slice(key)
         .map_err(|e| Error::new(ErrorKind::InvalidInput, format!("AES-GCM key: {e}")))?;
     let mut joined = Vec::with_capacity(ct.len() + tag.len());

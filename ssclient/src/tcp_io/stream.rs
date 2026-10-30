@@ -7,7 +7,7 @@ use std::{
 };
 
 use bytes::{BufMut, Bytes, BytesMut};
-use crypto::{new_stream, BoxStreamCipher, CipherType, CryptoMode};
+use crypto::{BoxStreamCipher, CipherType, CryptoMode, new_stream};
 use std::io::Result;
 use std::task::ready;
 use tokio::io::{AsyncRead, AsyncWrite};

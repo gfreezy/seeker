@@ -1,7 +1,7 @@
 use std::sync::atomic::Ordering;
 use std::time::Instant;
 
-use crate::{now, Store};
+use crate::{Store, now};
 use anyhow::Result;
 use rusqlite::params;
 use std::sync::LazyLock;

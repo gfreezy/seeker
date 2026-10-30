@@ -73,9 +73,21 @@ mod macos {
 
 #[cfg(target_os = "linux")]
 mod linux {
-    use netlink_packet_route::link::LinkAttribute;
+    use netlink_packet_route::address::AddressAttribute;
+    use netlink_packet_route::link::{InfoKind, LinkAttribute, LinkInfo};
+    use std::collections::HashSet;
     use tokio::sync::mpsc;
     use tracing::{error, info};
+
+    fn is_virtual_interface(name: &str) -> bool {
+        name.contains("docker")
+            || name.contains("veth")
+            || name.contains("br-")
+            || name.starts_with("tun")
+            || name.starts_with("utun")
+            || name.starts_with("mimic")
+            || name.starts_with("lo")
+    }
 
     /// Monitor network changes on Linux using Netlink
     pub fn spawn_network_monitor(tx: mpsc::UnboundedSender<()>) {
@@ -114,6 +126,7 @@ mod linux {
         socket.socket_mut().bind(&addr)?;
 
         info!("Linux network monitor started, listening for network changes");
+        let mut virtual_indexes = HashSet::new();
 
         // Continuously listen for Netlink messages
         loop {
@@ -152,24 +165,49 @@ mod linux {
                             .unwrap_or_else(|| "unknown".to_string());
 
                         // Ignore virtual interfaces
-                        if ifname.contains("docker")
-                            || ifname.contains("veth")
-                            || ifname.contains("br-")
-                            || ifname.starts_with("tun")
-                            || ifname.starts_with("utun")
-                            || ifname.starts_with("lo")
-                        {
+                        let is_tun = link.attributes.iter().any(|attr| matches!(attr,
+                            LinkAttribute::LinkInfo(info) if info.iter().any(|item| matches!(item, LinkInfo::Kind(InfoKind::Tun)))
+                        ));
+                        if is_virtual_interface(&ifname) || is_tun {
+                            // Keep the index after deletion: queued IPv6
+                            // address removals may have no interface label.
+                            virtual_indexes.insert(link.header.index);
                             tracing::debug!(
                                 "Ignored network change for virtual interface: {}",
                                 ifname
                             );
                             continue;
                         }
+                        virtual_indexes.remove(&link.header.index);
 
                         info!("Network link change detected: {}", ifname);
                         let _ = tx.send(());
                     }
-                    RouteNetlinkMessage::NewAddress(_) | RouteNetlinkMessage::DelAddress(_) => {
+                    RouteNetlinkMessage::NewAddress(address)
+                    | RouteNetlinkMessage::DelAddress(address) => {
+                        if virtual_indexes.contains(&address.header.index) {
+                            continue;
+                        }
+                        let ifname = address
+                            .attributes
+                            .iter()
+                            .find_map(|attr| {
+                                if let AddressAttribute::Label(name) = attr {
+                                    Some(name.clone())
+                                } else {
+                                    None
+                                }
+                            })
+                            .or_else(|| {
+                                nix::net::if_::if_indextoname(address.header.index)
+                                    .ok()
+                                    .map(|name| name.to_string_lossy().into_owned())
+                            });
+                        // Opening/closing an outer Mimic TUN is not a change
+                        // of uplink and must not reset active proxy sessions.
+                        if ifname.as_deref().is_some_and(is_virtual_interface) {
+                            continue;
+                        }
                         info!("Network address change detected");
                         let _ = tx.send(());
                     }

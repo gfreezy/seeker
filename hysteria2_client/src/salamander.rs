@@ -26,6 +26,25 @@ fn xor_with_key(data: &mut [u8], key: &[u8; HASH_LEN]) {
     }
 }
 
+pub(crate) fn encode(data: &[u8], password: &[u8]) -> Vec<u8> {
+    let mut salt = [0u8; SALT_LEN];
+    rand::rng().fill(&mut salt);
+    let key = derive_key(password, &salt);
+    let mut result = Vec::with_capacity(SALT_LEN + data.len());
+    result.extend_from_slice(&salt);
+    result.extend_from_slice(data);
+    xor_with_key(&mut result[SALT_LEN..], &key);
+    result
+}
+
+pub(crate) fn decode(data: &[u8], password: &[u8]) -> Option<Vec<u8>> {
+    let salt: [u8; SALT_LEN] = data.get(..SALT_LEN)?.try_into().ok()?;
+    let key = derive_key(password, &salt);
+    let mut payload = data[SALT_LEN..].to_vec();
+    xor_with_key(&mut payload, &key);
+    Some(payload)
+}
+
 /// Salamander obfuscation wrapper around a UDP socket.
 /// Intercepts raw QUIC packets and applies BLAKE2b-256 XOR obfuscation.
 pub struct SalamanderSocket {
@@ -44,26 +63,12 @@ impl SalamanderSocket {
 
     /// Obfuscate an outgoing packet: salt(8) + XOR(payload, BLAKE2b(password + salt))
     fn obfuscate(&self, data: &[u8]) -> Vec<u8> {
-        let mut salt = [0u8; SALT_LEN];
-        rand::rng().fill(&mut salt);
-        let key = derive_key(&self.password, &salt);
-        let mut result = Vec::with_capacity(SALT_LEN + data.len());
-        result.extend_from_slice(&salt);
-        result.extend_from_slice(data);
-        xor_with_key(&mut result[SALT_LEN..], &key);
-        result
+        encode(data, &self.password)
     }
 
     /// Deobfuscate an incoming packet: extract salt, compute key, XOR payload
     fn deobfuscate(&self, data: &[u8]) -> Option<Vec<u8>> {
-        if data.len() < SALT_LEN {
-            return None;
-        }
-        let salt: [u8; SALT_LEN] = data[..SALT_LEN].try_into().ok()?;
-        let key = derive_key(&self.password, &salt);
-        let mut payload = data[SALT_LEN..].to_vec();
-        xor_with_key(&mut payload, &key);
-        Some(payload)
+        decode(data, &self.password)
     }
 }
 

@@ -37,7 +37,7 @@ fn build_icmp_echo_request(ident: u16, seq_no: u16, payload: &[u8]) -> Vec<u8> {
 
     packet[0] = 8; // Type = Echo Request
     packet[1] = 0; // Code
-                   // Checksum at [2..4] - filled later
+    // Checksum at [2..4] - filled later
     packet[4] = ((ident >> 8) & 0xff) as u8;
     packet[5] = (ident & 0xff) as u8;
     packet[6] = ((seq_no >> 8) & 0xff) as u8;

@@ -2,8 +2,8 @@
 
 use std::collections::HashMap;
 use std::io::{Error, ErrorKind, Result};
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::sync::Mutex;
 
 use crate::dns::buffer::{BytePacketBuffer, PacketBuffer};
@@ -11,9 +11,13 @@ use crate::dns::protocol::{DnsPacket, DnsQuestion, QueryType};
 use async_trait::async_trait;
 use tokio::net::UdpSocket;
 use tokio::sync::{mpsc, oneshot};
-use tokio::time::{timeout, Duration};
-use tracing::{error, trace, trace_span, Instrument};
+use tokio::time::{Duration, timeout};
+use tracing::{Instrument, error, trace, trace_span};
 
+#[expect(
+    clippy::double_must_use,
+    reason = "async_trait adds must_use to a method returning an already must-use Future"
+)]
 #[async_trait]
 pub trait DnsClient {
     fn get_sent_count(&self) -> usize;

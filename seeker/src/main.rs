@@ -206,6 +206,7 @@ async fn main() -> anyhow::Result<()> {
                 }
             },
         };
+        hy2_pool::shutdown().await;
         run_result?;
     }
 

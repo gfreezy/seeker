@@ -1,5 +1,5 @@
 use crate::protocol::{
-    decode_udp_packet, encode_trojan_request, encode_udp_packet, hash_password, CMD_UDP_ASSOCIATE,
+    CMD_UDP_ASSOCIATE, decode_udp_packet, encode_trojan_request, encode_udp_packet, hash_password,
 };
 use bytes::BytesMut;
 use config::Address;
@@ -11,8 +11,8 @@ use tcp_connection::tls::{connect_tls, get_tls_connector};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::Mutex;
-use tokio_rustls::client::TlsStream;
 use tokio_rustls::TlsConnector;
+use tokio_rustls::client::TlsStream;
 
 pub struct TrojanUdpSocket {
     conn: Arc<Mutex<TlsStream<TcpStream>>>,

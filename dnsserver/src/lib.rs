@@ -21,11 +21,11 @@ pub(crate) mod tests {
     use super::*;
     use hermesdns::{DnsClient, DnsNetworkClient, QueryType};
     use hickory_proto::xfer::Protocol;
+    use hickory_resolver::TokioResolver;
     use hickory_resolver::config::{
         NameServerConfig, NameServerConfigGroup, ResolverConfig, ResolverOpts,
     };
     use hickory_resolver::name_server::TokioConnectionProvider;
-    use hickory_resolver::TokioResolver;
     use std::time::Duration;
     use tokio::time;
 

@@ -5,9 +5,9 @@ use std::ptr;
 use miscreant::{Aead, Aes128PmacSivAead, Aes256PmacSivAead};
 
 use crate::{
+    AeadDecryptor, AeadEncryptor, CipherResult, CipherType,
     aead::{increase_nonce, make_skey},
     cipher::Error,
-    AeadDecryptor, AeadEncryptor, CipherResult, CipherType,
 };
 
 use byte_string::ByteStr;

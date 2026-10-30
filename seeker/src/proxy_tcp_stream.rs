@@ -232,10 +232,10 @@ impl ProxyConnection for ProxyTcpStream {
     }
 
     fn shutdown(&self) {
-        if self.alive.swap(false, Ordering::SeqCst) {
-            if let Some(l) = &self.event_listener {
-                l.on_shutdown(self);
-            }
+        if self.alive.swap(false, Ordering::SeqCst)
+            && let Some(l) = &self.event_listener
+        {
+            l.on_shutdown(self);
         }
     }
 

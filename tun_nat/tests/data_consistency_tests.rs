@@ -220,10 +220,10 @@ fn run_udp_consistency_test(config: UdpTestConfig) -> Result<DataConsistencyResu
     let mut matched_count = 0;
 
     for (i, sent_msg) in sent.iter().enumerate() {
-        if let Some(received_msg) = received.get(i) {
-            if sent_msg == received_msg {
-                matched_count += 1;
-            }
+        if let Some(received_msg) = received.get(i)
+            && sent_msg == received_msg
+        {
+            matched_count += 1;
         }
     }
 
@@ -320,10 +320,10 @@ fn run_tcp_consistency_test(config: TcpTestConfig) -> Result<DataConsistencyResu
     let mut matched_count = 0;
 
     for (i, sent_msg) in sent.iter().enumerate() {
-        if let Some(received_msg) = received.get(i) {
-            if sent_msg == received_msg {
-                matched_count += 1;
-            }
+        if let Some(received_msg) = received.get(i)
+            && sent_msg == received_msg
+        {
+            matched_count += 1;
         }
     }
 

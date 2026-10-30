@@ -1,4 +1,4 @@
-use crate::{now, Store};
+use crate::{Store, now};
 use anyhow::Result;
 
 const CONFIG_REMOTE_SERVERS_CACHE_TTL: u64 = 60 * 60 * 24 * 90; // 90 days

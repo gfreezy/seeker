@@ -1,11 +1,11 @@
 //! Shared rustls helpers for TLS client connectors.
 
-use rustls::pki_types::ServerName;
 use rustls::ClientConfig;
+use rustls::pki_types::ServerName;
 use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncWrite};
-use tokio_rustls::client::TlsStream;
 use tokio_rustls::TlsConnector;
+use tokio_rustls::client::TlsStream;
 
 /// Cached `webpki-roots` root certificate store. Cloned into each new config —
 /// loading the ~130 trust anchors on every TLS connection is wasteful.

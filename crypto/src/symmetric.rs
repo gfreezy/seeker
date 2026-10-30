@@ -11,7 +11,7 @@
 // the chain of deprecation warnings here.
 #![allow(deprecated)]
 
-use super::{cipher, CipherResult, CipherType, CryptoMode, StreamCipher};
+use super::{CipherResult, CipherType, CryptoMode, StreamCipher, cipher};
 use ::cipher::generic_array::GenericArray;
 use ::cipher::{BlockDecryptMut, BlockEncryptMut, KeyIvInit, StreamCipher as CipherStreamCipher};
 use bytes::{BufMut, BytesMut};

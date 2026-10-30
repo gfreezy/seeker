@@ -121,10 +121,25 @@ async fn start_http_target() -> (SocketAddr, JoinHandle<()>) {
             .await
             .expect("failed to accept proxied connection");
         let mut request = [0u8; 1024];
-        stream
-            .read(&mut request)
-            .await
-            .expect("failed to read proxied request");
+        let mut received = 0;
+        while !request[..received]
+            .windows(4)
+            .any(|bytes| bytes == b"\r\n\r\n")
+        {
+            assert!(
+                received < request.len(),
+                "proxied request headers too large"
+            );
+            let size = stream
+                .read(&mut request[received..])
+                .await
+                .expect("failed to read proxied request");
+            assert_ne!(
+                size, 0,
+                "connection closed before receiving request headers"
+            );
+            received += size;
+        }
         stream
             .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok")
             .await

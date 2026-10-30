@@ -2,16 +2,16 @@
 
 use ring::{
     aead::{
-        Aad, Algorithm, Nonce, NonceSequence, OpeningKey, SealingKey, UnboundKey, AES_128_GCM,
-        AES_256_GCM, CHACHA20_POLY1305, NONCE_LEN,
+        AES_128_GCM, AES_256_GCM, Aad, Algorithm, CHACHA20_POLY1305, NONCE_LEN, Nonce,
+        NonceSequence, OpeningKey, SealingKey, UnboundKey,
     },
     error::Unspecified,
 };
 
 use crate::{
+    AeadDecryptor, AeadEncryptor, CipherResult, CipherType,
     aead::{increase_nonce, make_skey},
     cipher::Error,
-    AeadDecryptor, AeadEncryptor, CipherResult, CipherType,
 };
 
 use byte_string::ByteStr;

@@ -6,9 +6,9 @@ mod proc;
 mod ulimit;
 
 pub use iptables::IptablesSetup;
-pub use net::{get_current_dns, setup_ip, DNSSetup, IpForward};
-#[cfg(target_arch = "x86_64")]
-pub use proc::sys::{list_system_proc_socks, list_user_proc_socks};
+pub use net::{DNSSetup, IpForward, get_current_dns, setup_ip};
 #[cfg(target_arch = "x86_64")]
 pub use proc::SocketInfo;
+#[cfg(target_arch = "x86_64")]
+pub use proc::sys::{list_system_proc_socks, list_user_proc_socks};
 pub use ulimit::{get_rlimit_no_file, set_rlimit_no_file};

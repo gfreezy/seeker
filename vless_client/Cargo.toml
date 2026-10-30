@@ -2,7 +2,7 @@
 name = "vless_client"
 version = "20260828.0.0"
 authors = ["Alex.F <gfreezy@gmail.com>"]
-edition = "2021"
+edition.workspace = true
 
 [features]
 integration-tests = ["dep:testcontainers", "dep:rcgen"]

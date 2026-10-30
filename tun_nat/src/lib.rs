@@ -12,8 +12,8 @@ use std::collections::HashMap;
 use std::io::Result;
 use std::io::{Read, Write};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::{self, JoinHandle};
 use std::time::SystemTime;
 
@@ -50,7 +50,7 @@ impl Drop for NatJoinHandle {
 }
 
 macro_rules! route_packet {
-    ($packet_ty: tt, $ipv4_packet: expr, $session_manager: expr, $relay_addr: expr, $relay_port: expr) => {{
+    ($packet_ty: tt, $ipv4_packet: expr_2021, $session_manager: expr_2021, $relay_addr: expr_2021, $relay_port: expr_2021) => {{
         let src_addr = $ipv4_packet.src_addr().into();
         let dest_addr = $ipv4_packet.dst_addr().into();
         let mut packet =
@@ -288,20 +288,22 @@ pub fn run_nat_with_icmp(
 
         let write_handle = thread::Builder::new()
             .name(format!("tun-nat-write-{i}"))
-            .spawn(move || loop {
-                if should_quit_write.load(Ordering::Relaxed) {
-                    break;
-                }
+            .spawn(move || {
+                loop {
+                    if should_quit_write.load(Ordering::Relaxed) {
+                        break;
+                    }
 
-                match processed_rx_clone.recv() {
-                    Ok(processed_buf) => {
-                        if let Err(err) = tun_clone.write(&processed_buf) {
-                            if err.kind() != std::io::ErrorKind::Interrupted {
+                    match processed_rx_clone.recv() {
+                        Ok(processed_buf) => {
+                            if let Err(err) = tun_clone.write(&processed_buf)
+                                && err.kind() != std::io::ErrorKind::Interrupted
+                            {
                                 eprintln!("tun_nat: write packet error: {err:?}");
                             }
                         }
+                        Err(_) => break,
                     }
-                    Err(_) => break,
                 }
             })
             .expect("Failed to spawn write thread");
@@ -388,12 +390,11 @@ fn process_packets(
             ),
             IpProtocol::Icmp => {
                 // Send ICMP Echo Request to external handler if channel is available
-                if let Some(ref tx) = icmp_request_tx {
-                    if let Some(request) = parse_icmp_echo_request(&buf) {
-                        if let Err(e) = tx.send(request) {
-                            tracing::debug!("Failed to send ICMP request: {:?}", e);
-                        }
-                    }
+                if let Some(ref tx) = icmp_request_tx
+                    && let Some(request) = parse_icmp_echo_request(&buf)
+                    && let Err(e) = tx.send(request)
+                {
+                    tracing::debug!("Failed to send ICMP request: {:?}", e);
                 }
                 // ICMP packets are handled externally, don't route through normal path
                 continue;

@@ -10,6 +10,13 @@ use std::sync::Arc;
 /// Each server gets one shared QUIC connection.
 static HY2_CLIENTS: Mutex<Option<HashMap<String, Arc<Hy2Client>>>> = Mutex::new(None);
 
+pub async fn shutdown() {
+    let clients = HY2_CLIENTS.lock().take().unwrap_or_default();
+    for client in clients.into_values() {
+        client.shutdown().await;
+    }
+}
+
 /// Get or create a Hy2Client for the given server config.
 pub fn get_hy2_client(
     config: &ServerConfig,
@@ -38,6 +45,7 @@ pub fn get_hy2_client(
         obfs_password: config.obfs_password().map(|s| s.to_string()),
         insecure: config.insecure(),
         recv_window: config.recv_window(),
+        mimic: config.mimic().cloned(),
     };
 
     let client = Hy2Client::new(hy2_config);

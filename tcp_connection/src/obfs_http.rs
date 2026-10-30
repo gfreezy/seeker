@@ -4,13 +4,13 @@ use std::{
     ops::DerefMut,
     pin::Pin,
     sync::{
-        atomic::{AtomicBool, Ordering},
         Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
     },
     task::Poll,
 };
 
-use nanorand::{tls_rng, Rng};
+use nanorand::{Rng, tls_rng};
 use tokio::{
     io::{AsyncRead, AsyncWrite},
     net::TcpStream,
@@ -61,7 +61,8 @@ impl ObfsHttpTcpStream {
             self.host.clone()
         };
         // Http Get request text
-        let headers = [
+
+        [
             "GET / HTTP/1.1\r\n",
             "Host: ",
             host.as_str(),
@@ -77,8 +78,7 @@ impl ObfsHttpTcpStream {
             "\r\n\r\n",
         ]
         .concat()
-        .into_bytes();
-        headers
+        .into_bytes()
     }
 }
 

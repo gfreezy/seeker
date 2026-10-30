@@ -2,7 +2,7 @@
 name = "ssclient"
 version = "20260828.0.0"
 authors = ["gfreezy <gfreezy@gmail.com>"]
-edition = "2021"
+edition.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

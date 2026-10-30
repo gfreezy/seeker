@@ -135,6 +135,14 @@ servers:
     # obfs_password: my-obfs-key   # 可选，Salamander 混淆密码
     # insecure: false              # 可选，跳过 TLS 证书验证
     # recv_window: 0               # 可选，接收窗口带宽提示（Hysteria-CC-RX）
+    # 可选：用户态 Mimic/FakeTCP，Linux/macOS 客户端无需 eBPF 或内核 TCP socket。
+    # 服务端须部署 Mimic；需要 root，自动创建独立 TUN 和 NAT。详见 docs/mimic.md。
+    # mimic:
+    #   enabled: true
+    #   padding: 0                 # 0..16 或 random，必须与服务端一致
+    #   mtu: 1500                  # 外层 IP MTU，1280..9000
+    #   interface: en0             # 可选，不设置则按服务端路由自动选择出口
+    #   tun_name: utun8            # 可选，不设置则自动分配；Linux 可用 mimic0
   - name: server-trojan
     addr: example.com:443          # Trojan 服务器地址
     protocol: Trojan               # 也可以使用 trojan

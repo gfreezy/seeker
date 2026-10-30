@@ -4,14 +4,14 @@ use std::{
     ops::DerefMut,
     pin::Pin,
     sync::{
-        atomic::{AtomicBool, Ordering},
         Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
     },
     task::Poll,
     time::SystemTime,
 };
 
-use nanorand::{tls_rng, Rng};
+use nanorand::{Rng, tls_rng};
 use tokio::{
     io::{AsyncRead, AsyncWrite},
     net::TcpStream,

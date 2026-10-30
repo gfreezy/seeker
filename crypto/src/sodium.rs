@@ -12,9 +12,9 @@ use libsodium_sys::{
 };
 
 use crate::{
+    AeadDecryptor, AeadEncryptor, CipherResult, CipherType, StreamCipher,
     aead::{increase_nonce, make_skey},
     cipher::Error,
-    AeadDecryptor, AeadEncryptor, CipherResult, CipherType, StreamCipher,
 };
 
 static SODIUM_INIT_FLAG: Once = Once::new();

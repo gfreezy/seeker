@@ -898,11 +898,7 @@ impl DnsPacket {
                 has_txt = true;
             }
         });
-        if has_txt {
-            Some(s)
-        } else {
-            None
-        }
+        if has_txt { Some(s) } else { None }
     }
 
     pub fn get_first_a(&self) -> Option<String> {
@@ -923,11 +919,11 @@ impl DnsPacket {
             let mut matched = false;
             if let DnsRecord::CNAME { host, .. } = answer {
                 for answer2 in &self.answers {
-                    if let DnsRecord::A { domain, .. } = answer2 {
-                        if domain == host {
-                            matched = true;
-                            break;
-                        }
+                    if let DnsRecord::A { domain, .. } = answer2
+                        && domain == host
+                    {
+                        matched = true;
+                        break;
                     }
                 }
             }

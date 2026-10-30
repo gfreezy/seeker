@@ -1,3 +1,5 @@
+mod mimic;
+pub use mimic::{MimicConfig, MimicPadding, RandomPadding};
 pub mod rule;
 mod server_config;
 pub use server_config::{
@@ -465,29 +467,25 @@ impl Config {
         let rules = self.rules.rules.read();
         // Validate all PROXY and PROBE rules reference valid proxy groups
         for rule in rules.iter() {
-            if let Some(name) = rule.target_proxy_group_name() {
-                if !seen_proxy_group_names.contains(&name) {
-                    eprintln!(
-                        "Invalid proxy group name '{name}' referenced in PROXY rule: {rule:?}"
-                    );
-                    tracing::error!(
-                        "Invalid proxy group name '{}' referenced in PROXY rule: {:?}",
-                        name,
-                        rule
-                    );
-                }
+            if let Some(name) = rule.target_proxy_group_name()
+                && !seen_proxy_group_names.contains(&name)
+            {
+                eprintln!("Invalid proxy group name '{name}' referenced in PROXY rule: {rule:?}");
+                tracing::error!(
+                    "Invalid proxy group name '{}' referenced in PROXY rule: {:?}",
+                    name,
+                    rule
+                );
             }
-            if let Some(name) = rule.target_proxy_group_name() {
-                if !seen_proxy_group_names.contains(name) {
-                    eprintln!(
-                        "Invalid proxy group name '{name}' referenced in PROBE rule: {rule:?}"
-                    );
-                    tracing::error!(
-                        "Invalid proxy group name '{}' referenced in PROBE rule: {:?}",
-                        name,
-                        rule
-                    );
-                }
+            if let Some(name) = rule.target_proxy_group_name()
+                && !seen_proxy_group_names.contains(name)
+            {
+                eprintln!("Invalid proxy group name '{name}' referenced in PROBE rule: {rule:?}");
+                tracing::error!(
+                    "Invalid proxy group name '{}' referenced in PROBE rule: {:?}",
+                    name,
+                    rule
+                );
             }
         }
     }

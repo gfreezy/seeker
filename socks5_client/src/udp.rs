@@ -1,6 +1,6 @@
 use crate::types::{
-    Address, Command, HandshakeRequest, HandshakeResponse, Reply, TcpRequestHeader,
-    TcpResponseHeader, UdpAssociateHeader, SOCKS5_AUTH_METHOD_NONE,
+    Address, Command, HandshakeRequest, HandshakeResponse, Reply, SOCKS5_AUTH_METHOD_NONE,
+    TcpRequestHeader, TcpResponseHeader, UdpAssociateHeader,
 };
 use std::io::{Error, ErrorKind, Result};
 use std::net::SocketAddr;
@@ -79,7 +79,7 @@ impl Socks5UdpSocket {
         let socket_addr = match addr {
             Address::SocketAddress(socket_addr) => socket_addr,
             Address::DomainNameAddress(_, _) => {
-                return Err(Error::new(ErrorKind::InvalidData, "invalid addr format"))
+                return Err(Error::new(ErrorKind::InvalidData, "invalid addr format"));
             }
         };
         Ok((size - udp_header_len, socket_addr))

@@ -64,7 +64,7 @@ mod tests {
         packet[3] = 0x1c; // total length = 28
         packet[8] = 64; // TTL
         packet[9] = 0x01; // ICMP
-                          // src: 192.168.1.100
+        // src: 192.168.1.100
         packet[12..16].copy_from_slice(&[192, 168, 1, 100]);
         // dst: 11.0.0.10
         packet[16..20].copy_from_slice(&[11, 0, 0, 10]);

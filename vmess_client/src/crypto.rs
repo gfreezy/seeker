@@ -1,6 +1,6 @@
 use aes_gcm::{
-    aead::{AeadInPlace, KeyInit},
     Aes128Gcm,
+    aead::{AeadInPlace, KeyInit},
 };
 use chacha20poly1305::ChaCha20Poly1305;
 use cipher::KeyIvInit;
@@ -38,11 +38,7 @@ impl VMessEncryptMethod {
     }
 
     pub fn tag_size(&self) -> usize {
-        if self.is_aead() {
-            16
-        } else {
-            0
-        }
+        if self.is_aead() { 16 } else { 0 }
     }
 }
 

@@ -1,4 +1,5 @@
 pub mod client;
+pub mod mimic;
 pub mod protocol;
 pub mod salamander;
 pub mod tcp;

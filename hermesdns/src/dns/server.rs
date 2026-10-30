@@ -10,7 +10,7 @@ use tokio::net::UdpSocket;
 use tracing::Instrument;
 
 macro_rules! return_or_report {
-    ( $x:expr, $message:expr ) => {
+    ( $x:expr_2021, $message:expr_2021 ) => {
         match $x {
             Ok(res) => res,
             Err(_) => {
@@ -22,7 +22,7 @@ macro_rules! return_or_report {
 }
 
 macro_rules! ignore_or_report {
-    ( $x:expr, $message:expr ) => {
+    ( $x:expr_2021, $message:expr_2021 ) => {
         match $x {
             Ok(_) => {}
             Err(_) => {
@@ -168,7 +168,7 @@ impl DnsUdpServer {
     /// This method takes ownership of the server, preventing the method from
     /// being called multiple times.
     pub async fn run_server(self) -> Result<()> {
-        let mut handles = Vec::new();
+        let mut handles: Vec<tokio::task::JoinHandle<()>> = Vec::new();
         for listen in &self.context.listens {
             let listen = listen.clone();
             let context = self.context.clone();
@@ -203,10 +203,10 @@ impl DnsUdpServer {
                             let mut size_limit = 512;
 
                             // Check for EDNS
-                            if request.resources.len() == 1 {
-                                if let DnsRecord::OPT { packet_len, .. } = request.resources[0] {
-                                    size_limit = packet_len as usize;
-                                }
+                            if request.resources.len() == 1
+                                && let DnsRecord::OPT { packet_len, .. } = request.resources[0]
+                            {
+                                size_limit = packet_len as usize;
                             }
 
                             // Create a response buffer, and ask the context for an appropriate
@@ -256,8 +256,8 @@ mod tests {
 
     use super::*;
 
-    use crate::dns::context::tests::create_test_context;
     use crate::ResolveStrategy;
+    use crate::dns::context::tests::create_test_context;
 
     fn build_query(qname: &str, qtype: QueryType) -> DnsPacket {
         let mut query_packet = DnsPacket::new();

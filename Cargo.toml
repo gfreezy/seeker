@@ -17,7 +17,10 @@ members = [
     "vmess_client",
     "vless_client",
 ]
-resolver = "2"
+resolver = "3"
+
+[workspace.package]
+edition = "2024"
 
 [profile.dev]
 debug = 0
@@ -65,6 +68,7 @@ publish = false
 
 [workspace.dependencies]
 anyhow = "1.0"
+tun-rs = "2.7.5"
 tokio = { version = "1.0", features = ["full"] }
 tokio-util = { version = "0.7", features = ["net"] }
 hickory-resolver = "0.25"

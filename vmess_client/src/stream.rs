@@ -5,7 +5,7 @@ use sha3::digest::{ExtendableOutput, Update, XofReader};
 use std::cmp;
 use std::io::{Error, ErrorKind, Result};
 use std::pin::Pin;
-use std::task::{ready, Context, Poll};
+use std::task::{Context, Poll, ready};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
 /// Maximum payload per chunk (before encryption overhead).

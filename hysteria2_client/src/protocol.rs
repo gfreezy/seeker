@@ -145,20 +145,26 @@ pub struct UdpMessage {
 
 /// Encode a UDP message for QUIC datagram
 pub fn encode_udp_message(msg: &UdpMessage, buf: &mut BytesMut) {
-    encode_varint(msg.session_id as u64, buf);
-    encode_varint(msg.packet_id as u64, buf);
-    encode_varint(msg.fragment_id as u64, buf);
-    encode_varint(msg.fragment_count as u64, buf);
+    buf.put_u32(msg.session_id);
+    buf.put_u16(msg.packet_id);
+    buf.put_u8(msg.fragment_id);
+    buf.put_u8(msg.fragment_count);
     encode_address(&msg.addr, buf);
     buf.put_slice(&msg.payload);
 }
 
 /// Decode a UDP message from QUIC datagram bytes
 pub fn decode_udp_message(buf: &mut impl Buf) -> io::Result<UdpMessage> {
-    let session_id = decode_varint(buf)? as u32;
-    let packet_id = decode_varint(buf)? as u16;
-    let fragment_id = decode_varint(buf)? as u8;
-    let fragment_count = decode_varint(buf)? as u8;
+    if buf.remaining() < 8 {
+        return Err(io::Error::new(
+            ErrorKind::UnexpectedEof,
+            "truncated UDP header",
+        ));
+    }
+    let session_id = buf.get_u32();
+    let packet_id = buf.get_u16();
+    let fragment_id = buf.get_u8();
+    let fragment_count = buf.get_u8();
     let addr = decode_address(buf)?;
     let mut payload = vec![0u8; buf.remaining()];
     buf.copy_to_slice(&mut payload);
@@ -322,6 +328,40 @@ mod tests {
     fn test_tcp_response_decode_empty() {
         let mut buf = BytesMut::new();
         assert!(decode_tcp_response(&mut buf).is_err());
+    }
+
+    #[test]
+    fn test_udp_message_official_wire_format() {
+        let wire = b"\x12\x34\x56\x78\x9a\xbc\x02\x03\x0a1.2.3.4:53hello";
+        let msg = UdpMessage {
+            session_id: 0x1234_5678,
+            packet_id: 0x9abc,
+            fragment_id: 2,
+            fragment_count: 3,
+            addr: "1.2.3.4:53".parse().unwrap(),
+            payload: b"hello".to_vec(),
+        };
+        let mut encoded = BytesMut::new();
+        encode_udp_message(&msg, &mut encoded);
+        assert_eq!(&encoded[..], wire);
+        let decoded = decode_udp_message(&mut wire.as_slice()).unwrap();
+        assert_eq!(decoded.session_id, msg.session_id);
+        assert_eq!(decoded.packet_id, msg.packet_id);
+        assert_eq!(decoded.fragment_id, 2);
+        assert_eq!(decoded.fragment_count, 3);
+        assert_eq!(decoded.payload, b"hello");
+    }
+
+    #[test]
+    fn test_udp_message_truncated_header() {
+        for len in 0..9 {
+            assert_eq!(
+                decode_udp_message(&mut &vec![0; len][..])
+                    .unwrap_err()
+                    .kind(),
+                ErrorKind::UnexpectedEof
+            );
+        }
     }
 
     #[test]

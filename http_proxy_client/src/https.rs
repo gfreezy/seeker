@@ -10,8 +10,8 @@ use std::task::{Context, Poll};
 use tcp_connection::tls::{connect_tls, get_tls_connector};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
-use tokio_rustls::client::TlsStream;
 use tokio_rustls::TlsConnector;
+use tokio_rustls::client::TlsStream;
 
 #[derive(Clone)]
 pub struct HttpsProxyTcpStream {

@@ -1,13 +1,13 @@
-use crate::protocol::{encode_vless_request, CMD_TCP, VLESS_VERSION};
+use crate::protocol::{CMD_TCP, VLESS_VERSION, encode_vless_request};
 use crate::vision_stream::VisionStream;
 use bytes::{Buf, BytesMut};
 use config::Address;
-use rustls::pki_types::ServerName;
 use rustls::ClientConnection;
+use rustls::pki_types::ServerName;
 use std::io::{Error, ErrorKind, Result};
 use std::net::SocketAddr;
 use std::pin::Pin;
-use std::task::{ready, Context, Poll};
+use std::task::{Context, Poll, ready};
 use tcp_connection::tls::{connect_tls, get_tls_config, get_tls_connector};
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, ReadBuf};
 use tokio::net::TcpStream;

@@ -11,6 +11,10 @@ use crate::dns::client::DnsClient;
 use crate::dns::protocol::{DnsPacket, QueryType, ResultCode};
 use std::any::Any;
 
+#[expect(
+    clippy::double_must_use,
+    reason = "async_trait adds must_use to a method returning an already must-use Future"
+)]
 #[async_trait]
 pub trait DnsResolver {
     async fn resolve(&self, qname: &str, qtype: QueryType, recursive: bool) -> Result<DnsPacket>;
@@ -62,10 +66,10 @@ impl DnsResolver for ForwardingDnsResolver {
             return Ok(qr);
         }
 
-        if qtype == QueryType::A || qtype == QueryType::AAAA {
-            if let Some(qr) = self.cache.lookup(qname, QueryType::CNAME) {
-                return Ok(qr);
-            }
+        if (qtype == QueryType::A || qtype == QueryType::AAAA)
+            && let Some(qr) = self.cache.lookup(qname, QueryType::CNAME)
+        {
+            return Ok(qr);
         }
         let &(ref host, port) = &self.server;
         let result = self
@@ -216,10 +220,10 @@ impl DnsResolver for RecursiveDnsResolver {
             return Ok(qr);
         }
 
-        if qtype == QueryType::A || qtype == QueryType::AAAA {
-            if let Some(qr) = self.cache.lookup(qname, QueryType::CNAME) {
-                return Ok(qr);
-            }
+        if (qtype == QueryType::A || qtype == QueryType::AAAA)
+            && let Some(qr) = self.cache.lookup(qname, QueryType::CNAME)
+        {
+            return Ok(qr);
         }
 
         self.perform(qname, qtype).await
@@ -237,8 +241,8 @@ mod tests {
 
     use super::*;
 
-    use crate::dns::context::tests::create_test_context;
     use crate::ResolveStrategy;
+    use crate::dns::context::tests::create_test_context;
 
     #[tokio::test]
     async fn test_forwarding_resolver() {

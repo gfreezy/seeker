@@ -104,7 +104,7 @@ impl SSUdpSocket {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
                     "invalid addr format",
-                ))
+                ));
             }
         };
         Ok((payload.len(), sock_addr))

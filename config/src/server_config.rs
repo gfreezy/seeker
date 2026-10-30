@@ -132,6 +132,7 @@ pub struct ServerConfig {
     insecure: Option<bool>,
     /// Receive window bandwidth hint for Hysteria2 (Hysteria-CC-RX)
     recv_window: Option<u64>,
+    mimic: Option<crate::MimicConfig>,
     /// VMess encryption method
     vmess_security: Option<VMessSecurity>,
     /// VLESS flow control
@@ -175,6 +176,8 @@ enum ServerConfigHelper {
         insecure: Option<bool>,
         #[serde(default)]
         recv_window: Option<u64>,
+        #[serde(default)]
+        mimic: Option<crate::MimicConfig>,
         // VMess fields
         #[serde(default)]
         vmess_security: Option<VMessSecurity>,
@@ -211,6 +214,8 @@ enum ServerConfigHelper {
         insecure: Option<bool>,
         #[serde(default)]
         recv_window: Option<u64>,
+        #[serde(default)]
+        mimic: Option<crate::MimicConfig>,
         // VMess fields
         #[serde(default)]
         vmess_security: Option<VMessSecurity>,
@@ -259,7 +264,7 @@ impl<'de> Deserialize<'de> for ServerConfig {
     {
         use serde::de::Error;
 
-        match ServerConfigHelper::deserialize(deserializer)? {
+        let config = match ServerConfigHelper::deserialize(deserializer)? {
             ServerConfigHelper::Clash {
                 name,
                 protocol,
@@ -276,6 +281,7 @@ impl<'de> Deserialize<'de> for ServerConfig {
                 obfs_password,
                 insecure,
                 recv_window,
+                mimic,
                 vmess_security,
                 uuid,
                 flow,
@@ -295,6 +301,7 @@ impl<'de> Deserialize<'de> for ServerConfig {
                     obfs_password,
                     insecure,
                     recv_window,
+                    mimic,
                     vmess_security,
                     flow,
                 })
@@ -311,6 +318,7 @@ impl<'de> Deserialize<'de> for ServerConfig {
                 obfs_password,
                 insecure,
                 recv_window,
+                mimic,
                 vmess_security,
                 uuid,
                 flow,
@@ -326,10 +334,20 @@ impl<'de> Deserialize<'de> for ServerConfig {
                 obfs_password,
                 insecure,
                 recv_window,
+                mimic,
                 vmess_security,
                 flow,
             }),
+        }?;
+        if let Some(mimic) = config.mimic() {
+            mimic.validate().map_err(Error::custom)?;
+            if mimic.enabled && config.protocol() != ServerProtocol::Hysteria2 {
+                return Err(Error::custom(
+                    "mimic is only supported for Hysteria2 servers",
+                ));
+            }
         }
+        Ok(config)
     }
 }
 
@@ -404,6 +422,7 @@ impl ServerConfig {
             obfs_password: None,
             insecure: None,
             recv_window: None,
+            mimic: None,
             vmess_security: None,
             flow: None,
         }
@@ -464,6 +483,10 @@ impl ServerConfig {
     /// Get receive window for Hysteria2
     pub fn recv_window(&self) -> Option<u64> {
         self.recv_window
+    }
+
+    pub fn mimic(&self) -> Option<&crate::MimicConfig> {
+        self.mimic.as_ref()
     }
 
     /// Get VMess encryption method
@@ -677,6 +700,7 @@ impl ServerConfig {
             obfs_password: None,
             insecure,
             recv_window: None,
+            mimic: None,
             vmess_security: None,
             flow: None,
         })
@@ -738,6 +762,7 @@ impl ServerConfig {
             obfs_password: None,
             insecure: None,
             recv_window: None,
+            mimic: None,
             vmess_security: Some(security),
             flow: None,
         })
@@ -797,6 +822,7 @@ impl ServerConfig {
             obfs_password: None,
             insecure,
             recv_window: None,
+            mimic: None,
             vmess_security: None,
             flow,
         })

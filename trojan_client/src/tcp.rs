@@ -1,4 +1,4 @@
-use crate::protocol::{encode_trojan_request, hash_password, CMD_CONNECT};
+use crate::protocol::{CMD_CONNECT, encode_trojan_request, hash_password};
 use bytes::BytesMut;
 use config::Address;
 use parking_lot::Mutex;
@@ -11,8 +11,8 @@ use std::task::{Context, Poll};
 use tcp_connection::tls::{connect_tls, get_tls_connector};
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, ReadBuf};
 use tokio::net::TcpStream;
-use tokio_rustls::client::TlsStream;
 use tokio_rustls::TlsConnector;
+use tokio_rustls::client::TlsStream;
 
 pub struct TrojanTcpStream {
     conn: Arc<Mutex<TlsStream<TcpStream>>>,

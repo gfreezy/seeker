@@ -46,4 +46,4 @@ pub mod sys;
 #[path = "linux.rs"]
 pub mod sys;
 
-pub use sys::{get_current_dns, setup_ip, DNSSetup};
+pub use sys::{DNSSetup, get_current_dns, setup_ip};

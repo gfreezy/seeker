@@ -97,12 +97,11 @@ fn get_primary_network() -> Option<String> {
 fn find_network_service_for_device(network_services: &str, device: &str) -> Option<String> {
     let mut iter = network_services.lines().peekable();
     while let Some(line) = iter.next() {
-        if let Some(next_line) = iter.peek() {
-            if next_line.split(':').next_back().map(|l| l.contains(device)) == Some(true) {
-                if let Some(network) = line.split(':').next_back().map(|s| s.trim()) {
-                    return Some(network.to_string());
-                }
-            }
+        if let Some(next_line) = iter.peek()
+            && next_line.split(':').next_back().map(|l| l.contains(device)) == Some(true)
+            && let Some(network) = line.split(':').next_back().map(|s| s.trim())
+        {
+            return Some(network.to_string());
         }
     }
     None

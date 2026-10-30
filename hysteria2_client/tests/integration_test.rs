@@ -2,8 +2,8 @@
 
 use hysteria2_client::{Hy2Client, Hy2Config, Hy2TcpStream, Hy2UdpSocket};
 use std::net::SocketAddr;
-use std::sync::atomic::{AtomicU16, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU16, Ordering};
 use std::time::Duration;
 use testcontainers::core::WaitFor;
 use testcontainers::runners::SyncRunner;
@@ -109,6 +109,7 @@ fn make_client(port: u16) -> Arc<Hy2Client> {
         obfs_password: None,
         insecure: true, // self-signed cert
         recv_window: None,
+        mimic: None,
     })
 }
 
@@ -372,7 +373,7 @@ fn build_dns_query(domain: &str, qtype: u16) -> Vec<u8> {
         buf.extend_from_slice(label.as_bytes());
     }
     buf.push(0x00); // root label
-                    // QTYPE
+    // QTYPE
     buf.push((qtype >> 8) as u8);
     buf.push(qtype as u8);
     // QCLASS = IN

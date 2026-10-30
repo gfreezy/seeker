@@ -88,10 +88,10 @@ async fn fetch_token() -> io::Result<String> {
 
 async fn fetch_first_layer_digest(token: &str) -> io::Result<String> {
     let manifest = fetch_manifest(token, TAG).await?;
-    if let Some(layers) = manifest["layers"].as_array() {
-        if let Some(d) = layers.first().and_then(|l| l["digest"].as_str()) {
-            return Ok(d.to_string());
-        }
+    if let Some(layers) = manifest["layers"].as_array()
+        && let Some(d) = layers.first().and_then(|l| l["digest"].as_str())
+    {
+        return Ok(d.to_string());
     }
     if let Some(entries) = manifest["manifests"].as_array() {
         for entry in entries {

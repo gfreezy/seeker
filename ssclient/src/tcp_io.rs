@@ -210,44 +210,45 @@ impl SSTcpStream {
     }
 
     fn poll_read_handshake(&mut self, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        if let ReadStatus::WaitIv(ref mut buf, ref mut pos, method, ref key) =
-            *self.read_status.lock()
-        {
-            while *pos < buf.len() {
-                let mut read_buf = tokio::io::ReadBuf::new(&mut buf[*pos..]);
-                ready!(Pin::new(&mut self.stream).poll_read(cx, &mut read_buf))?;
-                let n = read_buf.filled().len();
-                if n == 0 {
-                    trace!("wait iv error");
-                    return Poll::Ready(Err(ErrorKind::UnexpectedEof.into()));
+        match *self.read_status.lock() {
+            ReadStatus::WaitIv(ref mut buf, ref mut pos, method, ref key) => {
+                while *pos < buf.len() {
+                    let mut read_buf = tokio::io::ReadBuf::new(&mut buf[*pos..]);
+                    ready!(Pin::new(&mut self.stream).poll_read(cx, &mut read_buf))?;
+                    let n = read_buf.filled().len();
+                    if n == 0 {
+                        trace!("wait iv error");
+                        return Poll::Ready(Err(ErrorKind::UnexpectedEof.into()));
+                    }
+                    *pos += n;
                 }
-                *pos += n;
+
+                let dec = match method.category() {
+                    CipherCategory::Stream => {
+                        trace!("got Stream cipher IV {:?}", &buf);
+                        DecryptedReader::Stream(StreamDecryptedReader::new(
+                            self.stream.clone(),
+                            method,
+                            key,
+                            buf,
+                        ))
+                    }
+                    CipherCategory::Aead => {
+                        trace!("got AEAD cipher salt {:?}", &buf);
+                        DecryptedReader::Aead(AeadDecryptedReader::new(
+                            self.stream.clone(),
+                            method,
+                            key,
+                            buf,
+                        ))
+                    }
+                };
+
+                self.dec = Some(Arc::new(Mutex::new(dec)));
             }
-
-            let dec = match method.category() {
-                CipherCategory::Stream => {
-                    trace!("got Stream cipher IV {:?}", &buf);
-                    DecryptedReader::Stream(StreamDecryptedReader::new(
-                        self.stream.clone(),
-                        method,
-                        key,
-                        buf,
-                    ))
-                }
-                CipherCategory::Aead => {
-                    trace!("got AEAD cipher salt {:?}", &buf);
-                    DecryptedReader::Aead(AeadDecryptedReader::new(
-                        self.stream.clone(),
-                        method,
-                        key,
-                        buf,
-                    ))
-                }
-            };
-
-            self.dec = Some(Arc::new(Mutex::new(dec)));
-        } else {
-            return Poll::Ready(Ok(()));
+            _ => {
+                return Poll::Ready(Ok(()));
+            }
         };
 
         *self.read_status.lock() = ReadStatus::Established;
@@ -343,8 +344,8 @@ mod tests {
 
     #[allow(dead_code)]
     fn setup_tracing_subscriber() {
-        use tracing_subscriber::fmt::Subscriber;
         use tracing_subscriber::EnvFilter;
+        use tracing_subscriber::fmt::Subscriber;
 
         let builder = Subscriber::builder().with_env_filter(EnvFilter::new("ssclient=trace"));
         builder.try_init().unwrap();

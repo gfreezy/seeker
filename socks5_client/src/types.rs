@@ -276,7 +276,7 @@ impl Address {
                         return Err(Error::new(
                             Reply::GeneralFailure,
                             "invalid address encoding",
-                        ))
+                        ));
                     }
                 };
                 let port = cursor.get_u16();

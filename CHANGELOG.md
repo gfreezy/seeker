@@ -4,16 +4,21 @@
 
 ### Added
 
+- Add an optional userspace Mimic transport for Hysteria2 on Linux and macOS, including configurable padding, MTU, interface selection, and automatic network cleanup. See [the Mimic guide](docs/mimic.md) for setup, system requirements, interoperability probes, and the upstream passive-handshake limitation.
 - Add proxy-group selection strategies modeled after Clash: `type: select` pins a configured `default_selected` proxy (falling back to the first group member), while `type: url_test` keeps automatic performance-based selection. Omitted `type` remains `url_test` for backward compatibility.
 
 ### Improved
 
+- Unify all workspace members on Rust edition 2024 with resolver 3, centralize the `tun-rs` dependency, and apply workspace formatting and Clippy fixes.
 - Allow `tun_name` to be omitted or left empty so macOS and Linux can automatically allocate an available TUN device name, while preserving explicitly configured names.
 - Improve server performance `success_rate` calculation: use per-URL success ratio instead of binary per-round success. Previously, if any single ping URL succeeded, the entire round was marked as 100% success. Now `success_rate` accurately reflects the proportion of successful URL pings (e.g., 2/3 URLs success = 66.67%). The `success`/`failure` counters now track individual URL results.
 - Allow the anonymous default proxy group used by bare `PROXY`/`PROBE` rules to be persisted as `name: ""`; persisted default groups keep tracking all current servers and can use `type: select` with `default_selected`.
 
 ### Fixed
 
+- Keep Hysteria2 HTTP/3 critical streams alive after authentication and correct the UDP datagram header encoding.
+- Ignore Linux virtual TUN link/address events when monitoring network changes so that creating a Mimic interface does not reset existing proxy connections.
+- Handle partial HTTP request header reads in proxy integration tests and preserve lock lifetimes during the Rust 2024 migration.
 - Bound `connections` table growth by marking normally dropped TCP streams as closed and periodically deleting closed connection history after 30 minutes.
 - Parse proxy-group `ping_timeout` values with the documented duration syntax such as `2s`.
 - Make HTTP and HTTPS proxy integration tests use a local target server instead of a public website, avoiding CI failures caused by external DNS or network availability.
