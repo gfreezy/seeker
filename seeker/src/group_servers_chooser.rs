@@ -486,14 +486,20 @@ impl GroupServersChooser {
     }
 
     pub async fn ping_servers_manually(&self) -> Result<()> {
-        anyhow::ensure!(!self.ping_urls.is_empty(), "Configure at least one ping URL");
+        anyhow::ensure!(
+            !self.ping_urls.is_empty(),
+            "Configure at least one ping URL"
+        );
         self.ping_servers_inner(true, false).await;
         Ok(())
     }
 
     async fn ping_servers_inner(&self, wait_for_all: bool, update_selection: bool) {
         let servers = self.servers_snapshot();
-        if self.ping_urls.is_empty() || servers.is_empty() || (update_selection && servers.len() <= 1) {
+        if self.ping_urls.is_empty()
+            || servers.is_empty()
+            || (update_selection && servers.len() <= 1)
+        {
             return;
         }
 
@@ -756,10 +762,15 @@ async fn ping_server(
     };
     // Empty or malformed responses must not be reported as successful probes.
     let response = String::from_utf8_lossy(&resp_buf);
-    let mut status = response.lines().next().unwrap_or_default().split_whitespace();
+    let mut status = response
+        .lines()
+        .next()
+        .unwrap_or_default()
+        .split_whitespace();
     let version = status.next().unwrap_or_default();
     let status_code = status.next().and_then(|value| value.parse::<u16>().ok());
-    if !version.starts_with("HTTP/") || !status_code.is_some_and(|code| (200..400).contains(&code)) {
+    if !version.starts_with("HTTP/") || !status_code.is_some_and(|code| (200..400).contains(&code))
+    {
         return Err(std::io::Error::other(format!(
             "server={server_name}({server_addr}), url={url_str}, stage=status_check, invalid or unsuccessful HTTP response"
         )));
