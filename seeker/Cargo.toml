@@ -60,6 +60,9 @@ netlink-sys = { workspace = true }
 tracing-chrome = ["dep:tracing-chrome"]
 integration-tests = ["dep:testcontainers"]
 
+[dev-dependencies]
+serde_json = { workspace = true }
+
 
 [package.metadata.bundle]
 name = "seeker"

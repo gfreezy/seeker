@@ -482,8 +482,18 @@ impl GroupServersChooser {
     }
 
     pub async fn ping_servers(&self, wait_for_all: bool) {
+        self.ping_servers_inner(wait_for_all, true).await;
+    }
+
+    pub async fn ping_servers_manually(&self) -> Result<()> {
+        anyhow::ensure!(!self.ping_urls.is_empty(), "Configure at least one ping URL");
+        self.ping_servers_inner(true, false).await;
+        Ok(())
+    }
+
+    async fn ping_servers_inner(&self, wait_for_all: bool, update_selection: bool) {
         let servers = self.servers_snapshot();
-        if self.ping_urls.is_empty() || servers.len() <= 1 {
+        if self.ping_urls.is_empty() || servers.is_empty() || (update_selection && servers.len() <= 1) {
             return;
         }
 
@@ -516,7 +526,7 @@ impl GroupServersChooser {
             }
         }
 
-        if self.group_type == ProxyGroupType::UrlTest {
+        if update_selection && self.group_type == ProxyGroupType::UrlTest {
             // ping 后的切换不是强制切换，需要满足阈值条件
             self.move_to_next_server(!wait_for_all);
         }
@@ -744,15 +754,14 @@ async fn ping_server(
             )))?;
         buf[..size].to_vec()
     };
-    // Check if HTTP status code starts with 2 or 3
+    // Empty or malformed responses must not be reported as successful probes.
     let response = String::from_utf8_lossy(&resp_buf);
-    if let Some(status_line) = response.lines().next()
-        && let Some(status_code) = status_line.split_whitespace().nth(1)
-        && !status_code.starts_with('2')
-        && !status_code.starts_with('3')
-    {
+    let mut status = response.lines().next().unwrap_or_default().split_whitespace();
+    let version = status.next().unwrap_or_default();
+    let status_code = status.next().and_then(|value| value.parse::<u16>().ok());
+    if !version.starts_with("HTTP/") || !status_code.is_some_and(|code| (200..400).contains(&code)) {
         return Err(std::io::Error::other(format!(
-            "server={server_name}({server_addr}), url={url_str}, stage=status_check, status_code={status_code}"
+            "server={server_name}({server_addr}), url={url_str}, stage=status_check, invalid or unsuccessful HTTP response"
         )));
     }
     Ok(())

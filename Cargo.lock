@@ -3216,6 +3216,7 @@ dependencies = [
  "parking_lot",
  "rustls",
  "serde",
+ "serde_json",
  "socket2 0.5.10",
  "socks5_client",
  "ssclient",

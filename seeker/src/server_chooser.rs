@@ -39,6 +39,12 @@ pub(crate) struct CandidateUdpSocket {
 }
 
 impl ServerChooser {
+    pub async fn ping_all_servers(&self) -> Result<()> {
+        let chooser = self.group_servers_chooser.get("")
+            .ok_or_else(|| anyhow::anyhow!("Default proxy group not found"))?;
+        chooser.ping_servers_manually().await
+    }
+
     pub async fn new(config: Config, dns_client: DnsClient, show_stats: bool) -> Self {
         let mut group_servers_chooser = HashMap::new();
         for group in config.proxy_groups.iter() {
