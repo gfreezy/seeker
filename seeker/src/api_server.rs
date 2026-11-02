@@ -135,6 +135,16 @@ mod tests {
         }
     }
 
+    async fn read_request_headers(connection: &mut tokio::net::TcpStream) {
+        let mut request = [0; 4096];
+        let mut length = 0;
+        while !request[..length].ends_with(b"\r\n\r\n") {
+            let count = connection.read(&mut request[length..]).await.unwrap();
+            assert!(count > 0, "Expected complete HTTP request headers");
+            length += count;
+        }
+    }
+
     #[tokio::test]
     async fn manual_ping_tests_a_single_selected_server_without_switching_it() {
         store::Store::setup_global_for_test();
@@ -143,13 +153,12 @@ mod tests {
         let chooser = state.chooser.clone();
         let proxy = tokio::spawn(async move {
             let (mut connection, _) = listener.accept().await.unwrap();
-            let mut request = [0; 4096];
-            connection.read(&mut request).await.unwrap();
+            read_request_headers(&mut connection).await;
             connection
                 .write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
                 .await
                 .unwrap();
-            connection.read(&mut request).await.unwrap();
+            read_request_headers(&mut connection).await;
             connection
                 .write_all(b"HTTP/1.1 204 No Content\r\n\r\n")
                 .await
