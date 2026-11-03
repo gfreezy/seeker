@@ -113,7 +113,8 @@ impl GroupServersChooser {
 
     /// Swap in a new server list for this group. Performance tracker entries for
     /// removed servers are dropped, their live connections are shut down, and
-    /// the selected server is reassigned if it disappeared.
+    /// the selected server uses the refreshed configuration or is reassigned
+    /// if it disappeared.
     ///
     /// If `new_servers` is empty the group is left in a "no available servers"
     /// state — subsequent `proxy_connect` calls will return an error.
@@ -154,10 +155,30 @@ impl GroupServersChooser {
         self.performance_tracker.retain_addrs(&new_addrs);
 
         let mut selected = self.selected_server.lock();
-        let still_valid = selected
+        let refreshed_selected = selected
             .as_ref()
-            .is_some_and(|s| new_addrs.contains(&s.addr().to_string()));
-        if !still_valid {
+            .and_then(|current| {
+                new_servers
+                    .iter()
+                    .find(|server| server.name() == current.name())
+                    .or_else(|| {
+                        new_servers
+                            .iter()
+                            .find(|server| server.addr() == current.addr())
+                    })
+            })
+            .cloned();
+        if let Some(refreshed) = refreshed_selected {
+            if selected.as_ref() != Some(&refreshed) {
+                info!(
+                    group = self.name,
+                    name = refreshed.name(),
+                    "Updating selected server configuration"
+                );
+                *selected = Some(refreshed);
+                self.consecutive_failures.store(0, Ordering::SeqCst);
+            }
+        } else {
             let old_addr = selected.as_ref().map(|s| s.addr().to_string());
             match initial_server(
                 &new_servers,
@@ -793,6 +814,68 @@ mod selection_tests {
             None,
             None,
         )
+    }
+
+    async fn chooser(servers: Vec<ServerConfig>, selected: Option<String>) -> GroupServersChooser {
+        GroupServersChooser::new(
+            "test".to_string(),
+            ProxyGroupType::Select,
+            selected,
+            Arc::new(servers),
+            DnsClient::new(&[], Duration::from_secs(1)).await,
+            vec![],
+            Duration::from_secs(1),
+            Duration::from_secs(1),
+            Duration::from_secs(1),
+            Duration::from_secs(1),
+            false,
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn refresh_replaces_selected_server_parameters_and_preserves_selection() {
+        let first = server("first", 1080);
+        let old = ServerConfig::new(
+            "preferred".to_string(),
+            "127.0.0.1:1081".parse().unwrap(),
+            ServerProtocol::Http,
+            Some("user".to_string()),
+            Some("old password".to_string()),
+            None,
+            None,
+        );
+        let chooser = chooser(vec![first.clone(), old], Some("preferred".to_string())).await;
+        for port in [1081, 1082] {
+            let updated = ServerConfig::new(
+                "preferred".to_string(),
+                format!("127.0.0.1:{port}").parse().unwrap(),
+                ServerProtocol::Http,
+                Some("user".to_string()),
+                Some("new password".to_string()),
+                None,
+                None,
+            );
+            chooser.update_servers(Arc::new(vec![first.clone(), updated.clone()]));
+            assert_eq!(chooser.get_selected_server(), Some(updated));
+        }
+    }
+
+    #[tokio::test]
+    async fn refresh_replaces_the_server_list_and_handles_removed_nodes() {
+        let chooser = chooser(vec![server("old", 1080)], None).await;
+        let shared = chooser.clone();
+        let replacement = server("new", 1081);
+        chooser.update_servers(Arc::new(vec![replacement.clone()]));
+        assert_eq!(
+            shared.servers_snapshot().as_slice(),
+            std::slice::from_ref(&replacement)
+        );
+        assert_eq!(shared.get_selected_server(), Some(replacement));
+
+        chooser.update_servers(Arc::new(vec![]));
+        assert!(shared.servers_snapshot().is_empty());
+        assert!(shared.get_selected_server().is_none());
     }
 
     #[test]

@@ -229,9 +229,9 @@ mod duration_opt {
     {
         let s: Option<String> = Option::deserialize(deserializer)?;
         let Some(s) = s else { return Ok(None) };
-        parse_duration(&s)
-            .map(Some)
-            .map_err(|_| Error::invalid_value(serde::de::Unexpected::Str(&s), &"10s or 10ms"))
+        parse_duration(&s).map(Some).map_err(|_| {
+            Error::invalid_value(serde::de::Unexpected::Str(&s), &"10ms, 10s, 5m or 1h")
+        })
     }
 }
 
@@ -241,26 +241,18 @@ mod duration {
     use std::time::Duration;
 
     pub fn parse_duration(s: &str) -> Result<Duration, String> {
-        let mut num = Vec::with_capacity(100);
-        let mut chars = Vec::with_capacity(100);
-        for c in s.chars() {
-            if c.is_numeric() {
-                num.push(c)
-            } else {
-                chars.push(c);
-            }
+        let invalid = || format!("invalid value: {s}, expected 10ms, 10s, 5m or 1h");
+        let unit_start = s.find(|c: char| !c.is_ascii_digit()).ok_or_else(invalid)?;
+        let (number, unit) = s.split_at(unit_start);
+        let number: u64 = number.parse().map_err(|_| invalid())?;
+        match unit {
+            "ms" => Some(Duration::from_millis(number)),
+            "s" => Some(Duration::from_secs(number)),
+            "m" => number.checked_mul(60).map(Duration::from_secs),
+            "h" => number.checked_mul(3600).map(Duration::from_secs),
+            _ => None,
         }
-        let n: u64 = num.into_iter().collect::<String>().parse().unwrap();
-        match chars.into_iter().collect::<String>().as_str() {
-            "s" => Ok(Duration::from_secs(n)),
-            "ms" => Ok(Duration::from_millis(n)),
-            "m" => Ok(Duration::from_secs(n * 60)),
-            "h" => Ok(Duration::from_secs(n * 3600)),
-            _ => Err(format!(
-                "invalid value: {}, expected 10s, 10ms, 5m or 1h",
-                s
-            )),
-        }
+        .ok_or_else(invalid)
     }
 
     pub fn deserialize<'de, D>(deserializer: D) -> Result<Duration, D::Error>
@@ -268,8 +260,9 @@ mod duration {
         D: Deserializer<'de>,
     {
         let s: String = String::deserialize(deserializer)?;
-        parse_duration(&s)
-            .map_err(|_| Error::invalid_value(serde::de::Unexpected::Str(&s), &"10s or 10ms"))
+        parse_duration(&s).map_err(|_| {
+            Error::invalid_value(serde::de::Unexpected::Str(&s), &"10ms, 10s, 5m or 1h")
+        })
     }
 }
 
@@ -698,20 +691,40 @@ mod tests {
 
     #[test]
     fn test_parse_refresh_interval_units() {
-        use std::time::Duration;
-        #[derive(Deserialize)]
-        struct T {
-            #[serde(with = "duration_opt", default)]
-            interval: Option<Duration>,
+        let base = "dns_start_ip: 11.0.0.10\ntun_bypass_direct: true\ntun_ip: 11.0.0.1\ntun_cidr: 11.0.0.0/16\nrules: []\nping_urls: []\nmax_connect_errors: 1\n";
+        let default: Config = serde_yaml::from_str(base).unwrap();
+        assert_eq!(default.remote_config_refresh_interval, None);
+        let null: Config =
+            serde_yaml::from_str(&format!("{base}remote_config_refresh_interval: null\n")).unwrap();
+        assert_eq!(null.remote_config_refresh_interval, None);
+        for (interval, expected) in [
+            ("30s", Duration::from_secs(30)),
+            ("5m", Duration::from_secs(300)),
+            ("1h", Duration::from_secs(3600)),
+            ("250ms", Duration::from_millis(250)),
+            ("0s", Duration::ZERO),
+        ] {
+            let yaml = format!("{base}remote_config_refresh_interval: {interval}\n");
+            let config: Config = serde_yaml::from_str(&yaml).unwrap();
+            assert_eq!(config.remote_config_refresh_interval, Some(expected));
         }
-        let parse =
-            |s: &str| -> Option<Duration> { serde_yaml::from_str::<T>(s).unwrap().interval };
-        assert_eq!(parse("interval: 30s"), Some(Duration::from_secs(30)));
-        assert_eq!(parse("interval: 5m"), Some(Duration::from_secs(300)));
-        assert_eq!(parse("interval: 1h"), Some(Duration::from_secs(3600)));
-        assert_eq!(parse("interval: 250ms"), Some(Duration::from_millis(250)));
-        assert_eq!(parse("interval: ~"), None);
-        assert_eq!(parse(""), None);
+    }
+
+    #[test]
+    fn test_parse_duration_rejects_invalid_and_overflowing_values() {
+        for value in [
+            "",
+            "h",
+            "10",
+            "-1s",
+            "1s2",
+            "1.5h",
+            "1d",
+            "18446744073709551616s",
+            "18446744073709551615h",
+        ] {
+            assert!(parse_duration(value).is_err(), "accepted {value:?}");
+        }
     }
 
     #[test]

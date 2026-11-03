@@ -148,7 +148,16 @@ proxies:
 remote_config_urls:
   - https://your-ss-provider.com/subscription-url-1
   - https://your-ss-provider.com/subscription-url-2
+
+# 可选：自动更新订阅的间隔，省略时默认为 1h
+remote_config_refresh_interval: 1h
 ----
+
+启动时会立即拉取订阅，之后按 `remote_config_refresh_interval` 定时重新拉取并热更新服务器列表，无需重启。
+更新间隔复用其他超时配置的 duration 格式，支持 `ms`、`s`、`m`、`h`，例如 `250ms`、`30s`、`5m`、`1h`。
+设为 `0s` 可关闭定时更新。任一订阅拉取失败时保留当前服务器列表，并在下一轮重试。
+刷新会用“本地 `servers` + 最新订阅节点”替换运行中的服务器列表，不会累计保留已从订阅删除的节点。
+当前选中节点的参数也会同步更新，后续新连接使用新配置。
 
 **订阅格式要求：**
 
@@ -175,6 +184,7 @@ ss://YWVzLTI1Ni1nY206MTEx@test.ss.com:30003/#HK+02
 . Base64 解码后，解析每个 `ss://` URL 为服务器配置
 . 远程订阅的服务器会自动添加到本地 `servers` 列表中
 . 本地配置和远程订阅的服务器会合并使用
+. 之后默认每小时重新拉取订阅，成功后更新运行中的服务器列表，失败时保留现有数据
 
 **示例：**
 +

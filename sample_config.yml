@@ -89,7 +89,7 @@ remote_config_urls:
   - https://another-provider.com/subscription
 
 # 定期重新拉取 remote_config_urls 并更新内存中的 server 列表（运行时热更新）。
-# 默认 1 小时；设为 0s 或省略字段都可禁用。支持 ms / s / m / h 单位。
+# 默认 1 小时（省略字段也会自动刷新）；设为 0s 可禁用。复用 duration 格式，支持 ms / s / m / h 单位。
 # 拉取失败保留当前内存数据，下一轮重试。
 # 注意：若上游删除了某个 server，而 proxy_groups 仍然引用它，则该组会"缩短"；
 # 若该组因此变空，路由到该组的连接会返回错误，直到下次拉取恢复。
