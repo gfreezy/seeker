@@ -20,8 +20,9 @@ mod relay_udp_socket;
 mod server_chooser;
 mod server_performance;
 mod traffic;
+mod upgrade;
 
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use parking_lot::Mutex;
 use std::env::current_dir;
 use std::net::SocketAddrV4;
@@ -45,10 +46,15 @@ const REDIR_LISTEN_PORT: u16 = 1300;
 #[derive(Parser, Debug)]
 #[clap(
     name = "Seeker",
+    version,
+    args_conflicts_with_subcommands = true,
     author = "gfreezy <gfreezy@gmail.com>",
     about = "Tun to Shadowsockets proxy. https://github.com/gfreezy/seeker"
 )]
 struct SeekerArgs {
+    #[command(subcommand)]
+    command: Option<SeekerCommand>,
+
     /// Set config file. The sample config at https://github.com/gfreezy/seeker/blob/master/sample_config.yml
     #[clap(short, long, value_name = "FILE")]
     config: Option<String>,
@@ -82,10 +88,19 @@ struct SeekerArgs {
     stats: bool,
 }
 
+#[derive(Subcommand, Debug)]
+enum SeekerCommand {
+    /// Download the latest GitHub release and replace this executable
+    Upgrade,
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    eprint!("Starting.");
     let args = SeekerArgs::parse();
+    if let Some(SeekerCommand::Upgrade) = args.command {
+        return upgrade::upgrade();
+    }
+    eprint!("Starting.");
     let path = args.config.as_ref().map(String::as_ref);
     let key = args.key.as_ref().map(String::as_ref);
     let to_encrypt = args.encrypt;

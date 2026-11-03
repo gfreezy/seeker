@@ -85,6 +85,7 @@ ctrlc = "3.0"
 digest = "0.10"
 dyn-clone = "1.0"
 file-rotate = "0.7"
+flate2 = "1"
 futures-util = "0.3"
 hkdf = "0.12"
 libc = "0.2"
@@ -109,6 +110,7 @@ percent-encoding = "2.1"
 rand = "0.9"
 ring = "0.17"
 rusqlite = "0.32"
+semver = "1"
 serde = "1.0"
 serde_yaml = "0.9.34-deprecated"
 sha-1 = "0.10"
@@ -118,6 +120,7 @@ hmac = "0.12"
 sha3 = "0.10"
 smoltcp = { version = "0.12", default-features = false }
 tempfile = "3.3"
+tar = "0.4"
 testcontainers = { version = "0.23", features = [
     "blocking",
 ], default-features = false }

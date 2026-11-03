@@ -16,6 +16,20 @@ https://join.slack.com/t/allsunday/shared_invite/zt-f8xw3uzl-qchMa2jQOfQF1T89w3l
 ----
 chmod +x seeker-osx  # or  chmod+x seeker-linux
 ----
+
+已安装的 CLI 可以直接升级到 GitHub 上最新的正式版：
+
+[source,bash]
+----
+seeker upgrade
+# 如果安装目录需要管理员权限：
+sudo seeker upgrade
+----
+
+命令会自动选择当前平台的压缩包，校验 GitHub 提供的 SHA-256 摘要，然后原子替换当前可执行文件。
+已是最新版或本地版本更新时不会重复下载；下载、校验或解压失败时保留原文件。
+升级无需配置文件，也不会启动代理或修改网络设置。正在运行的 Seeker 进程需重启后才会使用新版本。
+
 == Usage
 
 1. 启动 `seeker`

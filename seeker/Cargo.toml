@@ -46,6 +46,11 @@ socket2 = { version = "0.5", features = ["all"] }
 crossbeam-channel = "0.5"
 axum = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
+flate2 = { workspace = true }
+semver = { workspace = true }
+sha2 = { workspace = true }
+tar = { workspace = true }
+tempfile = { workspace = true }
 testcontainers = { workspace = true, optional = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
