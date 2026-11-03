@@ -1,6 +1,6 @@
 [package]
 name = "ssclient"
-version = "20261030.0.0"
+version = "20261103.0.0"
 authors = ["gfreezy <gfreezy@gmail.com>"]
 edition.workspace = true
 
