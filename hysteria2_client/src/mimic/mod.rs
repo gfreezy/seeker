@@ -162,8 +162,11 @@ impl MimicSocket {
     }
 
     fn error(&self) -> io::Error {
+        // Quinn retries ConnectionReset immediately to ignore UDP reset
+        // notifications. A closed Mimic transport is permanent, so report a
+        // fatal error to stop its endpoint driver instead of spinning.
         io::Error::new(
-            io::ErrorKind::ConnectionReset,
+            io::ErrorKind::ConnectionAborted,
             self.shared
                 .failure
                 .lock()
@@ -499,6 +502,74 @@ mod tests {
             "192.0.2.1:443".parse().unwrap(),
             MimicConfig::default(),
         )
+    }
+
+    #[tokio::test]
+    async fn closed_transport_terminates_quinn_endpoint() {
+        for failure in [None, Some("Mimic peer stopped responding")] {
+            let (outgoing, outgoing_rx) = mpsc::channel(1);
+            let (incoming_tx, incoming) = mpsc::channel(1);
+            let worker = tokio::spawn(async move {
+                let _channels = (outgoing_rx, incoming_tx);
+                futures_util::future::pending::<()>().await;
+            });
+            let socket = Arc::new(MimicSocket {
+                outgoing,
+                incoming: Mutex::new(incoming),
+                shared: Arc::new(Shared {
+                    failure: Mutex::new(failure.map(str::to_owned)),
+                    ..Shared::default()
+                }),
+                worker,
+                local: "198.19.0.2:40000".parse().unwrap(),
+                remote: "192.0.2.1:443".parse().unwrap(),
+                max_payload: 1400,
+            });
+            socket.close().await;
+
+            let mut buffer = [0; 1500];
+            let mut bufs = [io::IoSliceMut::new(&mut buffer)];
+            let mut meta = [quinn::udp::RecvMeta::default()];
+            let recv_error =
+                futures_util::future::poll_fn(|cx| socket.poll_recv(cx, &mut bufs, &mut meta))
+                    .await
+                    .unwrap_err();
+            let send_error = socket
+                .try_send(&quinn::udp::Transmit {
+                    destination: socket.remote,
+                    ecn: None,
+                    contents: b"test",
+                    segment_size: None,
+                    src_ip: None,
+                })
+                .unwrap_err();
+            let mut poller = socket.clone().create_io_poller();
+            let writable_error =
+                futures_util::future::poll_fn(|cx| poller.as_mut().poll_writable(cx))
+                    .await
+                    .unwrap_err();
+            for error in [recv_error, send_error, writable_error] {
+                // Check the error contract before starting Quinn, so a
+                // regression fails instead of hanging its receive loop.
+                assert_eq!(error.kind(), io::ErrorKind::ConnectionAborted);
+                assert_eq!(
+                    error.to_string(),
+                    failure.unwrap_or("Mimic transport closed")
+                );
+            }
+
+            let endpoint = quinn::Endpoint::new_with_abstract_socket(
+                Default::default(),
+                None,
+                socket,
+                quinn::default_runtime().unwrap(),
+            )
+            .unwrap();
+            let incoming = time::timeout(Duration::from_secs(1), endpoint.accept())
+                .await
+                .expect("Quinn must stop after the Mimic transport closes");
+            assert!(incoming.is_none());
+        }
     }
 
     #[test]
