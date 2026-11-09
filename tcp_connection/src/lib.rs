@@ -27,7 +27,7 @@ pub struct TcpConnection {
     inner: Box<dyn Connection>,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Deserialize)]
 pub enum ObfsMode {
     Http,
     Tls,

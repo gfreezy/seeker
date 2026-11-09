@@ -22,7 +22,7 @@ pub enum DnsServerAddr {
     TcpSocketAddr(Url),
 }
 
-#[derive(Clone, Debug, Deserialize, serde::Serialize, PartialEq, Eq, Copy)]
+#[derive(Clone, Debug, Deserialize, serde::Serialize, PartialEq, Eq, Hash, Copy)]
 pub enum ServerProtocol {
     #[serde(alias = "http")]
     Http,
@@ -43,7 +43,7 @@ pub enum ServerProtocol {
 }
 
 /// VMess encryption method
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Deserialize)]
 pub enum VMessSecurity {
     #[serde(alias = "auto")]
     Auto,
@@ -76,7 +76,7 @@ impl std::fmt::Display for VMessSecurity {
 }
 
 /// VLESS flow control
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Deserialize)]
 pub enum VlessFlow {
     #[serde(alias = "xtls-rprx-vision")]
     XtlsRprxVision,
@@ -115,7 +115,7 @@ impl std::fmt::Display for ServerProtocol {
 }
 
 /// WebSocket request path and additional HTTP headers.
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Hash)]
 pub struct WebSocketOptions {
     #[serde(default = "default_websocket_path")]
     pub path: String,
@@ -137,7 +137,7 @@ impl Default for WebSocketOptions {
 }
 
 /// REALITY authentication and hybrid key exchange options.
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Hash)]
 pub struct RealityOptions {
     #[serde(rename = "public-key", alias = "public_key")]
     pub public_key: String,
@@ -152,7 +152,7 @@ pub struct RealityOptions {
 }
 
 /// Configuration for a server
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ServerConfig {
     /// Server address
     name: String,
@@ -433,7 +433,7 @@ impl<'de> Deserialize<'de> for ServerConfig {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Hash)]
 pub struct Obfs {
     pub mode: ObfsMode,
     pub host: String,

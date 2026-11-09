@@ -1,7 +1,7 @@
 use serde::Deserialize;
 
 /// Seeker's userspace implementation of the Mimic wire protocol.
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Hash)]
 #[serde(default, deny_unknown_fields)]
 pub struct MimicConfig {
     pub enabled: bool,
@@ -51,14 +51,14 @@ impl MimicConfig {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Hash)]
 #[serde(untagged)]
 pub enum MimicPadding {
     Fixed(u8),
     Mode(RandomPadding),
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "lowercase")]
 pub enum RandomPadding {
     Random,

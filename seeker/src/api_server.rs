@@ -135,7 +135,7 @@ mod tests {
         }
     }
 
-    async fn read_request_headers(connection: &mut tokio::net::TcpStream) {
+    async fn read_request_headers(connection: &mut tokio::net::TcpStream) -> String {
         let mut request = [0; 4096];
         let mut length = 0;
         while !request[..length].ends_with(b"\r\n\r\n") {
@@ -143,6 +143,7 @@ mod tests {
             assert!(count > 0, "Expected complete HTTP request headers");
             length += count;
         }
+        String::from_utf8(request[..length].to_vec()).unwrap()
     }
 
     #[tokio::test]
@@ -171,6 +172,136 @@ mod tests {
         assert!(stats.latency >= 0.0);
         assert_eq!(stats.success, 1);
         assert_eq!(chooser.get_all_performance_stats()[""].0, "only");
+    }
+
+    #[tokio::test]
+    async fn manual_ping_returns_separate_results_for_nodes_sharing_an_endpoint() {
+        use base64::Engine;
+
+        store::Store::setup_global_for_test();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        // A single initial node avoids startup probes racing the manual test.
+        let state = state(address).await;
+        let servers = (0..3)
+            .map(|index| {
+                serde_json::from_value(serde_json::json!({
+                "name": format!("node-{index}"), "addr": address.to_string(), "protocol": "Http",
+                "username": format!("username-{index}"), "password": format!("password-{index}")
+            })).unwrap()
+            })
+            .collect::<Vec<_>>();
+        let group = serde_json::from_value(serde_json::json!({
+            "name": "", "type": "select", "proxies": ["node-0", "node-1", "node-2"]
+        }))
+        .unwrap();
+        state.chooser.update_servers_for_groups(&servers, &[group]);
+        let proxy = tokio::spawn(async move {
+            let failed_auth = format!(
+                "Proxy-Authorization: Basic {}",
+                base64::engine::general_purpose::STANDARD.encode("username-1:password-1")
+            );
+            for _ in 0..3 {
+                let (mut connection, _) = listener.accept().await.unwrap();
+                let request = read_request_headers(&mut connection).await;
+                if request.contains(&failed_auth) {
+                    connection
+                        .write_all(b"HTTP/1.1 502 Bad Gateway\r\n\r\n")
+                        .await
+                        .unwrap();
+                } else {
+                    connection
+                        .write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
+                        .await
+                        .unwrap();
+                    read_request_headers(&mut connection).await;
+                    connection
+                        .write_all(b"HTTP/1.1 204 No Content\r\n\r\n")
+                        .await
+                        .unwrap();
+                }
+            }
+        });
+
+        let Json(results) = tokio::time::timeout(Duration::from_secs(5), ping_all(State(state)))
+            .await
+            .unwrap()
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(5), proxy)
+            .await
+            .unwrap()
+            .unwrap();
+        // Check the serialized response consumed by the macOS app as well.
+        let response = serde_json::to_value(results).unwrap();
+        let results = response["groups"][""]["servers"].as_array().unwrap();
+        assert_eq!(results.len(), 3);
+        for index in 0..3 {
+            let result = results
+                .iter()
+                .find(|result| result["name"] == format!("node-{index}"))
+                .unwrap();
+            assert_eq!(result["server"], address.to_string());
+            assert_eq!(result["protocol"], "Http");
+            assert_eq!(result["success"], u32::from(index != 1));
+            assert_eq!(result["failure"], u32::from(index == 1));
+            assert_eq!(result["ping_results"][0]["success"], index != 1);
+        }
+        assert_eq!(response["groups"][""]["selected_server"]["name"], "node-0");
+    }
+
+    #[tokio::test]
+    async fn refresh_during_a_probe_does_not_restore_obsolete_configuration_stats() {
+        store::Store::setup_global_for_test();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let state = state(address).await;
+        let chooser = state.chooser.clone();
+        let (started, wait_started) = tokio::sync::oneshot::channel();
+        let (resume, wait_resume) = tokio::sync::oneshot::channel();
+        let proxy = tokio::spawn(async move {
+            let (mut connection, _) = listener.accept().await.unwrap();
+            read_request_headers(&mut connection).await;
+            connection
+                .write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
+                .await
+                .unwrap();
+            read_request_headers(&mut connection).await;
+            started.send(()).unwrap();
+            wait_resume.await.unwrap();
+            connection
+                .write_all(b"HTTP/1.1 204 No Content\r\n\r\n")
+                .await
+                .unwrap();
+        });
+        let test = tokio::spawn(ping_all(State(state)));
+        tokio::time::timeout(Duration::from_secs(5), wait_started)
+            .await
+            .unwrap()
+            .unwrap();
+        let updated = serde_json::from_value(serde_json::json!({
+            "name": "only", "addr": address.to_string(), "protocol": "Http",
+            "username": "updated-user", "password": "updated-password"
+        }))
+        .unwrap();
+        let group = serde_json::from_value(serde_json::json!({
+            "name": "", "type": "select", "proxies": ["only"]
+        }))
+        .unwrap();
+        chooser.update_servers_for_groups(&[updated], &[group]);
+        resume.send(()).unwrap();
+
+        let Json(results) = tokio::time::timeout(Duration::from_secs(5), test)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(5), proxy)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(results.groups[""].servers.is_empty());
+        assert!(results.groups[""].selected_server.stats.is_none());
+        assert_eq!(results.groups[""].selected_server.name, "only");
     }
 
     #[tokio::test]

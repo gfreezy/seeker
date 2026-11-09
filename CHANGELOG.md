@@ -18,6 +18,7 @@
 
 ### Fixed
 
+- Keep probe results and automatic selection independent for nodes sharing an address, and discard histories and in-flight results for removed or changed node configurations.
 - Keep Hysteria2 HTTP/3 critical streams alive after authentication and correct the UDP datagram header encoding.
 - Ignore Linux virtual TUN link/address events when monitoring network changes so that creating a Mimic interface does not reset existing proxy connections.
 - Handle partial HTTP request header reads in proxy integration tests and preserve lock lifetimes during the Rust 2024 migration.

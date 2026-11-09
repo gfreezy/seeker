@@ -126,18 +126,18 @@ impl GroupServersChooser {
             old
         };
 
-        let new_addrs: HashSet<String> = new_servers.iter().map(|s| s.addr().to_string()).collect();
+        let new_configs: HashSet<&ServerConfig> = new_servers.iter().collect();
 
         let removed: Vec<&ServerConfig> = old_snapshot
             .iter()
-            .filter(|s| !new_addrs.contains(&s.addr().to_string()))
+            .filter(|s| !new_configs.contains(s))
             .collect();
 
         if !removed.is_empty() {
             info!(
                 group = self.name,
                 removed = removed.len(),
-                kept = new_addrs.len(),
+                kept = new_configs.len(),
                 "Updating group servers"
             );
         }
@@ -152,7 +152,7 @@ impl GroupServersChooser {
             self.set_server_down(server);
         }
 
-        self.performance_tracker.retain_addrs(&new_addrs);
+        self.performance_tracker.retain_servers(&new_configs);
 
         let mut selected = self.selected_server.lock();
         let refreshed_selected = selected
@@ -161,11 +161,6 @@ impl GroupServersChooser {
                 new_servers
                     .iter()
                     .find(|server| server.name() == current.name())
-                    .or_else(|| {
-                        new_servers
-                            .iter()
-                            .find(|server| server.addr() == current.addr())
-                    })
             })
             .cloned();
         if let Some(refreshed) = refreshed_selected {
@@ -354,7 +349,7 @@ impl GroupServersChooser {
             // 如果最佳服务器就是当前服务器，不切换
             if current_server
                 .as_ref()
-                .is_some_and(|cur| new_server.addr() == cur.addr())
+                .is_some_and(|cur| &new_server == cur)
             {
                 return;
             }
@@ -532,6 +527,12 @@ impl GroupServersChooser {
                 task::spawn(async move {
                     let (latency, success_ratio, ping_results) =
                         self_clone.ping_server(config_clone.clone()).await;
+                    // Keep the snapshot lock until the result is recorded so a
+                    // refresh can prune it, or discard an already removed node.
+                    let servers = self_clone.servers.read();
+                    if !servers.contains(&config_clone) {
+                        return false;
+                    }
                     self_clone.performance_tracker.add_result(
                         &config_clone,
                         latency,
@@ -876,6 +877,62 @@ mod selection_tests {
         chooser.update_servers(Arc::new(vec![]));
         assert!(shared.servers_snapshot().is_empty());
         assert!(shared.get_selected_server().is_none());
+    }
+
+    #[tokio::test]
+    async fn automatic_selection_can_switch_between_nodes_at_the_same_address() {
+        let slow = server("slow", 1080);
+        let fast = server("fast", 1080);
+        let mut chooser = chooser(vec![slow.clone(), fast.clone()], None).await;
+        chooser.group_type = ProxyGroupType::UrlTest;
+        for (server, milliseconds) in [(&slow, 200), (&fast, 20)] {
+            chooser.performance_tracker.add_result(
+                server,
+                Duration::from_millis(milliseconds),
+                1.0,
+                vec![PingUrlResult {
+                    url: "http://example.test/".to_string(),
+                    latency_ms: Some(milliseconds as f64),
+                    success: true,
+                    error: None,
+                }],
+            );
+        }
+        assert_eq!(chooser.get_selected_server(), Some(slow));
+        chooser.move_to_next_server(false);
+        assert_eq!(chooser.get_selected_server(), Some(fast));
+    }
+
+    #[tokio::test]
+    async fn refresh_drops_removed_nodes_without_reusing_a_siblings_history_or_selection() {
+        let removed = server("removed", 1080);
+        let sibling = server("sibling", 1080);
+        let fallback = server("fallback", 1081);
+        let chooser = chooser(
+            vec![removed.clone(), sibling.clone(), fallback.clone()],
+            Some("removed".to_string()),
+        )
+        .await;
+        for server in [&removed, &sibling] {
+            chooser
+                .performance_tracker
+                .add_result(server, Duration::from_millis(20), 1.0, vec![]);
+        }
+        chooser.update_servers(Arc::new(vec![fallback.clone(), sibling.clone()]));
+        assert!(
+            chooser
+                .performance_tracker
+                .get_server_stats(&removed)
+                .is_none()
+        );
+        assert!(
+            chooser
+                .performance_tracker
+                .get_server_stats(&sibling)
+                .is_some()
+        );
+        assert_eq!(chooser.performance_tracker.get_all_server_stats().len(), 1);
+        assert_eq!(chooser.get_selected_server(), Some(fallback));
     }
 
     #[test]
