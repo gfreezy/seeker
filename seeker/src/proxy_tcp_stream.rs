@@ -163,35 +163,10 @@ impl ProxyTcpStream {
                         .await?,
                     ))
                 }
-                ServerProtocol::Vless => {
-                    let uuid = config.username().ok_or_else(|| {
-                        Error::new(
-                            ErrorKind::InvalidData,
-                            "uuid (username) must be set for vless protocol.",
-                        )
-                    })?;
-                    let sni = config
-                        .sni()
-                        .map(|s| s.to_string())
-                        .or_else(|| config.addr().hostname().map(|s| s.to_string()))
-                        .ok_or_else(|| {
-                            Error::new(
-                                ErrorKind::InvalidData,
-                                "sni or domain must be set for vless protocol.",
-                            )
-                        })?;
-                    ProxyTcpStreamInner::Vless(Box::new(
-                        VlessTcpStream::connect(
-                            proxy_socket_addr,
-                            &sni,
-                            remote_addr,
-                            uuid,
-                            config.flow().map(|f| f.as_str()),
-                            config.insecure(),
-                        )
+                ServerProtocol::Vless => ProxyTcpStreamInner::Vless(Box::new(
+                    VlessTcpStream::connect_with_config(proxy_socket_addr, remote_addr, config)
                         .await?,
-                    ))
-                }
+                )),
             }
         } else {
             let socket_addr = dns_client.lookup_address(&remote_addr).await?;

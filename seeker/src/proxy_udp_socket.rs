@@ -88,30 +88,7 @@ impl ProxyUdpSocket {
                 }
                 ServerProtocol::Vless => {
                     let server = dns_client.lookup_address(config.addr()).await?;
-                    let uuid = config.username().ok_or_else(|| {
-                        Error::new(
-                            ErrorKind::InvalidData,
-                            "uuid (username) must be set for vless protocol.",
-                        )
-                    })?;
-                    let sni = config
-                        .sni()
-                        .map(|s| s.to_string())
-                        .or_else(|| config.addr().hostname().map(|s| s.to_string()))
-                        .ok_or_else(|| {
-                            Error::new(
-                                ErrorKind::InvalidData,
-                                "sni or domain must be set for vless protocol.",
-                            )
-                        })?;
-                    let udp = VlessUdpSocket::new(
-                        server,
-                        &sni,
-                        uuid,
-                        config.flow().map(|f| f.as_str()),
-                        config.insecure(),
-                    )
-                    .await?;
+                    let udp = VlessUdpSocket::new_with_config(server, config).await?;
                     ProxyUdpSocketInner::Vless(Arc::new(udp))
                 }
                 protocol => {

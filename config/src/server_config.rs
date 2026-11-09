@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::str::FromStr;
 use std::{error, fmt};
 use std::{fmt::Debug, net::SocketAddr};
@@ -113,6 +114,43 @@ impl std::fmt::Display for ServerProtocol {
     }
 }
 
+/// WebSocket request path and additional HTTP headers.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+pub struct WebSocketOptions {
+    #[serde(default = "default_websocket_path")]
+    pub path: String,
+    #[serde(default)]
+    pub headers: BTreeMap<String, String>,
+}
+
+fn default_websocket_path() -> String {
+    "/".to_string()
+}
+
+impl Default for WebSocketOptions {
+    fn default() -> Self {
+        Self {
+            path: default_websocket_path(),
+            headers: BTreeMap::new(),
+        }
+    }
+}
+
+/// REALITY authentication and hybrid key exchange options.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+pub struct RealityOptions {
+    #[serde(rename = "public-key", alias = "public_key")]
+    pub public_key: String,
+    #[serde(default, rename = "short-id", alias = "short_id")]
+    pub short_id: String,
+    #[serde(
+        default,
+        rename = "support-x25519mlkem768",
+        alias = "support_x25519mlkem768"
+    )]
+    pub support_x25519mlkem768: bool,
+}
+
 /// Configuration for a server
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ServerConfig {
@@ -137,6 +175,12 @@ pub struct ServerConfig {
     vmess_security: Option<VMessSecurity>,
     /// VLESS flow control
     flow: Option<VlessFlow>,
+    network: Option<String>,
+    tls: Option<bool>,
+    udp: Option<bool>,
+    ws_opts: Option<WebSocketOptions>,
+    reality_opts: Option<RealityOptions>,
+    client_fingerprint: Option<String>,
 }
 
 // Internal struct for deserializing both Seeker and Clash formats
@@ -158,13 +202,18 @@ enum ServerConfigHelper {
         method: Option<CipherType>,
         #[serde(default)]
         obfs: Option<Obfs>,
-        // Clash-specific fields we ignore
         #[serde(default)]
-        _udp: Option<bool>,
+        udp: Option<bool>,
         #[serde(default)]
-        _tls: Option<bool>,
+        tls: Option<bool>,
         #[serde(default)]
-        _network: Option<String>,
+        network: Option<String>,
+        #[serde(default, rename = "ws-opts", alias = "ws_opts")]
+        ws_opts: Option<WebSocketOptions>,
+        #[serde(default, rename = "reality-opts", alias = "reality_opts")]
+        reality_opts: Option<RealityOptions>,
+        #[serde(default, rename = "client-fingerprint", alias = "client_fingerprint")]
+        client_fingerprint: Option<String>,
         // Hysteria2 / TLS fields
         #[serde(default)]
         #[serde(alias = "servername")]
@@ -203,6 +252,18 @@ enum ServerConfigHelper {
         method: Option<CipherType>,
         #[serde(default)]
         obfs: Option<Obfs>,
+        #[serde(default)]
+        udp: Option<bool>,
+        #[serde(default)]
+        tls: Option<bool>,
+        #[serde(default)]
+        network: Option<String>,
+        #[serde(default, rename = "ws-opts", alias = "ws_opts")]
+        ws_opts: Option<WebSocketOptions>,
+        #[serde(default, rename = "reality-opts", alias = "reality_opts")]
+        reality_opts: Option<RealityOptions>,
+        #[serde(default, rename = "client-fingerprint", alias = "client_fingerprint")]
+        client_fingerprint: Option<String>,
         // Hysteria2 / TLS fields
         #[serde(default)]
         #[serde(alias = "servername")]
@@ -274,9 +335,12 @@ impl<'de> Deserialize<'de> for ServerConfig {
                 password,
                 method,
                 obfs,
-                _udp: _,
-                _tls: _,
-                _network: _,
+                udp,
+                tls,
+                network,
+                ws_opts,
+                reality_opts,
+                client_fingerprint,
                 sni,
                 obfs_password,
                 insecure,
@@ -304,6 +368,12 @@ impl<'de> Deserialize<'de> for ServerConfig {
                     mimic,
                     vmess_security,
                     flow,
+                    network,
+                    tls,
+                    udp,
+                    ws_opts,
+                    reality_opts,
+                    client_fingerprint,
                 })
             }
             ServerConfigHelper::Seeker {
@@ -314,6 +384,12 @@ impl<'de> Deserialize<'de> for ServerConfig {
                 password,
                 method,
                 obfs,
+                udp,
+                tls,
+                network,
+                ws_opts,
+                reality_opts,
+                client_fingerprint,
                 sni,
                 obfs_password,
                 insecure,
@@ -337,6 +413,12 @@ impl<'de> Deserialize<'de> for ServerConfig {
                 mimic,
                 vmess_security,
                 flow,
+                network,
+                tls,
+                udp,
+                ws_opts,
+                reality_opts,
+                client_fingerprint,
             }),
         }?;
         if let Some(mimic) = config.mimic() {
@@ -425,6 +507,12 @@ impl ServerConfig {
             mimic: None,
             vmess_security: None,
             flow: None,
+            network: None,
+            tls: None,
+            udp: None,
+            ws_opts: None,
+            reality_opts: None,
+            client_fingerprint: None,
         }
     }
 
@@ -497,6 +585,30 @@ impl ServerConfig {
     /// Get VLESS flow control
     pub fn flow(&self) -> Option<VlessFlow> {
         self.flow
+    }
+
+    pub fn network(&self) -> &str {
+        self.network.as_deref().unwrap_or("tcp")
+    }
+
+    /// Existing VLESS configurations use TLS when the field is omitted.
+    pub fn tls_enabled(&self) -> bool {
+        self.tls.unwrap_or(true)
+    }
+
+    pub fn udp_enabled(&self) -> bool {
+        self.udp.unwrap_or(true)
+    }
+
+    pub fn reality_opts(&self) -> Option<&RealityOptions> {
+        self.reality_opts.as_ref()
+    }
+    pub fn client_fingerprint(&self) -> Option<&str> {
+        self.client_fingerprint.as_deref()
+    }
+
+    pub fn ws_opts(&self) -> Option<&WebSocketOptions> {
+        self.ws_opts.as_ref()
     }
 
     pub fn from_url(encoded: &str) -> Result<ServerConfig, UrlParseError> {
@@ -703,6 +815,12 @@ impl ServerConfig {
             mimic: None,
             vmess_security: None,
             flow: None,
+            network: None,
+            tls: None,
+            udp: None,
+            ws_opts: None,
+            reality_opts: None,
+            client_fingerprint: None,
         })
     }
     /// Parse vmess:// URL
@@ -765,6 +883,12 @@ impl ServerConfig {
             mimic: None,
             vmess_security: Some(security),
             flow: None,
+            network: None,
+            tls: None,
+            udp: None,
+            ws_opts: None,
+            reality_opts: None,
+            client_fingerprint: None,
         })
     }
 
@@ -798,8 +922,24 @@ impl ServerConfig {
         let mut sni = None;
         let mut insecure = None;
         let mut flow = None;
+        let mut network = None;
+        let mut tls = None;
+        let mut security = None;
+        let mut public_key = None;
+        let mut short_id = String::new();
+        let mut client_fingerprint = None;
+        let mut hybrid = true;
         for (key, value) in parsed.query_pairs() {
             match key.as_ref() {
+                "security" => {
+                    tls = Some(value != "none");
+                    security = Some(value.to_string());
+                }
+                "type" => network = Some(value.to_string()),
+                "pbk" => public_key = Some(value.to_string()),
+                "sid" => short_id = value.to_string(),
+                "fp" => client_fingerprint = Some(value.to_string()),
+                "support-x25519mlkem768" => hybrid = value == "true" || value == "1",
                 "sni" => sni = Some(value.to_string()),
                 "allowInsecure" => insecure = Some(value == "1" || value == "true"),
                 "flow" => {
@@ -809,6 +949,16 @@ impl ServerConfig {
                 _ => {}
             }
         }
+
+        let reality_opts = if security.as_deref() == Some("reality") {
+            Some(RealityOptions {
+                public_key: public_key.ok_or(UrlParseError::InvalidAuthInfo)?,
+                short_id,
+                support_x25519mlkem768: hybrid,
+            })
+        } else {
+            None
+        };
 
         Ok(ServerConfig {
             name,
@@ -825,6 +975,12 @@ impl ServerConfig {
             mimic: None,
             vmess_security: None,
             flow,
+            network,
+            tls,
+            udp: None,
+            ws_opts: None,
+            reality_opts,
+            client_fingerprint,
         })
     }
 }
@@ -889,6 +1045,38 @@ impl FromStr for ServerConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reality_yaml_fields_in_both_formats() {
+        for address in [
+            "server: proxy.example.com\nport: 443",
+            "addr: proxy.example.com:443",
+        ] {
+            let yaml = format!(
+                "name: reality\ntype: vless\n{address}\nuuid: 00000000-0000-0000-0000-000000000000\nnetwork: tcp\ntls: true\nudp: false\nflow: xtls-rprx-vision\nservername: example.com\nclient-fingerprint: chrome\nreality-opts:\n  public-key: CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQk\n  short-id: aabb\n  support-x25519mlkem768: true\n"
+            );
+            let config: ServerConfig = serde_yaml::from_str(&yaml).unwrap();
+            assert_eq!(config.client_fingerprint(), Some("chrome"));
+            let reality = config.reality_opts().unwrap();
+            assert_eq!(reality.short_id, "aabb");
+            assert!(reality.support_x25519mlkem768);
+            assert_eq!(config.sni(), Some("example.com"));
+            assert!(!config.udp_enabled());
+        }
+    }
+
+    #[test]
+    fn reality_url_preserves_authentication() {
+        let config = ServerConfig::from_str("vless://00000000-0000-0000-0000-000000000000@proxy.example.com:443?security=reality&type=tcp&flow=xtls-rprx-vision&sni=example.com&fp=chrome&pbk=CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQk&sid=aabb#reality").unwrap();
+        assert!(config.tls_enabled());
+        assert_eq!(config.network(), "tcp");
+        assert_eq!(config.client_fingerprint(), Some("chrome"));
+        assert_eq!(config.reality_opts().unwrap().short_id, "aabb");
+        assert!(config.reality_opts().unwrap().support_x25519mlkem768);
+        assert!(
+            ServerConfig::from_str("vless://uuid@proxy.example.com:443?security=reality").is_err()
+        );
+    }
 
     #[test]
     fn test_parse_ss_url() -> Result<(), UrlParseError> {
@@ -1497,6 +1685,57 @@ network: tcp
         assert_eq!(server_config.flow(), Some(VlessFlow::XtlsRprxVision));
         assert!(server_config.insecure());
         assert_eq!(server_config.sni(), Some("example.dev"));
+    }
+
+    #[test]
+    fn test_vless_websocket_options_in_both_config_formats() {
+        for address in [
+            "server: proxy.example.com\nport: 443",
+            "addr: proxy.example.com:443",
+        ] {
+            let yaml = format!(
+                r#"
+name: websocket-node
+type: vless
+{address}
+uuid: b831381d-6324-4d53-ad4f-8cda48b30811
+network: ws
+tls: true
+udp: false
+servername: tls.example.com
+skip-cert-verify: false
+ws-opts:
+  path: /relay?token=test
+  headers:
+    Host: http.example.com
+    X-Test: value
+"#
+            );
+            let config: ServerConfig = serde_yaml::from_str(&yaml).unwrap();
+            assert_eq!(config.network(), "ws");
+            assert!(config.tls_enabled());
+            assert!(!config.udp_enabled());
+            assert_eq!(config.sni(), Some("tls.example.com"));
+            assert!(!config.insecure());
+            let options = config.ws_opts().unwrap();
+            assert_eq!(options.path, "/relay?token=test");
+            assert_eq!(options.headers["Host"], "http.example.com");
+            assert_eq!(options.headers["X-Test"], "value");
+        }
+    }
+
+    #[test]
+    fn test_vless_transport_defaults_and_explicit_no_tls() {
+        let yaml = "name: node\ntype: vless\nserver: example.com\nport: 443\n";
+        let config: ServerConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(config.network(), "tcp");
+        assert!(config.tls_enabled());
+        assert!(config.udp_enabled());
+        assert!(config.ws_opts().is_none());
+        let config: ServerConfig =
+            serde_yaml::from_str(&format!("{yaml}tls: false\nws-opts: {{}}\n")).unwrap();
+        assert!(!config.tls_enabled());
+        assert_eq!(config.ws_opts().unwrap().path, "/");
     }
 
     #[test]

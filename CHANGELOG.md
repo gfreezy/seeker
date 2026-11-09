@@ -4,6 +4,8 @@
 
 ### Added
 
+- Add VLESS WebSocket transport with configurable path and headers, TLS and UDP options, and Clash-compatible configuration parsing.
+- Add native VLESS REALITY with X25519 / X25519MLKEM768 key exchange, authenticated certificate verification, and Vision support. Use a revision-pinned rustls fork instead of vendoring TLS sources.
 - Add an optional userspace Mimic transport for Hysteria2 on Linux and macOS, including configurable padding, MTU, interface selection, and automatic network cleanup. See [the Mimic guide](docs/mimic.md) for setup, system requirements, interoperability probes, and the upstream passive-handshake limitation.
 - Add proxy-group selection strategies modeled after Clash: `type: select` pins a configured `default_selected` proxy (falling back to the first group member), while `type: url_test` keeps automatic performance-based selection. Omitted `type` remains `url_test` for backward compatibility.
 

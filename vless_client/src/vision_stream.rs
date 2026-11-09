@@ -163,6 +163,13 @@ impl<IO: AsyncRead + AsyncWrite + Unpin> VisionStream<IO> {
     // TLS handshake (manual, avoids tokio-rustls buffer issues)
     // -------------------------------------------------------
 
+    /// The outer TLS key exchange selected by the server.
+    pub(crate) fn negotiated_group(&self) -> Option<rustls::NamedGroup> {
+        self.session
+            .negotiated_key_exchange_group()
+            .map(|group| group.name())
+    }
+
     /// Drive the TLS handshake manually through the external deframer.
     /// This ensures all TCP reads go through our deframer, keeping
     /// the session's internal buffer in sync.

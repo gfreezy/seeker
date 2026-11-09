@@ -1,15 +1,12 @@
 use crate::protocol::{CMD_UDP, VLESS_VERSION, encode_vless_request};
+use crate::transport::{BoxedTransport, TransportOptions, server_name, user_id};
 use bytes::{BufMut, BytesMut};
-use config::Address;
-use rustls::pki_types::ServerName;
+use config::{Address, ServerConfig};
 use std::io::{Error, ErrorKind, Result};
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tcp_connection::tls::{connect_tls, get_tls_connector};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt, ReadHalf, WriteHalf};
-use tokio::net::TcpStream;
 use tokio::sync::{Mutex, Notify};
-use tokio_rustls::client::TlsStream;
 use uuid::Uuid;
 
 fn normalize_udp_flow(flow: Option<&str>) -> Result<()> {
@@ -30,14 +27,14 @@ enum ConnectionState {
 }
 
 struct PlainReadState {
-    reader: ReadHalf<TlsStream<TcpStream>>,
+    reader: ReadHalf<BoxedTransport>,
     response_header_parsed: bool,
 }
 
 struct PlainVlessUdpSocket {
     peer: SocketAddr,
     read: Mutex<PlainReadState>,
-    write: Mutex<WriteHalf<TlsStream<TcpStream>>>,
+    write: Mutex<WriteHalf<BoxedTransport>>,
 }
 
 impl PlainVlessUdpSocket {
@@ -47,14 +44,9 @@ impl PlainVlessUdpSocket {
         peer: SocketAddr,
         uuid: Uuid,
         insecure: bool,
+        transport: &TransportOptions,
     ) -> Result<Self> {
-        let connector = get_tls_connector(insecure);
-        let server_name = ServerName::try_from(sni.to_string())
-            .map_err(|e| Error::other(format!("invalid SNI: {e}")))?;
-        let tcp_stream = TcpStream::connect(server).await?;
-        let mut tls_stream = connect_tls(&connector, server_name, tcp_stream)
-            .await
-            .map_err(Error::other)?;
+        let mut stream = transport.connect(server, sni, insecure).await?;
 
         let mut header_buf = BytesMut::with_capacity(128);
         // Xray inbound rejects Vision + RequestCommandUDP, so UDP always uses the plain
@@ -66,10 +58,10 @@ impl PlainVlessUdpSocket {
             None,
             &mut header_buf,
         )?;
-        tls_stream.write_all(&header_buf).await?;
-        tls_stream.flush().await?;
+        stream.write_all(&header_buf).await?;
+        stream.flush().await?;
 
-        let (reader, writer) = tokio::io::split(tls_stream);
+        let (reader, writer) = tokio::io::split(stream);
         Ok(Self {
             peer,
             read: Mutex::new(PlainReadState {
@@ -157,6 +149,7 @@ pub struct VlessUdpSocket {
     sni: String,
     uuid: Uuid,
     insecure: bool,
+    transport: TransportOptions,
     state: Arc<Mutex<ConnectionState>>,
     state_change: Arc<Notify>,
 }
@@ -177,9 +170,29 @@ impl VlessUdpSocket {
             sni: sni.to_string(),
             uuid,
             insecure,
+            transport: TransportOptions::default(),
             state: Arc::new(Mutex::new(ConnectionState::Unconnected)),
             state_change: Arc::new(Notify::new()),
         })
+    }
+
+    pub async fn new_with_config(server: SocketAddr, config: &ServerConfig) -> Result<Self> {
+        if !config.udp_enabled() {
+            return Err(Error::new(
+                ErrorKind::Unsupported,
+                "UDP is disabled for this VLESS server",
+            ));
+        }
+        let mut socket = Self::new(
+            server,
+            server_name(config)?,
+            user_id(config)?,
+            config.flow().map(|flow| flow.as_str()),
+            config.insecure(),
+        )
+        .await?;
+        socket.transport = TransportOptions::from_config(config)?;
+        Ok(socket)
     }
 
     async fn get_or_connect(&self, addr: SocketAddr) -> Result<Arc<PlainVlessUdpSocket>> {
@@ -207,6 +220,7 @@ impl VlessUdpSocket {
                 addr,
                 self.uuid,
                 self.insecure,
+                &self.transport,
             )
             .await;
 

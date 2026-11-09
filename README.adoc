@@ -132,6 +132,69 @@ proxies:
 
 注意：`servers` 和 `proxies` 是同一个字段的不同名称（别名），不能在同一个配置文件中同时使用两者。
 
+==== VLESS over WebSocket
+
+VLESS 支持 `network: tcp`（默认）和 `network: ws`。WebSocket 的路径和 HTTP 请求头通过 `ws-opts` 配置；`servername` 设置 TLS SNI，`ws-opts.headers.Host` 设置 WebSocket 的 HTTP Host，两者可以不同。
+
+[source,yaml]
+----
+proxies:
+  - name: vless-ws
+    type: vless
+    server: proxy.example.com
+    port: 443
+    uuid: b831381d-6324-4d53-ad4f-8cda48b30811
+    network: ws
+    tls: true
+    udp: false
+    servername: proxy.example.com
+    skip-cert-verify: false
+    ws-opts:
+      path: /relay
+      headers:
+        Host: proxy.example.com
+----
+
+VLESS 的 `tls` 省略时保持原有行为，默认启用；`tls: false` 使用明文 TCP 或 WebSocket。
+`ws-opts.path` 默认是 `/`，未设置 Host 时使用服务器地址。
+`udp: false` 禁用该 VLESS 节点的 UDP 转发；启用时也会使用所选传输方式。
+`xtls-rprx-vision` 仅支持 TCP + TLS，不能与 WebSocket 组合。
+
+==== VLESS REALITY
+
+VLESS 的 TCP 传输支持 REALITY，可与 `xtls-rprx-vision` 组合。以下配置中的公钥和 short ID 需替换为服务端提供的值：
+
+[source,yaml]
+----
+servers:
+  - name: reality
+    type: vless
+    server: proxy.example.com
+    port: 443
+    uuid: 00000000-0000-0000-0000-000000000000
+    network: tcp
+    tls: true
+    udp: false
+    flow: xtls-rprx-vision
+    servername: www.example.com
+    client-fingerprint: chrome
+    reality-opts:
+      public-key: <base64url 编码的 32 字节 X25519 公钥>
+      short-id: aabbccdd
+      support-x25519mlkem768: true
+----
+
+`short-id` 为至多 16 个字符的偶数长度十六进制字符串，不足 8 字节时补零；可省略以使用空 ID。
+`support-x25519mlkem768: true` 提供 ML-KEM-768 + X25519 混合密钥交换，同时提供 X25519 兼容选项；省略时仅提供 X25519。
+`client-fingerprint` 当前支持 `chrome`（REALITY 默认值），使用 Chrome 风格的密码套件顺序、GREASE 和随机扩展顺序；不声明 ALPS、ECH 或证书压缩能力，因而不是完整 Chrome 指纹复刻。其他指纹会明确报错。
+REALITY 要求 TCP、TLS 1.3，以及准确的系统时间；不支持 WebSocket、会话恢复或 HelloRetryRequest。
+服务端证书必须通过 REALITY HMAC 认证，并验证实际的 Ed25519 握手签名；`skip-cert-verify` 不会跳过 REALITY 认证，伪装站点证书不会被当作代理连接成功。
+
+REALITY 所需的 TLS 扩展接口维护在 https://github.com/gfreezy/seeker-rustls[独立 rustls fork]，基于上游 0.23.35；`Cargo.toml` 和 `Cargo.lock` 固定同一个完整 Git 提交，不随分支自动更新。
+补丁说明和升级注意事项见 https://github.com/gfreezy/seeker-rustls/blob/d42f515051384765ab6cf8da0c6d1239528cca6e/SEEKER-PATCH.md[SEEKER-PATCH.md]；项目无需保留 rustls 的 vendor 源码，首次构建需获取该 Git 依赖。
+
+也支持 `vless://uuid@host:443?security=reality&type=tcp&sni=example.com&fp=chrome&pbk=PUBLIC_KEY&sid=aabb&flow=xtls-rprx-vision`；URL 格式默认提供混合密钥交换，可用 `support-x25519mlkem768=false` 关闭。
+
 === 远程配置
 
 `seeker` 提供两种方式从远程加载配置：

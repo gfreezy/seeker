@@ -3,7 +3,8 @@ pub use mimic::{MimicConfig, MimicPadding, RandomPadding};
 pub mod rule;
 mod server_config;
 pub use server_config::{
-    DnsServerAddr, Obfs, ServerConfig, ServerProtocol, VMessSecurity, VlessFlow,
+    DnsServerAddr, Obfs, RealityOptions, ServerConfig, ServerProtocol, VMessSecurity, VlessFlow,
+    WebSocketOptions,
 };
 pub use socks5_client::Address;
 pub use tcp_connection::ObfsMode;

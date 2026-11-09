@@ -1,14 +1,15 @@
 use crate::protocol::{CMD_TCP, VLESS_VERSION, encode_vless_request};
+use crate::transport::{BoxedTransport, TransportOptions, server_name, user_id};
 use crate::vision_stream::VisionStream;
-use bytes::{Buf, BytesMut};
-use config::Address;
+use bytes::BytesMut;
+use config::{Address, ServerConfig};
 use rustls::ClientConnection;
 use rustls::pki_types::ServerName;
 use std::io::{Error, ErrorKind, Result};
 use std::net::SocketAddr;
 use std::pin::Pin;
 use std::task::{Context, Poll, ready};
-use tcp_connection::tls::{connect_tls, get_tls_config, get_tls_connector};
+use tcp_connection::tls::get_tls_config;
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, ReadBuf};
 use tokio::net::TcpStream;
 use tracing::info;
@@ -30,24 +31,20 @@ fn normalize_flow(flow: Option<&str>) -> Result<Option<&'static str>> {
 /// prepended to the first data from the target — so we must not block
 /// on it during connect().
 struct PlainVlessStream {
-    tls: tokio_rustls::client::TlsStream<TcpStream>,
+    stream: BoxedTransport,
     response_pending: bool,
     /// Buffer for accumulating partial VLESS response header bytes
-    response_buf: [u8; 2],
+    response_buf: [u8; 257],
     response_buf_len: usize,
-    /// Extra data after the response header (rare, but possible if response
-    /// header and payload arrive in the same TLS record)
-    pending_read: BytesMut,
 }
 
 impl PlainVlessStream {
-    fn new(tls: tokio_rustls::client::TlsStream<TcpStream>) -> Self {
+    fn new(stream: BoxedTransport) -> Self {
         Self {
-            tls,
+            stream,
             response_pending: true,
-            response_buf: [0u8; 2],
+            response_buf: [0u8; 257],
             response_buf_len: 0,
-            pending_read: BytesMut::new(),
         }
     }
 
@@ -56,8 +53,8 @@ impl PlainVlessStream {
     fn poll_read_response(&mut self, cx: &mut Context<'_>) -> Poll<Result<()>> {
         // Read the 2-byte response header (version + addons_len)
         while self.response_buf_len < 2 {
-            let mut buf = ReadBuf::new(&mut self.response_buf[self.response_buf_len..]);
-            ready!(Pin::new(&mut self.tls).poll_read(cx, &mut buf))?;
+            let mut buf = ReadBuf::new(&mut self.response_buf[self.response_buf_len..2]);
+            ready!(Pin::new(&mut self.stream).poll_read(cx, &mut buf))?;
             let n = buf.filled().len();
             if n == 0 {
                 return Poll::Ready(Err(Error::new(
@@ -76,23 +73,19 @@ impl PlainVlessStream {
             )));
         }
 
-        let addons_len = self.response_buf[1] as usize;
-        if addons_len > 0 {
-            // Read and discard addons (very rare for plain VLESS)
-            let mut addons = vec![0u8; addons_len];
-            let mut read = 0;
-            while read < addons_len {
-                let mut buf = ReadBuf::new(&mut addons[read..]);
-                ready!(Pin::new(&mut self.tls).poll_read(cx, &mut buf))?;
-                let n = buf.filled().len();
-                if n == 0 {
-                    return Poll::Ready(Err(Error::new(
-                        ErrorKind::UnexpectedEof,
-                        "EOF reading VLESS response addons",
-                    )));
-                }
-                read += n;
+        let response_len = 2 + self.response_buf[1] as usize;
+        // Keep partial addons across Pending, including across WS messages.
+        while self.response_buf_len < response_len {
+            let mut buf = ReadBuf::new(&mut self.response_buf[self.response_buf_len..response_len]);
+            ready!(Pin::new(&mut self.stream).poll_read(cx, &mut buf))?;
+            let n = buf.filled().len();
+            if n == 0 {
+                return Poll::Ready(Err(Error::new(
+                    ErrorKind::UnexpectedEof,
+                    "EOF reading VLESS response addons",
+                )));
             }
+            self.response_buf_len += n;
         }
 
         self.response_pending = false;
@@ -107,42 +100,37 @@ impl AsyncRead for PlainVlessStream {
         buf: &mut ReadBuf<'_>,
     ) -> Poll<Result<()>> {
         let this = self.get_mut();
+        if buf.remaining() == 0 {
+            return Poll::Ready(Ok(()));
+        }
 
         // First read: consume the VLESS response header
         if this.response_pending {
             ready!(this.poll_read_response(cx))?;
         }
 
-        // Drain any buffered data from response parsing
-        if !this.pending_read.is_empty() {
-            let len = buf.remaining().min(this.pending_read.len());
-            buf.put_slice(&this.pending_read[..len]);
-            this.pending_read.advance(len);
-            return Poll::Ready(Ok(()));
-        }
-
-        Pin::new(&mut this.tls).poll_read(cx, buf)
+        Pin::new(&mut this.stream).poll_read(cx, buf)
     }
 }
 
 impl AsyncWrite for PlainVlessStream {
     fn poll_write(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<Result<usize>> {
-        Pin::new(&mut self.get_mut().tls).poll_write(cx, buf)
+        Pin::new(&mut self.get_mut().stream).poll_write(cx, buf)
     }
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<()>> {
-        Pin::new(&mut self.get_mut().tls).poll_flush(cx)
+        Pin::new(&mut self.get_mut().stream).poll_flush(cx)
     }
 
     fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<()>> {
-        Pin::new(&mut self.get_mut().tls).poll_shutdown(cx)
+        Pin::new(&mut self.get_mut().stream).poll_shutdown(cx)
     }
 }
 
 enum Inner {
     /// Vision mode: manual TLS + Vision padding/unpadding + direct copy
     Vision(Box<VisionStream<TcpStream>>),
-    /// Plain VLESS: tokio-rustls handles TLS, lazy response header reading
+    /// Plain VLESS over TCP, TLS or WebSocket, with lazy response header reading.
     Plain(Box<PlainVlessStream>),
 }
 
@@ -158,6 +146,44 @@ impl VlessTcpStream {
         uuid: &str,
         flow: Option<&str>,
         insecure: bool,
+    ) -> Result<Self> {
+        Self::connect_inner(
+            server,
+            sni,
+            addr,
+            uuid,
+            flow,
+            insecure,
+            TransportOptions::default(),
+        )
+        .await
+    }
+
+    pub async fn connect_with_config(
+        server: SocketAddr,
+        addr: Address,
+        config: &ServerConfig,
+    ) -> Result<Self> {
+        Self::connect_inner(
+            server,
+            server_name(config)?,
+            addr,
+            user_id(config)?,
+            config.flow().map(|flow| flow.as_str()),
+            config.insecure(),
+            TransportOptions::from_config(config)?,
+        )
+        .await
+    }
+
+    async fn connect_inner(
+        server: SocketAddr,
+        sni: &str,
+        addr: Address,
+        uuid: &str,
+        flow: Option<&str>,
+        insecure: bool,
+        transport: TransportOptions,
     ) -> Result<Self> {
         let flow = normalize_flow(flow)?;
         let is_vision = flow == Some("xtls-rprx-vision");
@@ -178,7 +204,10 @@ impl VlessTcpStream {
             let tcp_stream = TcpStream::connect(server).await?;
 
             // Browser-like ALPN for Vision fingerprint mimicry.
-            let tls_config = get_tls_config(insecure, &[b"h2", b"http/1.1"]);
+            let tls_config = match &transport.reality {
+                Some(options) => options.tls_config()?,
+                None => get_tls_config(insecure, &[b"h2", b"http/1.1"]),
+            };
             let mut session = ClientConnection::new(tls_config, server_name.clone())
                 .map_err(|e| Error::other(format!("TLS session init: {e}")))?;
             session.set_buffer_limit(None);
@@ -187,6 +216,9 @@ impl VlessTcpStream {
 
             // Manual TLS handshake through external deframer
             vision.handshake().await?;
+            if transport.reality.is_some() {
+                info!(group = ?vision.negotiated_group(), "REALITY server authenticated");
+            }
 
             // Send VLESS header through the TLS session
             vision.send_vless_header(&header_buf).await?;
@@ -203,17 +235,13 @@ impl VlessTcpStream {
                 inner: Inner::Vision(Box::new(vision)),
             })
         } else {
-            // Plain VLESS: use tokio-rustls for TLS (no manual management needed).
+            // Plain VLESS uses the configured TCP, TLS or WebSocket transport.
             // VLESS response header is read lazily on first poll_read, because
             // Xray sends it prepended to the first target response data.
-            let connector = get_tls_connector(insecure);
-            let tcp_stream = TcpStream::connect(server).await?;
-            let mut tls_stream = connect_tls(&connector, server_name, tcp_stream)
-                .await
-                .map_err(Error::other)?;
+            let mut stream = transport.connect(server, sni, insecure).await?;
 
-            tls_stream.write_all(&header_buf).await?;
-            tls_stream.flush().await?;
+            stream.write_all(&header_buf).await?;
+            stream.flush().await?;
 
             info!(
                 server = %server,
@@ -224,7 +252,7 @@ impl VlessTcpStream {
             );
 
             Ok(Self {
-                inner: Inner::Plain(Box::new(PlainVlessStream::new(tls_stream))),
+                inner: Inner::Plain(Box::new(PlainVlessStream::new(stream))),
             })
         }
     }
