@@ -1,6 +1,6 @@
 [package]
 name = "hermesdns"
-version = "20261105.0.0"
+version = "20261109.0.0"
 authors = ["gfreezy <gfreezy@gmail.com>"]
 edition.workspace = true
 

@@ -1,6 +1,6 @@
 [package]
 name = "store"
-version = "20261105.0.0"
+version = "20261109.0.0"
 edition.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
